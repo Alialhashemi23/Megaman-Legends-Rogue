@@ -1,4 +1,4 @@
-# Relic Diver handoff — 2026-10-13 (pass 09: online co-op)
+# Relic Diver handoff — 2026-10-13 (pass 10: runs that survive mishaps)
 
 ## User intent and constraints
 
@@ -21,7 +21,20 @@ Workspace: `C:\Users\Temp\Documents\Codex\2026-10-13\hey-i-want-to-build-a`
 - PowerShell. Set APPDATA and LOCALAPPDATA to workspace `tools/runtime` for tool/test runs.
 - Python: `C:\Users\Temp\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe`; NumPy installed. FFmpeg/ffprobe in PATH.
 
-## Latest completed work: online co-op (pass 09)
+## Latest completed work: mishap-proof runs (pass 10)
+
+The user said multiplayer robustness was the biggest gap and wanted runs to persist correctly before moving on.
+
+- **Host migration:** a leaving or crashing host never ends the dig; the lowest remaining slot takes over.
+- **Exact rejoin:** stable player identity plus a mirrored build roster means a refresh, crash or rejoin returns the exact build.
+- **Reconnect:** dropped sockets auto-reconnect for 90 s, with the dig frozen meanwhile.
+- **Checkpoints:** every machine saves every 5 s and on build changes, atomically, and the host also stores one on the server. Empty lobbies wait 15 min; a forgotten lobby is recreated under its code from a local save. Solo digs get Continue Dig.
+- **Guards and hardening:** confirm-before-leave and two-click destructive buttons, protocol versioning, message shape validation.
+- **Co-op features:** spectating, chat, pings, quick callouts, kick, lock and lobby passwords.
+
+Details: `docs/handoff/NETWORK.md`. User guide: `docs/ONLINE.md`, section "Your run is safe".
+
+## Online co-op (pass 09)
 
 Browser play plus online co-op for up to four diggers. Pass 09 was built in a Linux cloud container with Godot 4.7.1 (Linux editor and export templates), Node 22, Xvfb and Playwright Chromium.
 
@@ -31,7 +44,7 @@ Browser play plus online co-op for up to four diggers. Pass 09 was built in a Li
 - **Web specifics:** threaded export needs COOP/COEP headers (the server sends them) and a secure context (HTTPS domain or localhost). Web saves live in `user://` (IndexedDB). Click-to-aim after a networked start, because browsers require a gesture for pointer lock.
 - **Bundles:** `build/RelicDiver-Web.zip` (tracked, served by the Docker image) and a refreshed Windows `.pck`/ZIP. The Windows build can join via Play Online → Dig Server (`wss://domain/ws`).
 
-Not yet done: a human playtest of co-op balance (party scaling numbers are first guesses), host migration, and a real deployment on the user's domain (the user needs to create the tunnel and token).
+Not yet done: a human playtest of co-op balance (party scaling numbers are first guesses) and a real deployment on the user's domain (the user needs to create the tunnel and token). Host migration and run persistence followed in pass 10.
 
 ## Implemented
 
@@ -58,6 +71,9 @@ Latest pass **07 is finished and rebuilt**: distinct contact/push-off/recovery p
 - `README.md`, `CHANGELOG.md`: longer documentation; read only relevant sections.
 
 ## Verified current state
+
+Pass 10 (Linux): server 9/9; run persistence 24/0 (exact restore, damaged files, 400 fuzzed messages with no script errors); `tests/net_test.sh` passes all 7 processes (co-op play, guest refresh, Wi-Fi drop and auto-reconnect, host crash and migration, host return, empty-lobby resume from the server checkpoint, server-restart resume from a local checkpoint); `tests/web_e2e.mjs` passes in real Chromium including a guest page reload (beforeunload prompt, IndexedDB save found, resynced) and a host page reload (hosting moved to the guest, host rejoined). Character 3868/0, combat 3207/0, UI 47/0, audio 66/0; smoke, combat, movement and persistence modes pass. Renders in `screenshots/coop-*.png`.
+
 
 Pass 09 (Linux): server tests 5/5. `tests/net_test.sh` passes (host + guest + late joiner, identical floors at B1/B2, hits, drops, choices, revive, lift, late join, shared ending). `tests/web_e2e.mjs` passes in real Chromium (menus, lobby creation, clipboard invite link, join via link, both diggers in one dig). Character 3868/0, combat 3207/0, UI 47/0, audio 66/0; smoke, combat, movement and persistence modes pass. Co-op HUD renders: `screenshots/coop-*.png`.
 
@@ -86,4 +102,4 @@ Read the FULL visualize skill before creating/updating inline previews. Helpers:
 
 ## Taking over efficiently
 
-The last requested work, online co-op in the browser (pass 09), is complete on branch `online-coop`. The user's next step is deployment per docs/ONLINE.md; offer help with the tunnel setup and co-op tuning after they play. Earlier: the animation refinement, then DESIGN.md, subsystem handoffs, Git tracking, a portable ZIP and fresh-clone setup. User is switching instances to save context/tokens. Start from this handoff and inspect only files needed for the next request; do not scan backups, dump entire scripts, rerun all tests, rebuild, or redo completed work just to establish context. Briefly acknowledge readiness, then follow the user's next task. Human playtesting is still needed; this remains a prototype, with no controller support or mid-run resume. Check Git status/log for the exact repository synchronization state.
+The last requested work, mishap-proof runs and co-op communication (pass 10), is complete on branch `online-coop`, on top of pass 09's online co-op. The user's next step is deployment per docs/ONLINE.md; offer help with the tunnel setup and co-op tuning after they play. Earlier: the animation refinement, then DESIGN.md, subsystem handoffs, Git tracking, a portable ZIP and fresh-clone setup. User is switching instances to save context/tokens. Start from this handoff and inspect only files needed for the next request; do not scan backups, dump entire scripts, rerun all tests, rebuild, or redo completed work just to establish context. Briefly acknowledge readiness, then follow the user's next task. Human playtesting is still needed; this remains a prototype, with no controller support or mid-run resume. Check Git status/log for the exact repository synchronization state.

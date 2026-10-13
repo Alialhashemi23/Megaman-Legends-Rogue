@@ -82,9 +82,31 @@ var choice_queue: Array = []
 var net_clock = 0.0
 var end_reason = ""
 var net_test = ""
+# Run persistence: every digger's build by identity, plus local/server checkpoints.
+const CHECKPOINT_PATH = "res://save/run_checkpoint.dat"
+const WEB_CHECKPOINT_PATH = "user://run_checkpoint.dat"
+var checkpoint_path = CHECKPOINT_PATH
+var roster: Dictionary = {}
+var run_id = ""
+var checkpoint_clock = 0.0
+var checkpoint_dirty = false
+var saved_dig: Dictionary = {}
+var pending_restore: Dictionary = {}
+var awaiting_checkpoint = 0.0
+var malformed_messages = 0
+# Co-op communication.
+var chat_log: Array = []
+var chat_open = false
+var pings: Array = []
+var spectate_index = 0
+var leave_guard = false
 
 func _ready() -> void:
-	if OS.has_feature("web"): save_path = WEB_SAVE_PATH
+	if OS.has_feature("web"):
+		save_path = WEB_SAVE_PATH
+		checkpoint_path = WEB_CHECKPOINT_PATH
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--checkpoint-path="): checkpoint_path = arg.substr(18)
 	load_meta()
 	sound = DiverSound.new()
 	add_child(sound)
@@ -140,10 +162,15 @@ func _ready() -> void:
 			tester.game = self
 			tester.role = net_test
 			add_child(tester)
-	elif net.invited_code() != "":
-		# Invite links open straight into the lobby.
-		mode = "online"
-		net.join_lobby(net.invited_code())
+	else:
+		saved_dig = load_checkpoint()
+		if not saved_dig.is_empty(): print("ONLINE: saved dig found run=%s online=%s" % [saved_dig.run_id, saved_dig.online])
+		if net.invited_code() != "":
+			# Invite links open straight into the lobby (and rejoin a saved dig there).
+			if saved_dig.get("online", false) and str(saved_dig.lobby_code) == net.invited_code(): continue_saved_dig()
+			else:
+				mode = "online"
+				net.join_lobby(net.invited_code(), net.url_param("key"))
 	if "--movement-test" in OS.get_cmdline_user_args():
 		smoke_test = true
 		movement_test = true
@@ -186,11 +213,20 @@ func position_title_camera() -> void:
 
 func show_title() -> void:
 	mode = "title"
+	chat_open = false
+	# Teammates and pings from an online dig don't belong on the title screen.
+	for member_slot in remote_players.keys(): remove_remote_player(member_slot)
+	for ping in pings:
+		if is_instance_valid(ping.node): ping.node.queue_free()
+	pings.clear()
 	position_title_camera()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
-func start_run(seed_value: int = 0, party: int = 1) -> void:
+func start_run(seed_value: int = 0, party: int = 1, id: String = "") -> void:
 	run_seed = seed_value if seed_value != 0 else int(Time.get_unix_time_from_system()) % 1000000
+	run_id = id if id != "" else new_run_id(run_seed)
+	retire_saved_dig(run_id)
+	if not net.active(): roster.clear()
 	rng.seed = run_seed
 	party_size = clampi(party, 1, DiverNet.MAX_PLAYERS)
 	depth = 1
@@ -212,13 +248,15 @@ func start_run(seed_value: int = 0, party: int = 1) -> void:
 		print("ONLINE: dig started seed=%d party=%d slot=%d rooms=%d exit=%d robots=%d" % [run_seed, party_size, net.slot, rooms.size(), exit_room, enemies.size()])
 		send_info()
 		net.report_status("run", depth)
+	save_checkpoint()
 
 # Every client generates the same floor from the run seed and descent.
 func floor_seed(level: int) -> int:
 	# Plain integer math keeps native and WebAssembly builds in agreement.
 	return (run_seed * 7919 + level * 104729 + 1) & 0x7fffffff
 
-func build_floor(keep_player: bool) -> void:
+# `arrive` applies the lift's healing; restores rebuild a floor without it.
+func build_floor(keep_player: bool, arrive: bool = true) -> void:
 	var old_player = player
 	if keep_player and is_instance_valid(old_player):
 		world.remove_child(old_player)
@@ -270,7 +308,8 @@ func build_floor(keep_player: bool) -> void:
 		player = old_player
 		world.add_child(player)
 		player.lock_target = null
-		if player.downed: player.revive_now(0.25)
+		if not arrive: pass
+		elif player.downed: player.revive_now(0.25)
 		else: player.heal(player.max_hp() * 0.25)
 	else:
 		player = DiverPlayer.new()
@@ -278,6 +317,7 @@ func build_floor(keep_player: bool) -> void:
 		player.character = selected_character
 		world.add_child(player)
 	player.slot = net.slot
+	player.player_id = net.player_id if net.active() else ""
 	player.display_name = net.player_name
 	player.position = Vector3([0.0, 1.6, -1.6, 3.2][clampi(net.slot - 1, 0, 3)], 0.12, 3)
 	player.velocity = Vector3.ZERO
@@ -480,6 +520,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		player.look_mouse(event.relative)
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.physical_keycode:
+			KEY_T, KEY_ENTER, KEY_KP_ENTER:
+				if mode == "play" and net.active():
+					chat_open = true
+					get_viewport().set_input_as_handled()
+			KEY_G:
+				if mode == "play": ping_here()
+			KEY_1, KEY_2, KEY_3, KEY_4:
+				if mode == "play" and net.active(): say(QUICK_CHAT[event.physical_keycode - KEY_1], true)
+		match event.physical_keycode:
 			KEY_ESCAPE:
 				if mode == "play": mode = "pause"; Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 				elif mode == "pause": resume_game()
@@ -501,6 +550,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		if mode == "play" and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 			return
+		if event.button_index == MOUSE_BUTTON_MIDDLE and mode == "play": ping_here()
+		# Downed diggers watch a teammate; clicking switches who.
+		if event.button_index == MOUSE_BUTTON_LEFT and mode == "play" and player.downed: spectate_index += 1
 		if event.button_index == MOUSE_BUTTON_RIGHT and mode == "play": player.toggle_lock()
 
 func resume_game() -> void:
@@ -511,8 +563,10 @@ func resume_game() -> void:
 		if next == "relic": open_relic_choice()
 		else: open_level_choice()
 
-# Solo menus pause the dig. Online, the ruins keep moving behind the menus.
+# Solo menus pause the dig. Online, the ruins keep moving behind the menus,
+# except while reconnecting, when everything waits for the resync.
 func world_running() -> bool:
+	if net.active() and not net.connected(): return false
 	return mode == "play" or (net.active() and mode in OVERLAY_MODES)
 
 func _process(dt: float) -> void:
@@ -532,6 +586,15 @@ func _process(dt: float) -> void:
 		player.art.root.rotation.y = -0.4 + sin(title_clock * .45) * .26
 		player.visual.preview(dt)
 	elif mode == "end": player.visual.preview(dt, true, outcome)
+	# Keep the dig saved: a few seconds of play at most can be lost to a crash.
+	if in_run():
+		checkpoint_clock += dt
+		if checkpoint_clock > 5.0 or (checkpoint_dirty and checkpoint_clock > 0.5): save_checkpoint()
+	if awaiting_checkpoint > 0:
+		awaiting_checkpoint -= dt
+		if awaiting_checkpoint <= 0: resolve_takeover({})
+	if is_instance_valid(world): update_pings(dt)
+	guard_page(in_run() or mode == "lobby")
 	if screenshot_timer >= 0:
 		screenshot_timer -= dt
 		if screenshot_timer < 0: capture_image.call_deferred()
@@ -539,6 +602,12 @@ func _process(dt: float) -> void:
 	elif combat_test: run_combat_test(dt)
 	elif smoke_test and net_test == "": run_smoke(dt)
 	hud.queue_redraw()
+
+# Ask before closing or reloading the browser tab mid-dig.
+func guard_page(on: bool) -> void:
+	if on == leave_guard or not OS.has_feature("web"): return
+	leave_guard = on
+	JavaScriptBridge.eval("window.onbeforeunload = %s" % ("function (e) { e.preventDefault(); e.returnValue = ''; return ''; }" if on else "null"), true)
 
 func update_world(dt: float) -> void:
 	nearest = {}
@@ -580,7 +649,7 @@ func update_world(dt: float) -> void:
 		var collector: DiverPlayer = null
 		var dist = 999.0
 		for candidate in all_players():
-			if candidate.downed or (p.owner != 0 and candidate.slot != p.owner): continue
+			if candidate.downed or not may_collect(p, candidate): continue
 			if net.is_guest() and candidate != player: continue
 			var d = candidate.position.distance_to(p.node.position)
 			if d < dist:
@@ -688,6 +757,8 @@ func enter_floor() -> void:
 	build_floor(true)
 	notify("DESCENT %02d / %s" % [depth, DEPTH_NAMES[depth - 1]], "Restored 25% health. The machinery grows stronger.")
 	net.report_status("run", depth)
+	build_changed()
+	save_checkpoint()
 
 func pool() -> Array:
 	var result = []
@@ -709,6 +780,7 @@ func open_relic_choice() -> void:
 	mode = "choice"
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	sound.play("loot")
+	checkpoint_dirty = true
 
 func open_level_choice() -> void:
 	if mode == "choice":
@@ -718,6 +790,7 @@ func open_level_choice() -> void:
 	choice_items = ["power", "vitality", "haste"]
 	mode = "choice"
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	checkpoint_dirty = true
 	sound.play("level")
 
 func choose(index: int) -> void:
@@ -729,37 +802,37 @@ func choose(index: int) -> void:
 			"power": player.base_damage += 3; notify("BUSTER CALIBRATED", "+3 base damage")
 			"vitality": player.base_health += 20; player.heal(35); notify("CORE EXPANDED", "+20 maximum health · restore 35 health")
 			"haste": player.fire_multiplier += 0.15; notify("CAPACITOR TUNED", "+15% base fire rate")
-		send_info()
+	build_changed()
 	resume_game()
 
 func drop_pickup(pos: Vector3, kind: String, value: float) -> void:
 	if net.is_guest(): return
 	pickup_seq += 1
-	make_pickup(pickup_seq, pos, kind, value, "", 0)
-	net.broadcast([DiverNet.M_PICKUP, depth, pickup_seq, pos, kind, value, "", 0])
+	make_pickup(pickup_seq, pos, kind, value, "", "")
+	net.broadcast([DiverNet.M_PICKUP, depth, pickup_seq, pos, kind, value, "", ""])
 
-# owner_slot > 0 reserves a part for one digger (each teammate gets a guardian core).
-func drop_relic(pos: Vector3, owner_slot: int = 0) -> void:
+# `owner` (a digger's id) reserves a part for them (each teammate gets a guardian core).
+func drop_relic(pos: Vector3, owner: String = "") -> void:
 	if net.is_guest(): return
 	var options = pool()
 	var id = options[rng.randi_range(0, options.size() - 1)]
 	pickup_seq += 1
-	make_pickup(pickup_seq, pos, "relic", 0, id, owner_slot)
-	net.broadcast([DiverNet.M_PICKUP, depth, pickup_seq, pos, "relic", 0, id, owner_slot])
+	make_pickup(pickup_seq, pos, "relic", 0, id, owner)
+	net.broadcast([DiverNet.M_PICKUP, depth, pickup_seq, pos, "relic", 0.0, id, owner])
 
-func make_pickup(id: int, pos: Vector3, kind: String, value: float, item_id: String, owner_slot: int) -> void:
+func make_pickup(id: int, pos: Vector3, kind: String, value: float, item_id: String, owner: String) -> void:
 	var root = Node3D.new()
 	world.add_child(root)
 	root.position = pos
 	if kind == "relic":
 		DiverArt.box(root, Vector3.ZERO, Vector3(0.45, 0.45, 0.45), Color(ITEMS[item_id].color), false, 1)
 		var title: String = ITEMS[item_id].name
-		if owner_slot > 0 and party_size > 1: title = "%s · %s" % [net.member_name(owner_slot), title]
+		if owner != "" and party_size > 1: title = "%s · %s" % [str(roster.get(owner, {}).get("name", "Teammate")) if owner != net.player_id else net.player_name, title]
 		DiverArt.label(root, Vector3(0, 0.8, 0), title, Color(ITEMS[item_id].color), 25)
 	else:
 		var color = DiverArt.TEAL if kind == "xp" else DiverArt.GOLD if kind == "scrap" else Color("95d89d")
 		DiverArt.orb(root, Vector3.ZERO, 0.14 if kind == "xp" else 0.19, color, 0.7)
-	pickups.append({"node": root, "kind": kind, "id": item_id, "value": value, "age": 0.0, "base_y": pos.y, "net_id": id, "owner": owner_slot})
+	pickups.append({"node": root, "kind": kind, "id": item_id, "value": value, "age": 0.0, "base_y": pos.y, "net_id": id, "owner": owner})
 
 # Host/solo: hand a collected pickup to the digger who reached it.
 func award_pickup(p: Dictionary, who: DiverPlayer) -> void:
@@ -852,6 +925,8 @@ func finish_run(won: bool) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	sound.play("win" if won else "hurt")
 	choice_queue.clear()
+	chat_open = false
+	clear_checkpoint()
 	if net.is_host(): net.report_status("lobby", depth)
 
 func load_meta() -> void:
@@ -1030,9 +1105,17 @@ func run_movement_test(dt: float) -> void:
 		get_tree().quit()
 
 # ---------------------------------------------------------------------------
-# Online co-op. The lobby host (slot 1) owns robots, pickups, scrap and doors;
-# every digger owns their own movement, Life and fitted parts. Damage to a
-# digger is decided on that digger's machine, damage to robots by the shooter.
+# Online co-op. The lobby host owns robots, pickups, scrap and doors; every
+# digger owns their own movement, Life and fitted parts. Damage to a digger is
+# decided on that digger's machine, damage to robots by the shooter.
+#
+# Runs are built to survive mishaps: hosting moves to another digger if the
+# host leaves, dropped connections reconnect and resync, every digger's build
+# is mirrored by identity (refresh = same build back), and each machine keeps
+# a local checkpoint while the host also stores one on the server.
+
+const QUICK_CHAT = ["Help!", "Over here!", "Nice!", "Wait up!"]
+const CHECKPOINT_VERSION = 1
 
 func all_players() -> Array:
 	var result = [player] if is_instance_valid(player) else []
@@ -1071,6 +1154,13 @@ func target_for(enemy: Node3D) -> DiverPlayer:
 			best_distance = d
 			best = p
 	return best
+
+# A reserved part can be taken by its owner, or by anyone while the owner is away.
+func may_collect(p: Dictionary, who: DiverPlayer) -> bool:
+	if p.owner == "" or who.player_id == p.owner: return true
+	for other in all_players():
+		if other.player_id == p.owner: return false
+	return true
 
 func tell(who: DiverPlayer, title: String, detail: String) -> void:
 	if who == player: notify(title, detail)
@@ -1113,12 +1203,209 @@ func local_player_down() -> void:
 	player.revive = 0
 	player.lock_target = null
 	player.visual.current_clip = ""
-	notify("YOU'RE DOWN!", "Hang on. A teammate can revive you by standing close.")
+	notify("YOU'RE DOWN!", "Hang on. A teammate can revive you by standing close. Click to watch a teammate.")
 	send_state()
+	build_changed()
+
+# --- builds and world snapshots --------------------------------------------
+
+# Everything needed to hand a digger back their exact build.
+func build_state() -> Dictionary:
+	var p = player
+	var queue = choice_queue.duplicate()
+	if queue_level: queue.append("level")
+	return {"id": net.player_id, "name": net.player_name, "character": p.character, "weapon": p.weapon, "items": p.items.duplicate(), "level": p.level, "xp": p.xp, "xp_required": p.xp_required, "base_health": p.base_health, "base_damage": p.base_damage, "fire_multiplier": p.fire_multiplier, "hp": p.hp, "downed": p.downed, "choice": {"kind": choice_kind, "items": choice_items.duplicate()} if mode == "choice" else {}, "queue": queue}
+
+func apply_build(b: Dictionary) -> void:
+	var p = player
+	if int(b.get("character", p.character)) != p.character: p.set_character(int(b.character))
+	selected_character = p.character
+	p.weapon = clampi(int(b.get("weapon", p.weapon)), 0, 2)
+	p.items = (b.get("items", {}) as Dictionary).duplicate() if b.get("items") is Dictionary else {}
+	p.level = int(b.get("level", 1))
+	p.xp = int(b.get("xp", 0))
+	p.xp_required = int(b.get("xp_required", 12))
+	p.base_health = float(b.get("base_health", 100.0))
+	p.base_damage = float(b.get("base_damage", 12.0))
+	p.fire_multiplier = float(b.get("fire_multiplier", 1.0))
+	p.hp = clampf(float(b.get("hp", p.max_hp())), 0, p.max_hp())
+	p.downed = bool(b.get("downed", false)) or p.hp <= 0
+	if p.downed: p.hp = 0
+	p.visual.current_clip = ""
+	choice_queue = (b.get("queue", []) as Array).duplicate() if b.get("queue") is Array else []
+	var choice = b.get("choice", {})
+	if choice is Dictionary and choice.get("items") is Array and (choice.items as Array).size() == 3:
+		choice_kind = str(choice.kind)
+		choice_items = (choice.items as Array).duplicate()
+		mode = "choice"
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	elif not choice_queue.is_empty():
+		resume_game()
+
+func world_state() -> Dictionary:
+	var alive = PackedFloat32Array()
+	for e in enemies:
+		if is_instance_valid(e) and not e.dead: alive.append_array([e.net_id, e.health, e.global_position.x, e.global_position.y, e.global_position.z, 1.0 if e.active else 0.0])
+	var used = PackedInt32Array()
+	for i in interactables.size():
+		if interactables[i].used: used.append(i)
+	var cleared = PackedInt32Array()
+	var visited = PackedInt32Array()
+	for i in rooms.size():
+		if rooms[i].cleared: cleared.append(i)
+		if rooms[i].visited: visited.append(i)
+	var items = []
+	for p in pickups:
+		if is_instance_valid(p.node): items.append([p.net_id, p.node.position, p.kind, float(p.value), p.id, p.owner])
+	return {"run_id": run_id, "seed": run_seed, "depth": depth, "party": party_size, "floor_seed": run_seed if depth == 1 else floor_seed(depth), "scrap": scrap, "kills": kills, "run_time": run_time, "total_damage": total_damage, "guardian_dead": guardian_dead, "alive": alive, "used": used, "cleared": cleared, "visited": visited, "pickups": items, "pickup_seq": pickup_seq}
+
+# Rebuild the floor from its seed, then apply everything that has happened on it.
+func apply_world_state(w: Dictionary, keep_player: bool) -> void:
+	run_id = str(w.get("run_id", ""))
+	run_seed = int(w.get("seed", 1))
+	party_size = clampi(int(w.get("party", 1)), 1, DiverNet.MAX_PLAYERS)
+	depth = clampi(int(w.get("depth", 1)), 1, 3)
+	queue_level = false
+	new_unlocks.clear()
+	end_reason = ""
+	if not keep_player: choice_queue.clear()
+	rng.seed = int(w.get("floor_seed", run_seed))
+	build_floor(keep_player and is_instance_valid(player), false)
+	scrap = int(w.get("scrap", 0))
+	kills = int(w.get("kills", 0))
+	run_time = float(w.get("run_time", 0.0))
+	total_damage = float(w.get("total_damage", 0.0))
+	guardian_dead = bool(w.get("guardian_dead", false))
+	var alive: PackedFloat32Array = w.get("alive", PackedFloat32Array()) if w.get("alive") is PackedFloat32Array else PackedFloat32Array()
+	var living = {}
+	for i in range(0, alive.size() - 5, 6):
+		var id = int(alive[i])
+		if id < 0 or id >= enemies.size() or not is_instance_valid(enemies[id]): continue
+		living[id] = true
+		var e: DiverEnemy = enemies[id]
+		e.health = clampf(alive[i + 1], 1, e.max_health)
+		if alive[i + 5] > 0.5:
+			e.active = true
+			e.global_position = Vector3(alive[i + 2], alive[i + 3], alive[i + 4])
+			e.net_pos = e.global_position
+	for id in enemies.size():
+		if not living.has(id) and is_instance_valid(enemies[id]):
+			enemies[id].dead = true
+			enemies[id].queue_free()
+	for index in w.get("used", []):
+		if index >= 0 and index < interactables.size(): use_interactable(interactables[index])
+	for index in w.get("cleared", []):
+		if index >= 0 and index < rooms.size(): rooms[index].cleared = true
+	for index in w.get("visited", []):
+		if index >= 0 and index < rooms.size(): rooms[index].visited = true
+	for item in w.get("pickups", []):
+		if item is Array and item.size() >= 6 and item[1] is Vector3 and (item[2] != "relic" or ITEMS.has(str(item[4]))):
+			make_pickup(int(item[0]), item[1], str(item[2]), float(item[3]), str(item[4]), str(item[5]))
+	pickup_seq = int(w.get("pickup_seq", 0))
+	mode = "play"
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+# --- checkpoints ---------------------------------------------------------------
+
+func checkpoint_data() -> Dictionary:
+	if net.active(): roster[net.player_id] = build_state()
+	return {"v": CHECKPOINT_VERSION, "online": net.active(), "lobby_code": net.lobby_code, "lobby_name": str(net.lobby.get("name", "")), "public": bool(net.lobby.get("isPublic", true)), "password": net.lobby_password, "run_id": run_id, "saved": Time.get_unix_time_from_system(), "world": world_state(), "build": build_state(), "roster": roster.duplicate(true), "selected": [selected_character, selected_weapon]}
+
+func persisting() -> bool:
+	return not smoke_test or net_test != ""
+
+func save_checkpoint() -> void:
+	checkpoint_clock = 0.0
+	checkpoint_dirty = false
+	if not in_run() or not persisting() or net.reconnecting(): return
+	var data = checkpoint_data()
+	# Write beside the old file first, so a crash mid-write never loses the dig.
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(checkpoint_path.get_base_dir()))
+	var temp = checkpoint_path + ".tmp"
+	var f = FileAccess.open(temp, FileAccess.WRITE)
+	if f == null: return
+	f.store_var(data)
+	f.close()
+	if FileAccess.file_exists(checkpoint_path): DirAccess.remove_absolute(ProjectSettings.globalize_path(checkpoint_path))
+	DirAccess.rename_absolute(ProjectSettings.globalize_path(temp), ProjectSettings.globalize_path(checkpoint_path))
+	if net.is_host(): net.store_checkpoint(var_to_bytes(data))
+
+func load_checkpoint() -> Dictionary:
+	for path in [checkpoint_path, checkpoint_path + ".tmp"]:
+		if not FileAccess.file_exists(path): continue
+		var f = FileAccess.open(path, FileAccess.READ)
+		if f == null: continue
+		var data = f.get_var()
+		if valid_checkpoint(data): return data
+	return {}
+
+func valid_checkpoint(data) -> bool:
+	return data is Dictionary and int(data.get("v", 0)) == CHECKPOINT_VERSION and data.get("world") is Dictionary and data.get("build") is Dictionary and str(data.get("run_id", "")) != ""
+
+func clear_checkpoint() -> void:
+	saved_dig = {}
+	if not persisting(): return
+	for path in [checkpoint_path, checkpoint_path + ".tmp"]:
+		if FileAccess.file_exists(path): DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+# Mark the build as changed: teammates hear about it and the checkpoint is refreshed soon.
+func build_changed() -> void:
+	checkpoint_dirty = true
+	send_info()
+
+# An abandoned saved dig still counts its machines toward unlocks.
+func retire_saved_dig(new_run_id: String) -> void:
+	var cp = load_checkpoint()
+	if cp.is_empty() or str(cp.run_id) == new_run_id: return
+	meta.kills = int(meta.kills) + int(cp.world.get("kills", 0))
+	meta.runs = int(meta.runs) + 1
+	meta.deepest = maxi(int(meta.deepest), int(cp.world.get("depth", 1)))
+	save_meta()
+	clear_checkpoint()
+
+# Restore a whole dig: the floor, then this digger's build and everyone else's.
+func restore_checkpoint(cp: Dictionary) -> void:
+	if cp.get("roster") is Dictionary: roster = (cp.roster as Dictionary).duplicate(true)
+	var selected = cp.get("selected", [selected_character, selected_weapon])
+	if selected is Array and selected.size() == 2:
+		selected_character = clampi(int(selected[0]), 0, 1)
+		selected_weapon = clampi(int(selected[1]), 0, 2)
+	apply_world_state(cp.world, false)
+	var mine = roster.get(net.player_id, cp.build if not cp.online or str(cp.build.get("id", "")) == net.player_id else {})
+	if mine is Dictionary and not mine.is_empty(): apply_build(mine)
+	else: player.weapon = selected_weapon
+	notify("DIG RESUMED", "B%d · %s. Your build is back." % [depth, DEPTH_NAMES[depth - 1]])
+	print("ONLINE: dig restored run=%s depth=%d parts=%d" % [run_id, depth, player.items.size()])
+	if net.active():
+		net.report_status("run", depth)
+		send_info()
+	save_checkpoint()
+
+# Title → Continue Dig / Rejoin Dig.
+func continue_saved_dig() -> void:
+	var cp = load_checkpoint()
+	if cp.is_empty(): return
+	if not cp.online:
+		restore_checkpoint(cp)
+		return
+	pending_restore = cp
+	mode = "online"
+	net.resume_lobby(str(cp.lobby_code), str(cp.lobby_name), bool(cp.public), str(cp.password))
+
+func discard_saved_dig() -> void:
+	retire_saved_dig("")
+
+# --- connection, hosting and lobby events ---------------------------------------
 
 func send_info() -> void:
-	if not net.active() or not is_instance_valid(player): return
-	net.broadcast([DiverNet.M_INFO, selected_character, selected_weapon if mode in ["lobby", "online", "title"] else player.weapon, player.items, player.level, net.player_name])
+	if not is_instance_valid(player): return
+	var build = build_state()
+	if mode in ["lobby", "online", "title"]:
+		build.character = selected_character
+		build.weapon = selected_weapon
+	if net.active():
+		roster[net.player_id] = build
+		net.broadcast([DiverNet.M_INFO, build])
 
 func send_state() -> void:
 	var p = player
@@ -1132,15 +1419,16 @@ func spawn_remote_players() -> void:
 
 func create_remote_player(member_slot: int) -> DiverPlayer:
 	if remote_players.has(member_slot) and is_instance_valid(remote_players[member_slot]): return remote_players[member_slot]
-	var info: Dictionary = peers.get(member_slot, {})
+	var info: Dictionary = peers.get(member_slot, roster.get(net.member_id(member_slot), {}))
 	var proxy = DiverPlayer.new()
 	proxy.game = self
 	proxy.is_local = false
 	proxy.slot = member_slot
+	proxy.player_id = net.member_id(member_slot)
 	proxy.display_name = net.member_name(member_slot)
-	proxy.character = int(info.get("character", 0))
-	proxy.weapon = int(info.get("weapon", 0))
-	proxy.items = info.get("items", {}).duplicate()
+	proxy.character = clampi(int(info.get("character", 0)), 0, 1)
+	proxy.weapon = clampi(int(info.get("weapon", 0)), 0, 2)
+	proxy.items = (info.get("items", {}) as Dictionary).duplicate() if info.get("items") is Dictionary else {}
 	proxy.level = int(info.get("level", 1))
 	world.add_child(proxy)
 	proxy.position = Vector3([0.0, 1.6, -1.6, 3.2][clampi(member_slot - 1, 0, 3)], 0.12, 3)
@@ -1179,12 +1467,16 @@ func end_run_all(won: bool) -> void:
 	net.broadcast([DiverNet.M_END, won])
 	finish_run(won)
 
+func new_run_id(seed_value: int) -> String:
+	return "%d-%d-%d" % [seed_value, int(Time.get_unix_time_from_system()), randi() % 100000]
+
 func host_start_run() -> void:
 	if not net.is_host(): return
 	var seed_value = randi() % 1000000 + 1
 	var party = maxi(1, net.members().size())
-	net.broadcast([DiverNet.M_START, seed_value, party])
-	start_run(seed_value, party)
+	var id = new_run_id(seed_value)
+	net.broadcast([DiverNet.M_START, seed_value, party, id])
+	start_run(seed_value, party, id)
 
 func enter_lobby_room() -> void:
 	mode = "lobby"
@@ -1195,17 +1487,65 @@ func enter_lobby_room() -> void:
 func leave_online() -> void:
 	net.leave_lobby()
 	peers.clear()
+	pending_restore = {}
 	for member_slot in remote_players.keys(): remove_remote_player(member_slot)
 	if in_run(): finish_run(false)
 	else: show_title()
 
-# --- lobby server callbacks -------------------------------------------------
-
-func lobby_entered() -> void:
-	print("ONLINE: joined lobby %s as slot %d" % [net.lobby_code, net.slot])
+func lobby_entered(info: Dictionary) -> void:
+	print("ONLINE: joined lobby %s as slot %d (host slot %d)" % [net.lobby_code, net.slot, net.host_slot])
 	peers.clear()
-	if mode in ["title", "online", "end", "archive"]: enter_lobby_room()
 	if net_test == "": net.save_profile()
+	var takeover = bool(info.get("takeover", false)) or bool(info.get("recreated", false))
+	if takeover and in_run():
+		# Back from a dropout as the only digger: carry on with the live dig.
+		become_host("BACK ONLINE", "You're hosting the dig again.")
+		return
+	if takeover:
+		if bool(info.get("checkpoint", false)):
+			awaiting_checkpoint = 3.0
+			return
+		resolve_takeover({})
+		return
+	if in_run(): return  # Rejoined a live dig; the host will resync us.
+	if mode in ["title", "online", "end", "archive"]: enter_lobby_room()
+
+# The server handed us the last host's checkpoint (or it never came).
+func server_checkpoint(data: Dictionary) -> void:
+	if awaiting_checkpoint <= 0 or not valid_checkpoint(data): return
+	resolve_takeover(data)
+
+func resolve_takeover(server_copy: Dictionary) -> void:
+	awaiting_checkpoint = 0.0
+	var best = server_copy
+	var mine = pending_restore if not pending_restore.is_empty() else load_checkpoint()
+	pending_restore = {}
+	if not mine.is_empty() and str(mine.get("lobby_code", "")) == net.lobby_code and mine.get("online", false):
+		var same_run = not best.is_empty() and str(mine.run_id) == str(best.run_id)
+		if best.is_empty() or (same_run and float(mine.world.get("run_time", 0)) > float(best.world.get("run_time", 0))):
+			best = mine
+	if best.is_empty():
+		enter_lobby_room()
+		return
+	restore_checkpoint(best)
+
+func become_host(title: String, detail: String) -> void:
+	# Robots and loot now run here, starting from the positions we last saw.
+	var top = pickup_seq
+	for p in pickups: top = maxi(top, int(p.net_id))
+	pickup_seq = top + 1000
+	for e in enemies:
+		if is_instance_valid(e) and not e.dead and e.net_seen:
+			e.global_position = e.net_pos
+			e.rotation.y = e.net_rot
+	notify(title, detail)
+	print("ONLINE: now hosting run=%s" % run_id)
+	net.report_status("run", depth)
+	send_info()
+	save_checkpoint()
+
+func host_changed() -> void:
+	if in_run() and net.is_host(): become_host("YOU'RE HOSTING NOW", "The host left, so the dig moved to you. Keep going!")
 
 func lobby_updated() -> void:
 	var present = []
@@ -1214,86 +1554,79 @@ func lobby_updated() -> void:
 		if not present.has(member_slot): peers.erase(member_slot)
 	for member_slot in remote_players.keys():
 		if not present.has(member_slot): remove_remote_player(member_slot)
-		elif is_instance_valid(remote_players[member_slot]): remote_players[member_slot].display_name = net.member_name(member_slot)
+		elif is_instance_valid(remote_players[member_slot]):
+			remote_players[member_slot].display_name = net.member_name(member_slot)
+			remote_players[member_slot].player_id = net.member_id(member_slot)
 
-func peer_entered(member_slot: int) -> void:
+func peer_entered(member_slot: int, id: String) -> void:
 	send_info()
-	if net.is_host() and in_run(): send_sync(member_slot)
+	# The newcomer may be a returning digger: hand back their build with the world.
+	if net.is_host() and in_run(): net.send(member_slot, [DiverNet.M_SYNC, world_state(), roster.get(id, {})])
 
 func peer_left(member_slot: int) -> void:
 	var who = net.member_name(member_slot)
 	peers.erase(member_slot)
 	remove_remote_player(member_slot)
-	# Cores reserved for a departed digger become free for anyone.
-	for p in pickups:
-		if p.owner == member_slot: p.owner = 0
-	if in_run(): notify("%s LEFT THE DIG" % who.to_upper(), "The remaining diggers press on.")
+	if in_run(): notify("%s DROPPED OUT" % who.to_upper(), "Their build is saved if they rejoin. The dig continues.")
 
-func lobby_closed(reason: String) -> void:
+func kicked() -> void:
 	peers.clear()
+	pending_restore = {}
 	for member_slot in remote_players.keys(): remove_remote_player(member_slot)
 	if in_run():
-		end_reason = reason
+		end_reason = "The host removed you from the lobby"
 		finish_run(false)
+	else:
+		mode = "online"
+		net.error_text = "The host removed you from the lobby."
+
+func connection_lost() -> void:
+	print("ONLINE: connection lost, reconnecting")
+	save_checkpoint_offline()
+
+func connection_failed(reason: String) -> void:
+	peers.clear()
+	pending_restore = {}
+	awaiting_checkpoint = 0.0
+	for member_slot in remote_players.keys(): remove_remote_player(member_slot)
+	if in_run():
+		# The dig stays saved; Rejoin Dig on the title screen picks it back up.
+		show_title()
+		notify("DIG SAVED", reason + " Choose Rejoin Dig to continue.")
+		saved_dig = load_checkpoint()
 	elif mode == "lobby":
 		mode = "online"
-		net.error_text = reason + "."
 
-# Late joiners rebuild the current floor from its seed, then apply what changed.
-func send_sync(member_slot: int) -> void:
-	var dead = PackedInt32Array()
-	var healths = PackedFloat32Array()
-	for i in enemies.size():
-		var e = enemies[i]
-		if not is_instance_valid(e) or e.dead: dead.append(i)
-		elif e.health < e.max_health: healths.append_array([i, e.health])
-	var used = PackedInt32Array()
-	for i in interactables.size():
-		if interactables[i].used: used.append(i)
-	var cleared = PackedInt32Array()
-	for i in rooms.size():
-		if rooms[i].cleared: cleared.append(i)
-	var items = []
-	for p in pickups:
-		if is_instance_valid(p.node): items.append([p.net_id, p.node.position, p.kind, p.value, p.id, p.owner])
-	net.send(member_slot, [DiverNet.M_SYNC, run_seed, depth, party_size, rng.seed if depth == 1 else floor_seed(depth), scrap, kills, run_time, guardian_dead, dead, healths, used, cleared, items, pickup_seq])
+func join_failed(code: String) -> void:
+	if not pending_restore.is_empty() and code in ["banned", "version", "locked", "password", "full"]:
+		pending_restore = {}
+
+# Reconnecting blocks the normal save (state is frozen), so write it explicitly once.
+func save_checkpoint_offline() -> void:
+	if not in_run() or not persisting(): return
+	var f = FileAccess.open(checkpoint_path + ".tmp", FileAccess.WRITE)
+	if f == null: return
+	f.store_var(checkpoint_data())
+	f.close()
+	if FileAccess.file_exists(checkpoint_path): DirAccess.remove_absolute(ProjectSettings.globalize_path(checkpoint_path))
+	DirAccess.rename_absolute(ProjectSettings.globalize_path(checkpoint_path + ".tmp"), ProjectSettings.globalize_path(checkpoint_path))
 
 func apply_sync(m: Array) -> void:
-	run_seed = int(m[1])
-	party_size = int(m[3])
-	scrap = 0
-	kills = 0
-	run_time = 0
-	total_damage = 0
-	queue_level = false
-	choice_queue.clear()
-	new_unlocks.clear()
-	depth = int(m[2])
-	rng.seed = int(m[4])
-	build_floor(false)
-	player.weapon = selected_weapon
-	scrap = int(m[5])
-	kills = int(m[6])
-	run_time = float(m[7])
-	guardian_dead = bool(m[8])
-	for id in m[9]:
-		if id >= 0 and id < enemies.size() and is_instance_valid(enemies[id]):
-			enemies[id].dead = true
-			enemies[id].queue_free()
-	var healths: PackedFloat32Array = m[10]
-	for i in range(0, healths.size(), 2):
-		var e = enemy_by_id(int(healths[i]))
-		if e: e.health = healths[i + 1]
-	for index in m[11]:
-		if index >= 0 and index < interactables.size(): use_interactable(interactables[index])
-	for index in m[12]:
-		if index >= 0 and index < rooms.size(): rooms[index].cleared = true
-	for item in m[13]: make_pickup(int(item[0]), item[1], item[2], float(item[3]), str(item[4]), int(item[5]))
-	pickup_seq = int(m[14])
-	mode = "play"
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	notify("JOINED THE DIG", "B%d · %s. Catch up with your team!" % [depth, DEPTH_NAMES[depth - 1]])
-	send_info()
+	var w: Dictionary = m[1]
+	var build: Dictionary = m[2]
+	var same_run = in_run() and str(w.get("run_id", "")) == run_id
+	if not same_run: retire_saved_dig(str(w.get("run_id", "")))
+	apply_world_state(w, same_run)
+	if same_run: pass  # Our live build is the freshest copy.
+	elif not build.is_empty():
+		apply_build(build)
+		notify("WELCOME BACK", "Your build was saved. B%d · %s." % [depth, DEPTH_NAMES[depth - 1]])
+	else:
+		player.weapon = selected_weapon
+		notify("JOINED THE DIG", "B%d · %s. Catch up with your team!" % [depth, DEPTH_NAMES[depth - 1]])
+	print("ONLINE: synced into dig run=%s depth=%d parts=%d" % [run_id, depth, player.items.size()])
+	build_changed()
+	save_checkpoint()
 
 func enemy_by_id(id: int) -> DiverEnemy:
 	if id < 0 or id >= enemies.size(): return null
@@ -1304,38 +1637,163 @@ func sender(from_slot: int) -> DiverPlayer:
 	var proxy = remote_players.get(from_slot)
 	return proxy if is_instance_valid(proxy) else null
 
-# --- game messages ----------------------------------------------------------
+# --- chat, pings and spectating ---------------------------------------------------
+
+func say(text: String, quick: bool = false) -> void:
+	text = text.strip_edges().left(120)
+	if text == "" or not net.active(): return
+	add_chat(net.slot, net.player_name, text, quick)
+	net.broadcast([DiverNet.M_CHAT, text, quick])
+	if quick and is_instance_valid(player): player.speak(text)
+
+func add_chat(from_slot: int, who: String, text: String, quick: bool) -> void:
+	chat_log.append({"slot": from_slot, "name": who, "text": text, "quick": quick, "time": Time.get_ticks_msec()})
+	while chat_log.size() > 30: chat_log.pop_front()
+	sound.play("menu_move")
+
+# Mark a spot (or a robot, cache or lift) for the team.
+func ping_here() -> void:
+	if not net.active() or not is_instance_valid(player) or not is_instance_valid(player.camera): return
+	var center = get_viewport().get_visible_rect().size * 0.5
+	var from = player.camera.project_ray_origin(center)
+	var query = PhysicsRayQueryParameters3D.create(from, from + player.camera.project_ray_normal(center) * 60, 5)
+	var hit = player.get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty(): return
+	var label = "Here!"
+	var at: Vector3 = hit.position
+	if hit.collider is DiverEnemy:
+		label = "Robot!"
+		at = hit.collider.global_position
+	else:
+		for obj in interactables:
+			if not obj.used and obj.node.position.distance_to(at) < 2.5:
+				label = {"cache": "Cache!", "spring": "Repair well!", "lift": "Lift!", "pot": "Salvage!"}.get(obj.kind, "Here!")
+				at = obj.node.position
+	place_ping(net.slot, at, label)
+	net.broadcast([DiverNet.M_PING, depth, at, label])
+
+func place_ping(from_slot: int, at: Vector3, label: String) -> void:
+	var color: Color = DiverNet.SLOT_COLORS[clampi(from_slot, 0, 4)]
+	var root = Node3D.new()
+	world.add_child(root)
+	root.position = Vector3(at.x, maxf(0.06, at.y - 0.9) if label == "Robot!" else at.y + 0.06, at.z)
+	DiverArt.ring(root, Vector3.ZERO, 0.9, color, 0.12)
+	DiverArt.box(root, Vector3(0, 1.6, 0), Vector3(0.06, 3.2, 0.06), color, false, 1.5)
+	var tag = DiverArt.label(root, Vector3(0, 3.6, 0), "%s: %s" % [net.player_name if from_slot == net.slot else net.member_name(from_slot), label], color, 40)
+	tag.no_depth_test = true
+	pings.append({"node": root, "life": 5.0})
+	while pings.size() > 8:
+		var old = pings.pop_front()
+		if is_instance_valid(old.node): old.node.queue_free()
+	sound.play("lock", 1.2, at)
+
+func update_pings(dt: float) -> void:
+	for i in range(pings.size() - 1, -1, -1):
+		pings[i].life -= dt
+		var node: Node3D = pings[i].node
+		if not is_instance_valid(node) or pings[i].life <= 0:
+			if is_instance_valid(node): node.queue_free()
+			pings.remove_at(i)
+		else:
+			node.rotation.y += dt * 2
+			node.visible = pings[i].life > 1.0 or int(pings[i].life * 8) % 2 == 0
+
+func spectate_target() -> DiverPlayer:
+	var standing = []
+	for p in remote_players.values():
+		if is_instance_valid(p) and not p.downed: standing.append(p)
+	if standing.is_empty(): return null
+	return standing[wrapi(spectate_index, 0, standing.size())]
+
+# --- game messages -------------------------------------------------------------
+
+# Expected shapes of incoming messages: anything else is ignored, never crashes the dig.
+const NUM = -1
+const SHAPES = {
+	DiverNet.M_INFO: [TYPE_DICTIONARY],
+	DiverNet.M_STATE: [NUM, TYPE_VECTOR3, TYPE_VECTOR3, NUM, NUM, TYPE_VECTOR2, NUM, NUM, NUM, NUM],
+	DiverNet.M_SHOT: [NUM, TYPE_VECTOR3, TYPE_VECTOR3, TYPE_BOOL],
+	DiverNet.M_START: [NUM, NUM, TYPE_STRING],
+	DiverNet.M_SNAP: [NUM, NUM, NUM, TYPE_BOOL, NUM, TYPE_PACKED_FLOAT32_ARRAY],
+	DiverNet.M_ATTACK: [NUM, NUM, TYPE_STRING, NUM, TYPE_VECTOR3],
+	DiverNet.M_RESOLVE: [NUM, NUM, TYPE_VECTOR3],
+	DiverNet.M_DAMAGE: [NUM, NUM, NUM, TYPE_BOOL, NUM],
+	DiverNet.M_DIE: [NUM, NUM],
+	DiverNet.M_PICKUP: [NUM, NUM, TYPE_VECTOR3, TYPE_STRING, NUM, TYPE_STRING, TYPE_STRING],
+	DiverNet.M_PICKUP_GONE: [NUM, NUM, NUM, TYPE_STRING],
+	DiverNet.M_USED: [NUM, NUM],
+	DiverNet.M_HIT: [NUM, NUM, NUM],
+	DiverNet.M_INTERACT: [NUM, NUM],
+	DiverNet.M_FROST: [NUM, TYPE_VECTOR3, NUM],
+	DiverNet.M_HEAL: [NUM],
+	DiverNet.M_ITEM: [TYPE_STRING],
+	DiverNet.M_XP: [NUM],
+	DiverNet.M_CHOICE: [],
+	DiverNet.M_NOTIFY: [TYPE_STRING, TYPE_STRING],
+	DiverNet.M_FLOOR: [NUM, NUM],
+	DiverNet.M_END: [TYPE_BOOL],
+	DiverNet.M_SYNC: [TYPE_DICTIONARY, TYPE_DICTIONARY],
+	DiverNet.M_LIGHTNING: [NUM, TYPE_VECTOR3, TYPE_VECTOR3],
+	DiverNet.M_CLEARED: [NUM, NUM],
+	DiverNet.M_RESTORE: [NUM],
+	DiverNet.M_CHAT: [TYPE_STRING, TYPE_BOOL],
+	DiverNet.M_PING: [NUM, TYPE_VECTOR3, TYPE_STRING],
+}
+# Messages tied to the current floor carry its descent number first.
+const FLOOR_MESSAGES = [DiverNet.M_STATE, DiverNet.M_SHOT, DiverNet.M_SNAP, DiverNet.M_ATTACK, DiverNet.M_RESOLVE, DiverNet.M_DAMAGE, DiverNet.M_DIE, DiverNet.M_PICKUP, DiverNet.M_PICKUP_GONE, DiverNet.M_USED, DiverNet.M_HIT, DiverNet.M_INTERACT, DiverNet.M_FROST, DiverNet.M_LIGHTNING, DiverNet.M_CLEARED, DiverNet.M_PING]
+
+func well_formed(m: Array) -> bool:
+	if typeof(m[0]) != TYPE_INT or not SHAPES.has(m[0]): return false
+	var shape: Array = SHAPES[m[0]]
+	if m.size() < shape.size() + 1: return false
+	for i in shape.size():
+		var kind = typeof(m[i + 1])
+		if shape[i] == NUM:
+			if kind != TYPE_INT and kind != TYPE_FLOAT: return false
+		elif kind != shape[i]: return false
+	return true
 
 func net_message(from_slot: int, m: Array) -> void:
+	if not well_formed(m):
+		malformed_messages += 1
+		return
 	var kind = int(m[0])
-	# Messages tagged with a descent are ignored once that floor is gone.
-	if kind in [DiverNet.M_STATE, DiverNet.M_SHOT, DiverNet.M_SNAP, DiverNet.M_ATTACK, DiverNet.M_RESOLVE, DiverNet.M_DAMAGE, DiverNet.M_DIE, DiverNet.M_PICKUP, DiverNet.M_PICKUP_GONE, DiverNet.M_USED, DiverNet.M_HIT, DiverNet.M_INTERACT, DiverNet.M_FROST, DiverNet.M_LIGHTNING, DiverNet.M_CLEARED]:
-		if not in_run() or int(m[1]) != depth: return
-	var from_host = from_slot == 1
+	if kind in FLOOR_MESSAGES and (not in_run() or int(m[1]) != depth): return
+	var from_host = from_slot == net.host_slot
 	match kind:
 		DiverNet.M_INFO:
-			peers[from_slot] = {"character": int(m[1]), "weapon": int(m[2]), "items": m[3], "level": int(m[4]), "name": str(m[5])}
+			var b: Dictionary = m[1]
+			if not b.get("items") is Dictionary: return
+			peers[from_slot] = b
+			var id = str(b.get("id", net.member_id(from_slot)))
+			if id != "": roster[id] = b
 			var proxy = sender(from_slot)
 			if proxy:
-				if proxy.character != int(m[1]): proxy.set_character(int(m[1]))
-				proxy.weapon = int(m[2])
-				proxy.items = m[3].duplicate()
-				proxy.level = int(m[4])
+				if proxy.character != int(b.get("character", 0)): proxy.set_character(int(b.get("character", 0)))
+				proxy.weapon = clampi(int(b.get("weapon", 0)), 0, 2)
+				proxy.items = (b.items as Dictionary).duplicate()
+				proxy.level = int(b.get("level", 1))
 		DiverNet.M_STATE:
 			var proxy = sender(from_slot)
 			if proxy == null: proxy = create_remote_player(from_slot)
 			proxy.apply_state(m[2], m[3], m[4], m[5], m[6], int(m[7]), m[8], m[9], m[10])
+			var id = net.member_id(from_slot)
+			if roster.has(id):
+				roster[id].hp = float(m[8])
+				roster[id].downed = int(m[7]) & DiverPlayer.FLAG_DOWN != 0
 		DiverNet.M_SHOT:
 			spawn_bolt(m[2], m[3], 0, false, m[4], 0, sender(from_slot), true)
 			if sender(from_slot): sender(from_slot).remote_shot(m[2])
 		DiverNet.M_START:
-			if from_host: start_run(int(m[1]), int(m[2]))
+			if from_host:
+				retire_saved_dig(str(m[3]))
+				start_run(int(m[1]), int(m[2]), str(m[3]))
 		DiverNet.M_SYNC:
 			if from_host: apply_sync(m)
 		DiverNet.M_FLOOR:
 			if from_host and in_run():
-				depth = int(m[1])
-				party_size = int(m[2])
+				depth = clampi(int(m[1]), 1, 3)
+				party_size = clampi(int(m[2]), 1, DiverNet.MAX_PLAYERS)
 				rng.seed = floor_seed(depth)
 				enter_floor()
 		DiverNet.M_END:
@@ -1347,7 +1805,7 @@ func net_message(from_slot: int, m: Array) -> void:
 			guardian_dead = bool(m[4])
 			run_time = float(m[5])
 			var data: PackedFloat32Array = m[6]
-			for i in range(0, data.size(), 6):
+			for i in range(0, data.size() - 5, 6):
 				var e = enemy_by_id(int(data[i]))
 				if e: e.apply_snapshot(Vector3(data[i + 1], data[i + 2], data[i + 3]), data[i + 4], data[i + 5])
 		DiverNet.M_ATTACK:
@@ -1366,22 +1824,22 @@ func net_message(from_slot: int, m: Array) -> void:
 			if from_host and e: e.remote_die()
 		DiverNet.M_LIGHTNING:
 			if from_host:
-				var p = DiverArt.box(world, (m[2] + m[3]) * 0.5, Vector3(0.06, 0.06, m[2].distance_to(m[3])), Color("a9bdff"), false, 2)
+				var p = DiverArt.box(world, (m[2] + m[3]) * 0.5, Vector3(0.06, 0.06, maxf(0.1, m[2].distance_to(m[3]))), Color("a9bdff"), false, 2)
 				p.look_at(m[3])
 				particles.append({"node": p, "velocity": Vector3.ZERO, "life": 0.13})
 		DiverNet.M_PICKUP:
-			if from_host: make_pickup(int(m[2]), m[3], str(m[4]), float(m[5]), str(m[6]), int(m[7]))
+			if from_host and (m[4] != "relic" or ITEMS.has(m[6])): make_pickup(int(m[2]), m[3], m[4], float(m[5]), m[6], m[7])
 		DiverNet.M_PICKUP_GONE:
 			if not from_host: return
 			for i in range(pickups.size() - 1, -1, -1):
 				if pickups[i].net_id == int(m[2]):
 					if is_instance_valid(pickups[i].node): pickups[i].node.queue_free()
 					pickups.remove_at(i)
-			if int(m[3]) == net.slot and str(m[4]) in ["scrap", "health"]: sound.play(str(m[4]))
+			if int(m[3]) == net.slot and m[4] in ["scrap", "health"]: sound.play(m[4])
 		DiverNet.M_XP:
 			if from_host and in_run(): player.gain_xp(int(m[1]))
 		DiverNet.M_ITEM:
-			if from_host and in_run(): player.add_item(str(m[1]))
+			if from_host and in_run() and ITEMS.has(m[1]): player.add_item(m[1])
 		DiverNet.M_HEAL:
 			if from_host and in_run(): player.heal(float(m[1]))
 		DiverNet.M_RESTORE:
@@ -1389,11 +1847,11 @@ func net_message(from_slot: int, m: Array) -> void:
 		DiverNet.M_CHOICE:
 			if from_host and in_run(): open_relic_choice()
 		DiverNet.M_NOTIFY:
-			if from_host and in_run(): notify(str(m[1]), str(m[2]))
+			if from_host and in_run(): notify(m[1].left(60), m[2].left(160))
 		DiverNet.M_USED:
 			if from_host and int(m[2]) >= 0 and int(m[2]) < interactables.size(): use_interactable(interactables[int(m[2])])
 		DiverNet.M_CLEARED:
-			if from_host and int(m[2]) < rooms.size() and not rooms[int(m[2])].cleared:
+			if from_host and int(m[2]) >= 0 and int(m[2]) < rooms.size() and not rooms[int(m[2])].cleared:
 				rooms[int(m[2])].cleared = true
 				if int(m[2]) == current_room: notify("CHAMBER SECURED", "+5 scrap · caches available")
 		DiverNet.M_HIT:
@@ -1403,4 +1861,9 @@ func net_message(from_slot: int, m: Array) -> void:
 			var index = int(m[2])
 			if net.is_host() and sender(from_slot) and index >= 0 and index < interactables.size(): perform_interact(interactables[index], sender(from_slot))
 		DiverNet.M_FROST:
-			if net.is_host(): frost_burst(m[2], float(m[3]))
+			if net.is_host(): frost_burst(m[2], clampf(float(m[3]), 0, 20))
+		DiverNet.M_CHAT:
+			add_chat(from_slot, net.member_name(from_slot), m[1].strip_edges().left(120), m[2])
+			if m[2] and sender(from_slot): sender(from_slot).speak(m[1].left(40))
+		DiverNet.M_PING:
+			place_ping(from_slot, m[2], m[3].left(16))

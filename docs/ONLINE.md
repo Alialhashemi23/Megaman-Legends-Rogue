@@ -66,9 +66,28 @@ The Windows build can join the same lobbies: **Play Online → Dig Server**, ent
 - At 0 Life a digger goes **down**. Any teammate standing next to them for about 2.5 seconds revives them with 35% Life. The dig ends only when everyone is down. Taking the lift also revives downed diggers.
 - The lift waits until every standing digger is aboard.
 - Menus and part choices don't pause the dig online. While you choose a part you're protected and robots look for other targets.
-- If the host leaves, the lobby closes and everyone's dig ends with its record saved. Guests can come and go freely.
+- Talk with **T** (or Enter), mark a spot, robot, cache or lift for the team with **G** (or middle mouse), and shout quick callouts with **1–4** (*Help!*, *Over here!*, *Nice!*, *Wait up!*). Chat also works in the lobby room.
+- While you're down, the camera follows a standing teammate. Click to switch who you watch.
+- The host can **Remove** a player (they can't rejoin that lobby), **Lock** the lobby so only people already in it can come back, or set a **password** when creating it. Password lobbies show a lock in the browser, and the invite link carries the password.
 
 Records, unlocks and settings are saved per browser (or per PC for the Windows build). Each player keeps their own unlock progress.
+
+## Your run is safe
+
+A dig survives the usual accidents:
+
+| What happens | What the game does |
+|---|---|
+| Someone refreshes or closes the tab | The browser asks first. If they leave anyway, opening the link again (or **Rejoin Dig** on the title) puts them back in the same dig with their exact build: parts, level, Life, even a part choice they hadn't finished. |
+| The host leaves or crashes | Hosting moves to another player within a moment and the dig carries on. The old host can rejoin as a regular player with their build. |
+| Wi-Fi drops briefly | The dig freezes for that player with a *Reconnecting…* banner, then they're back automatically (it keeps trying for 90 seconds). |
+| Everyone drops out | The server keeps the lobby and the host's latest checkpoint for 15 minutes (`RUN_GRACE_MINUTES`). The first player back resumes the dig and everyone else rejoins with the same link. |
+| The server restarts | Each browser keeps its own copy of the dig. **Rejoin Dig** recreates the lobby under the same code and restores it, and friends rejoin with the same link. |
+| A solo run gets interrupted | **Continue Dig** on the title screen picks it up again. |
+
+The game saves every 5 seconds and immediately whenever a build changes, so at most a few seconds of robot fighting are ever lost. Starting a new dig over a saved one asks for confirmation, and the abandoned dig's machines still count toward unlocks. Leaving a lobby, ending a dig for everyone and removing players all need a second click.
+
+Everyone in a lobby must run the same game version. After you update the server, players with an old tab open are asked to refresh.
 
 ## Updating the game
 
@@ -87,7 +106,8 @@ The export needs Godot 4.7.1 with its **Web** export templates (Editor → Manag
 |---|---|
 | Page loads but stays on a blank or blue screen | The game needs cross-origin isolation headers. Serve it through `server/server.js`, not another static host. Open it via `https://your-domain` or `http://localhost:8080`, never a LAN IP over plain HTTP: browsers disable the needed features there. |
 | "Could not reach the dig server" | The tunnel or server is down. Check `docker compose ps` or the Host-Online window. In Cloudflare, the tunnel must show **Healthy**. |
-| A link says the lobby no longer exists | The host closed the lobby or left. Lobbies only live while their host is connected. |
+| A link says the lobby no longer exists | Everyone left more than 15 minutes ago (or the server restarted and nobody has rejoined yet). Whoever has the dig saved can choose **Rejoin Dig** to bring it back under the same code. |
+| "Different version of the game" | The server was updated. Refresh the page. |
 | Lag or rubber-banding | Every packet goes through the server PC. Use a wired connection for it if possible, and the host should have a decent connection too, since the host's browser runs the robots. |
 | Joined but can't aim | Click inside the game once to capture the mouse. |
 

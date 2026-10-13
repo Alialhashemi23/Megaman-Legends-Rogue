@@ -12,7 +12,9 @@ The user authorized this repository after the initial local-only development: ht
 
 Play in the browser with up to four diggers. Choose **Play Online** on the title screen to create a public or private lobby, browse open lobbies, or join by code. **Copy Invite Link** gives friends a link that opens the game straight into your lobby. Friends can also join a dig already in progress.
 
-Everyone shares the run: the same ruins and robots, shared scrap and experience. Builds are personal: each cache offers every digger their own part, and each guardian drops a core per digger. Robots grow tougher with each digger. A digger at 0 Life goes down; stand beside them to revive them. The dig ends only when the whole team is down, and the lift waits for everyone. Online menus don't pause the action.
+Everyone shares the run: the same ruins and robots, shared scrap and experience. Builds are personal: each cache offers every digger their own part, and each guardian drops a core per digger. Robots grow tougher with each digger. A digger at 0 Life goes down; stand beside them to revive them, and while down you watch a teammate. The dig ends only when the whole team is down, and the lift waits for everyone. Online menus don't pause the action. Chat with T, ping with G and use 1–4 for quick callouts. Hosts can remove players, lock the lobby or set a password.
+
+Runs are protected against mishaps (pass 10): a refresh, crash or dropped connection brings you back into the same dig with your exact build; if the host leaves, hosting moves to another player; if everyone drops out, the server holds the dig for 15 minutes; and every browser keeps its own checkpoint, so even a server restart can be resumed with **Rejoin Dig**. Solo digs get **Continue Dig** too.
 
 To host it on your domain, see [docs/ONLINE.md](docs/ONLINE.md): `docker compose up -d --build` with a Cloudflare Tunnel token, or **Host-Online.cmd** without Docker. The web bundle is `build/RelicDiver-Web.zip`; rebuild it with `tools/package-web.ps1` or `tools/package-web.sh`. Implementation notes are in [docs/handoff/NETWORK.md](docs/handoff/NETWORK.md).
 

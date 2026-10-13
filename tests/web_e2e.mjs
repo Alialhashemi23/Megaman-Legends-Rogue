@@ -54,10 +54,10 @@ try {
   const host = await openPage("host", `${base}/`);
   await waitLog(host, /Godot Engine/);
   await host.waitForTimeout(6000);
-  await click(host, 300, 522); // Title → Play Online
+  await click(host, 300, 498); // Title → Play Online
   await host.waitForTimeout(2000);
   await host.screenshot({ path: path.join(shots, "1-lobby-browser.png") });
-  await click(host, 288, 429); // Create Public Lobby
+  await click(host, 288, 508); // Create Public Lobby
   await waitLog(host, /ONLINE: joined lobby (\w+) as slot 1/);
   const code = host.logs.find((l) => l.startsWith("ONLINE: joined lobby")).split(" ")[3];
   const invite = new URL(host.url());
@@ -89,7 +89,27 @@ try {
   await host.waitForTimeout(2500);
   await host.screenshot({ path: path.join(shots, "4-dig-host.png"), timeout: 180000 });
   await guest.screenshot({ path: path.join(shots, "5-dig-guest.png"), timeout: 180000 });
-  console.log("WEB_E2E_PASS: menus, lobby, invite link, join, shared dig start");
+
+  // Mishap 1: the guest reloads the tab. The page asks first, then comes back into the same dig.
+  const prompts = [];
+  for (const page of [host, guest]) page.on("dialog", (d) => { prompts.push(d.type()); d.accept(); });
+  await guest.waitForTimeout(6000); // let a checkpoint land in browser storage
+  const runId = (guest.logs.find((l) => l.includes("dig started")) || "").match(/seed=(\d+)/)[1];
+  guest.logs = [];
+  await guest.reload();
+  await waitLog(guest, /ONLINE: saved dig found .* online=true/, 120000);
+  await waitLog(guest, /ONLINE: synced into dig/, 120000);
+  if (!prompts.includes("beforeunload")) throw new Error("leaving mid-dig should ask for confirmation");
+  console.log(`[guest] back in dig after reload (seed ${runId})`);
+
+  // Mishap 2: the host reloads. Hosting moves to the guest and the host rejoins.
+  host.logs = [];
+  await host.reload();
+  await waitLog(guest, /ONLINE: now hosting/, 120000);
+  await waitLog(host, /ONLINE: synced into dig/, 180000);
+  console.log("[host] back in dig as a guest; the guest kept it running");
+  await guest.screenshot({ path: path.join(shots, "6-after-reloads-guest.png"), timeout: 180000 });
+  console.log("WEB_E2E_PASS: menus, lobby, invite link, join, shared dig, guest reload, host reload + migration");
 } catch (error) {
   failed = true;
   let n = 0;

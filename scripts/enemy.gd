@@ -361,7 +361,7 @@ func die() -> void:
 		# Each digger gets their own guardian core.
 		var diggers = game.all_players()
 		for i in diggers.size():
-			game.drop_relic(position + Vector3((i - (diggers.size() - 1) * 0.5) * 1.3, 0.8, 1), diggers[i].slot if diggers.size() > 1 else 0)
+			game.drop_relic(position + Vector3((i - (diggers.size() - 1) * 0.5) * 1.3, 0.8, 1), diggers[i].player_id if diggers.size() > 1 else "")
 	elif game.rng.randf() < 0.07 + killer.count("clover") * 0.025:
 		game.drop_relic(position + Vector3.UP)
 	queue_free()

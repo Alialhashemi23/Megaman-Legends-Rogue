@@ -25,7 +25,7 @@ For each issue, note character, descent, room or nearby landmark, weapon/parts, 
 | Progression | Drop frequency, stack balance, cache prices and unlock pacing | Complete prototype systems; balance unproven |
 | Character expression | Additional faithful poses or per-character personality | Twelve authored clips for each; mechanics shared |
 | Accessibility/input | Controller support and more settings | Not implemented |
-| Run continuity | Mid-run resume | Not implemented; design/save format undecided |
+| Run continuity | Mid-run resume | Implemented in pass 10 (checkpoints, Continue/Rejoin Dig); see NETWORK.md |
 | Boss identity | Distinct meshes and silhouettes | Guardians currently share a base silhouette |
 
 This list is a set of possibilities, not authorization to implement every feature. Prioritize the user's next request. Keep exploration unhurried, power reset between runs, the Legends art direction, and the existing playable loop intact.

@@ -32,7 +32,10 @@ var footstep_time = 0.0
 # Online co-op: remote teammates are proxies driven by their owner's state packets.
 var is_local = true
 var slot = 0
+var player_id = ""
 var display_name = ""
+var bubble: Label3D
+var bubble_time = 0.0
 var downed = false
 var revive = 0.0
 var aiming_now = false
@@ -107,7 +110,7 @@ func _physics_process(dt: float) -> void:
 		remote_process(dt)
 		return
 	# Online menus and choices keep the world running; the digger simply stands still.
-	var controls = game.mode == "play" and not downed
+	var controls = game.mode == "play" and not downed and not game.chat_open
 	cooldown -= dt
 	invincible -= dt
 	dash_cooldown -= dt
@@ -172,7 +175,13 @@ func _physics_process(dt: float) -> void:
 	update_camera(dt)
 
 func update_camera(dt: float) -> void:
-	var pivot = global_position + Vector3(0, 1.55, 0)
+	update_bubble(dt)
+	# While down, the camera follows a standing teammate instead.
+	var focus: Node3D = self
+	if downed and is_local:
+		var mate = game.spectate_target()
+		if mate: focus = mate
+	var pivot = focus.global_position + Vector3(0, 1.55, 0)
 	var basis_cam = Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, pitch)
 	var desired = pivot + basis_cam * Vector3(-0.78, 0.60, 5.8)
 	var ray = PhysicsRayQueryParameters3D.create(pivot, desired, 1)
@@ -180,7 +189,7 @@ func update_camera(dt: float) -> void:
 	if not hit.is_empty(): desired = hit.position + hit.normal * 0.25
 	camera.global_position = camera.global_position.lerp(desired, minf(dt * 20, 1))
 	camera.rotation = Vector3(pitch, yaw, 0)
-	if is_instance_valid(lock_target): camera.look_at(lock_target.global_position + Vector3.UP * (2.5 if lock_target.kind == 3 else 1.15))
+	if is_instance_valid(lock_target) and focus == self: camera.look_at(lock_target.global_position + Vector3.UP * (2.5 if lock_target.kind == 3 else 1.15))
 	camera.fov = lerpf(camera.fov, 67 + (recoil * 0.8 if game.camera_effects else 0.0), minf(1, dt * 14))
 	var amount = trauma * 0.09 if game.camera_effects else 0.0
 	camera.h_offset = sin(Time.get_ticks_msec() * 0.061) * amount
@@ -268,7 +277,7 @@ func add_item(id: String) -> void:
 	game.save_meta()
 	game.sound.play("loot")
 	game.notify("%s ×%d" % [game.ITEMS[id].name, count(id)], game.ITEMS[id].desc)
-	game.send_info()
+	game.build_changed()
 
 func gain_xp(amount: int) -> void:
 	xp += amount
@@ -278,6 +287,7 @@ func gain_xp(amount: int) -> void:
 		xp_required = 10 + level * 6
 		heal(12)
 		game.queue_level = true
+	game.build_changed()
 
 # A downed digger revives after a teammate stands close for a few seconds.
 func update_revive(dt: float) -> void:
@@ -293,6 +303,7 @@ func revive_now(fraction: float, helper: String = "") -> void:
 	hp = max_hp() * fraction
 	invincible = 1.5
 	visual.current_clip = ""
+	game.build_changed()
 	if helper != "": game.notify("BACK ON YOUR FEET", "%s pulled you up. Restored %d%% Life." % [helper, int(fraction * 100)])
 
 func state_flags() -> int:
@@ -322,6 +333,7 @@ func apply_state(pos: Vector3, vel: Vector3, new_yaw: float, new_pitch: float, i
 	if downed != was_down: visual.current_clip = ""
 
 func remote_process(dt: float) -> void:
+	update_bubble(dt)
 	net_age += dt
 	recoil = move_toward(recoil, 0.0, dt * 8)
 	footstep_time -= dt
@@ -345,3 +357,17 @@ func remote_shot(start: Vector3) -> void:
 	visual.arm_weight = 1.0
 	game.muzzle_flash(start, Color("ffda82"), 0.28 if weapon == 2 else 0.16)
 	game.sound.play(["shot", "needle", "siege"][weapon], 1.0, start)
+
+# Quick-chat callouts float above the digger for a few seconds.
+func speak(text: String) -> void:
+	if not is_instance_valid(bubble):
+		bubble = DiverArt.label(self, Vector3(0, 2.95, 0), "", Color("fff9df"), 44)
+		bubble.no_depth_test = true
+	bubble.text = text
+	bubble.visible = true
+	bubble_time = 3.0
+
+func update_bubble(dt: float) -> void:
+	if bubble_time <= 0: return
+	bubble_time -= dt
+	if is_instance_valid(bubble): bubble.visible = bubble_time > 0

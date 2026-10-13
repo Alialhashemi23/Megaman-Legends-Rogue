@@ -3,6 +3,7 @@
 //   PORT       HTTP port (default 8080)
 //   WEB_ROOT   exported Godot web build (default ../build/web)
 //   MAX_LOBBIES  concurrent lobby cap (default 200)
+//   RUN_GRACE_MINUTES  how long an empty lobby with a dig in progress waits for its diggers (default 15)
 //
 // Serves the game with the cross-origin isolation headers Godot's threaded web
 // build needs, and upgrades /ws to the lobby protocol described in lobby.js.
@@ -14,10 +15,10 @@ import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { WebSocketServer } from "ws";
-import { LobbyRegistry, cleanText, routePacket } from "./lobby.js";
+import { LobbyRegistry, CHECKPOINT_TARGET, cleanCode, cleanText, routePacket } from "./lobby.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const PROTOCOL_VERSION = 1;
+const PROTOCOL_VERSION = 2;
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -33,8 +34,8 @@ const MIME = {
 };
 const COMPRESSIBLE = new Set([".html", ".js", ".wasm", ".pck", ".json", ".svg", ".txt", ".css", ".md"]);
 
-export function createServer({ port = 8080, webRoot = path.join(here, "..", "build", "web"), maxLobbies = 200, log = console.log } = {}) {
-  const registry = new LobbyRegistry({ maxLobbies });
+export function createServer({ port = 8080, webRoot = path.join(here, "..", "build", "web"), maxLobbies = 200, log = console.log, runGraceMs, idleGraceMs } = {}) {
+  const registry = new LobbyRegistry({ maxLobbies, runGraceMs, idleGraceMs });
   const compressed = new Map();
   const root = path.resolve(webRoot);
 
@@ -170,23 +171,46 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
     for (const member of lobby.members.values()) send(member, { t: "lobby", lobby: description, slot: member.slot });
   }
 
-  function leave(client, reason) {
-    const result = registry.leave(client);
+  // Tell the remaining members someone left, and who hosts now.
+  function announceLeave(result) {
     if (!result) return;
-    const { lobby, slot, closed } = result;
-    if (closed) {
-      for (const member of lobby.members.values()) send(member, { t: "closed", reason });
-      log(`lobby ${lobby.code} closed (${reason})`);
-    } else {
-      for (const member of lobby.members.values()) send(member, { t: "left", slot });
-      broadcastLobby(lobby);
+    const { lobby, slot, newHost } = result;
+    for (const member of lobby.members.values()) {
+      send(member, { t: "left", slot });
+      if (newHost) send(member, { t: "host", slot: newHost });
     }
+    if (newHost) log(`lobby ${lobby.code}: host moved to slot ${newHost}`);
+    if (lobby.members.size === 0) log(`lobby ${lobby.code} is empty; keeping it for returning diggers`);
+    else broadcastLobby(lobby);
+  }
+
+  function leave(client) {
+    announceLeave(registry.leave(client));
+  }
+
+  function enter(client, outcome, extra = {}) {
+    const { lobby, takeover, replaced, replacedResult } = outcome;
+    if (replaced) {
+      send(replaced, { t: "replaced" });
+      announceLeave(replacedResult);
+    }
+    const checkpoint = takeover && lobby.state === "run" && lobby.checkpoint;
+    send(client, { t: "joined", code: lobby.code, slot: client.slot, hostSlot: lobby.hostSlot, takeover, checkpoint: Boolean(checkpoint), password: lobby.password, ...extra });
+    if (checkpoint) client.ws.send(Buffer.concat([Buffer.from([CHECKPOINT_TARGET]), checkpoint]), { binary: true });
+    for (const member of lobby.members.values()) if (member !== client) send(member, { t: "entered", slot: client.slot, name: client.name, id: client.playerId });
+    broadcastLobby(lobby);
+  }
+
+  function isHost(client) {
+    return client.lobby && client.slot === client.lobby.hostSlot;
   }
 
   function handleCommand(client, message) {
     switch (message.t) {
       case "hello":
         client.name = cleanText(message.name, 16) || "Digger";
+        client.playerId = cleanText(message.id, 40) || `anon-${client.id}`;
+        client.version = Number.isInteger(message.v) ? message.v : 0;
         return send(client, { t: "welcome", id: client.id, v: PROTOCOL_VERSION });
       case "name":
         client.name = cleanText(message.name, 16) || client.name;
@@ -195,29 +219,45 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
       case "list":
         return send(client, { t: "lobbies", lobbies: registry.publicList() });
       case "create": {
-        leave(client, "host_left");
-        const { lobby, error } = registry.create(client, { name: message.name, isPublic: message.public });
-        if (error) return send(client, { t: "error", code: error });
-        log(`lobby ${lobby.code} created by ${client.name}`);
-        send(client, { t: "joined", code: lobby.code, slot: client.slot });
-        return broadcastLobby(lobby);
+        leave(client);
+        const outcome = registry.create(client, { name: message.name, isPublic: message.public, password: message.password });
+        if (outcome.error) return send(client, { t: "error", code: outcome.error });
+        log(`lobby ${outcome.lobby.code} created by ${client.name}`);
+        return enter(client, outcome);
       }
-      case "join": {
-        if (client.lobby && client.lobby.code === cleanText(message.code, 12).toUpperCase()) return;
-        leave(client, "host_left");
-        const { lobby, error } = registry.join(client, message.code);
-        if (error) return send(client, { t: "error", code: error });
-        send(client, { t: "joined", code: lobby.code, slot: client.slot });
-        for (const member of lobby.members.values()) if (member !== client) send(member, { t: "entered", slot: client.slot, name: client.name });
-        return broadcastLobby(lobby);
+      case "join":
+      case "resume": {
+        const code = cleanCode(message.code);
+        if (client.lobby && client.lobby.code === code) return;
+        leave(client);
+        let outcome = registry.join(client, code, message.password);
+        // Resuming a lobby the server forgot (e.g. after a restart) recreates it under the same code.
+        if (outcome.error === "not_found" && message.t === "resume") {
+          outcome = registry.create(client, { name: message.name, isPublic: message.public, password: message.password, code });
+          if (!outcome.error) return enter(client, outcome, { recreated: true });
+        }
+        if (outcome.error) return send(client, { t: "error", code: outcome.error });
+        return enter(client, outcome);
       }
       case "leave":
-        return leave(client, "host_left");
+        return leave(client);
+      case "kick": {
+        const target = registry.kick(client, Number(message.slot));
+        if (!target) return;
+        send(target, { t: "kicked" });
+        for (const member of client.lobby.members.values()) send(member, { t: "left", slot: Number(message.slot) });
+        return broadcastLobby(client.lobby);
+      }
+      case "lock":
+        if (!isHost(client)) return;
+        client.lobby.locked = message.locked === true;
+        return broadcastLobby(client.lobby);
       case "status":
         // The host reports whether a run is underway so the browser can show it.
-        if (!client.lobby || client.slot !== 1) return;
+        if (!isHost(client)) return;
         client.lobby.state = message.state === "run" ? "run" : "lobby";
         client.lobby.depth = Math.max(1, Math.min(3, Number(message.depth) || 1));
+        if (client.lobby.state === "lobby") client.lobby.checkpoint = null;
         return broadcastLobby(client.lobby);
       case "ping":
         return send(client, { t: "pong", time: message.time });
@@ -227,7 +267,8 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
   }
 
   wss.on("connection", (ws) => {
-    const client = { id: nextId++, ws, name: "Digger", lobby: null, slot: 0, tokens: 480, stamp: Date.now() };
+    const client = { id: nextId++, ws, name: "Digger", playerId: "", version: 0, lobby: null, slot: 0, tokens: 480, stamp: Date.now() };
+    client.playerId = `anon-${client.id}`;
     ws.on("message", (data, isBinary) => {
       // Token bucket: generous for 60 Hz batched game traffic, closes floods.
       const now = Date.now();
@@ -249,9 +290,12 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
       }
       if (message && typeof message.t === "string") handleCommand(client, message);
     });
-    ws.on("close", () => leave(client, "host_left"));
+    ws.on("close", () => leave(client));
     ws.on("error", () => {});
   });
+
+  // Expire abandoned lobbies even when nobody asks for the list.
+  const pruner = setInterval(() => registry.prune(), 60000);
 
   // Keep idle sockets alive through Cloudflare (100 s idle limit) and reap dead ones.
   const heartbeat = setInterval(() => {
@@ -265,7 +309,10 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
     ws.relicAlive = true;
     ws.on("pong", () => { ws.relicAlive = true; });
   });
-  server.on("close", () => clearInterval(heartbeat));
+  server.on("close", () => {
+    clearInterval(heartbeat);
+    clearInterval(pruner);
+  });
 
   return {
     server,
@@ -286,6 +333,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     port: Number(process.env.PORT) || 8080,
     webRoot: process.env.WEB_ROOT || path.join(here, "..", "build", "web"),
     maxLobbies: Number(process.env.MAX_LOBBIES) || 200,
+    runGraceMs: (Number(process.env.RUN_GRACE_MINUTES) || 15) * 60000,
   });
   app.listen().then((port) => {
     console.log(`Relic Diver server listening on http://0.0.0.0:${port}`);

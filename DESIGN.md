@@ -44,9 +44,11 @@ Music should suggest an adventurous late-1990s console world through melodic ele
 
 The user asked for seamless browser co-op on their own domain: make a lobby, send friends a link or let them join from a lobby browser, and play together. Accepted choices: up to four diggers; one shared run with personal builds (shared scrap and XP, every digger picks their own part from each cache, one guardian core each); downed diggers are revived by a teammate standing close, and the run ends when everyone is down; open access (public lobbies listed, private lobbies by link/code). Robots scale with party size. Online menus and choices don't pause the dig. Run power still resets; unlocks stay per player.
 
+The user then asked that runs persist through errors and mishaps before further work (pass 10). Accepted: a host leaving never ends the dig (hosting migrates); refreshes, crashes and dropped connections return players to the same dig with their exact build; empty lobbies and server restarts can be resumed from checkpoints; solo digs can be continued after closing the game. Mid-run resume is therefore now part of the design. Co-op communication (chat, pings, callouts, spectating) and host lobby controls (remove, lock, password) are in scope.
+
 ## Scope and open decisions
 
-This is a playable prototype with a complete run loop, not a finished game. Controller support, mid-run resume, authored story, a surface hub, environmental puzzles, extensive vertical traversal and unique boss meshes are not implemented. Their exact designs have not been approved. Do not claim them as complete or invent requirements for them.
+This is a playable prototype with a complete run loop, not a finished game. Controller support, authored story, a surface hub, environmental puzzles, extensive vertical traversal and unique boss meshes are not implemented. Their exact designs have not been approved. Do not claim them as complete or invent requirements for them.
 
 The next priorities should follow human playtesting: movement feel, camera visibility, target readability, useful drops, exploration density, guardian fairness and sound balance. Preserve the direction above when changing implementation. See docs/handoff/PLAYTEST-ROADMAP.md for a practical review order.
 

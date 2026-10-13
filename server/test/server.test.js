@@ -25,8 +25,10 @@ after(async () => {
 });
 
 class Client {
-  constructor(name) {
+  constructor(name, id = name.toLowerCase(), v = 2) {
     this.name = name;
+    this.id = id;
+    this.v = v;
     this.queue = [];
     this.waiters = [];
   }
@@ -39,7 +41,7 @@ class Client {
       else this.queue.push(message);
     });
     await new Promise((resolve, reject) => { this.ws.once("open", resolve); this.ws.once("error", reject); });
-    this.send({ t: "hello", name: this.name });
+    this.send({ t: "hello", name: this.name, id: this.id, v: this.v });
     await this.next((m) => m.t === "welcome");
     return this;
   }
@@ -65,19 +67,84 @@ test("cleanText strips control characters and limits length", () => {
   assert.equal(cleanText(42, 16), "");
 });
 
+const member = (name) => ({ name, playerId: name, version: 2 });
+
 test("lobby codes are unique and slots fill in order", () => {
   const registry = new LobbyRegistry();
-  const host = { name: "Host" };
+  const host = member("Host");
   const { lobby } = registry.create(host, { name: "Dig", isPublic: true });
   assert.match(lobby.code, /^[A-Z2-9]{5}$/);
-  const guests = [1, 2, 3].map((n) => ({ name: `G${n}` }));
+  const guests = [1, 2, 3].map((n) => member(`G${n}`));
   for (const g of guests) assert.ok(registry.join(g, lobby.code.toLowerCase()).lobby);
   assert.deepEqual(guests.map((g) => g.slot), [2, 3, 4]);
-  assert.equal(registry.join({ name: "Late" }, lobby.code).error, "full");
+  assert.equal(registry.join(member("Late"), lobby.code).error, "full");
   registry.leave(guests[0]);
-  const late = { name: "Late" };
+  const late = member("Late");
   registry.join(late, lobby.code);
   assert.equal(late.slot, 2, "freed slot is reused");
+});
+
+test("host role migrates, empty lobbies wait out a grace period", () => {
+  let clock = 1000;
+  const registry = new LobbyRegistry({ now: () => clock, runGraceMs: 60000, idleGraceMs: 5000 });
+  const host = member("Host");
+  const guest = member("Guest");
+  const { lobby } = registry.create(host, { name: "Dig" });
+  registry.join(guest, lobby.code);
+  const left = registry.leave(host);
+  assert.equal(left.newHost, 2, "remaining digger becomes host");
+  assert.equal(lobby.hostSlot, 2);
+  lobby.state = "run";
+  registry.leave(guest);
+  assert.ok(registry.lobbies.has(lobby.code), "empty lobby is kept");
+  assert.equal(registry.publicList().length, 0, "empty lobbies are not listed");
+  clock += 30000;
+  const back = member("Host");
+  const rejoin = registry.join(back, lobby.code);
+  assert.equal(rejoin.takeover, true, "first digger back takes over hosting");
+  assert.equal(lobby.hostSlot, back.slot);
+  registry.leave(back);
+  clock += 60001;
+  registry.prune();
+  assert.ok(!registry.lobbies.has(lobby.code), "lobby expires after the grace period");
+});
+
+test("same identity replaces its old connection", () => {
+  const registry = new LobbyRegistry();
+  const host = member("Host");
+  const guest = member("Guest");
+  const { lobby } = registry.create(host, { name: "Dig" });
+  registry.join(guest, lobby.code);
+  const again = member("Guest");
+  const outcome = registry.join(again, lobby.code);
+  assert.equal(outcome.replaced, guest);
+  assert.equal(lobby.members.size, 2);
+  assert.equal(again.slot, 2);
+  // The host refreshing hands hosting to the live guest instead of starting fresh.
+  const hostAgain = member("Host");
+  const swap = registry.join(hostAgain, lobby.code);
+  assert.equal(swap.replacedResult.newHost, 2);
+  assert.equal(swap.takeover, false);
+  assert.equal(lobby.hostSlot, 2);
+});
+
+test("kick, lock, password and version rules", () => {
+  const registry = new LobbyRegistry();
+  const host = member("Host");
+  const { lobby } = registry.create(host, { name: "Dig", password: "relic" });
+  assert.equal(registry.join(member("Pal"), lobby.code, "wrong").error, "password");
+  const pal = member("Pal");
+  assert.ok(registry.join(pal, lobby.code, "relic").lobby);
+  assert.equal(registry.kick(pal, 1), null, "only the host can kick");
+  assert.equal(registry.kick(host, pal.slot), pal);
+  assert.equal(registry.join(member("Pal"), lobby.code, "relic").error, "banned");
+  const friend = member("Friend");
+  registry.join(friend, lobby.code, "relic");
+  lobby.locked = true;
+  assert.equal(registry.join(member("Stranger"), lobby.code, "relic").error, "locked");
+  registry.leave(friend);
+  assert.ok(registry.join(member("Friend"), lobby.code).lobby, "returning diggers skip lock and password");
+  assert.equal(registry.join({ name: "Old", playerId: "old", version: 1 }, lobby.code).error, "version");
 });
 
 test("serves the web build with isolation headers and compression", async () => {
@@ -142,12 +209,39 @@ test("create, browse, join, relay and host departure", async () => {
   browser.send({ t: "join", code: hiddenCode });
   assert.equal((await browser.next((m) => m.t === "joined")).slot, 2);
 
+  // The host's checkpoint is stored; guests can't overwrite it.
+  host.ws.send(Buffer.from([255, 1, 2, 3]));
+  guest.ws.send(Buffer.from([255, 9, 9]));
   host.close();
-  const closed = await guest.next((m) => m.t === "closed");
-  assert.equal(closed.reason, "host_left");
+  assert.equal((await guest.next((m) => m.t === "host")).slot, 2, "guest becomes host when the host leaves");
+  guest.close();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const returning = await new Client("Volnutt").open();
+  returning.send({ t: "resume", code });
+  const back = await returning.next((m) => m.t === "joined");
+  assert.equal(back.takeover, true);
+  assert.equal(back.checkpoint, true);
+  assert.deepEqual([...(await returning.next((m) => m.binary)).binary], [255, 1, 2, 3], "returning digger receives the stored checkpoint");
   browser.send({ t: "join", code: "ZZZZZ" });
   assert.equal((await browser.next((m) => m.t === "error")).code, "not_found");
-  for (const c of [guest, browser, secret]) c.close();
+  for (const c of [returning, browser, secret]) c.close();
+});
+
+test("resume recreates a forgotten lobby under its old code", async () => {
+  const digger = await new Client("Survivor").open();
+  digger.send({ t: "resume", code: "K7QX2", name: "Survivor's Dig", public: false });
+  const joined = await digger.next((m) => m.t === "joined");
+  assert.equal(joined.code, "K7QX2");
+  assert.equal(joined.recreated, true);
+  assert.equal(joined.slot, 1);
+  const old = await new Client("Old", "old", 1).open();
+  old.send({ t: "join", code: "K7QX2" });
+  assert.equal((await old.next((m) => m.t === "error")).code, "version");
+  const refreshed = await new Client("Survivor").open();
+  refreshed.send({ t: "join", code: "K7QX2" });
+  await refreshed.next((m) => m.t === "joined");
+  await digger.next((m) => m.t === "replaced");
+  for (const c of [digger, old, refreshed]) c.close();
 });
 
 test("guest departure notifies the host and frees the slot", async () => {

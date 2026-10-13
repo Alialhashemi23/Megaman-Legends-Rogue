@@ -1,5 +1,16 @@
 # Local build history
 
+## 10 — Runs that survive mishaps, plus co-op communication
+
+- Host migration: when the host leaves or crashes, the next digger takes over hosting from the world they already see and the dig continues.
+- Stable player identity and a mirrored roster of every digger's build: a refresh, crash or rejoin returns the exact build (parts, level, experience, Life, downed state, an unfinished part choice and queued level-ups).
+- Automatic reconnection for dropped connections (the dig freezes with a *Reconnecting…* banner for up to 90 seconds). A newer tab replaces an older one cleanly.
+- Checkpoints: every machine saves the dig every 5 seconds and on every build change (atomic writes with a backup copy), and the host also stores one on the server. Empty lobbies wait 15 minutes for returning diggers; a dig can also be recreated under its old code after a server restart. Solo digs gain **Continue Dig**.
+- Mishap guards: the browser asks before leaving mid-dig; leaving, ending for everyone, removing players and replacing a saved dig need a second click; abandoned digs still count their machines.
+- Hardening: protocol versioning (mismatched builds can't share a lobby), shape validation for every network message, and guarded lobby commands.
+- Co-op features: spectator camera while down, text chat (lobby and dig), team pings, quick-chat callouts with speech bubbles, host kick, lobby lock and optional lobby passwords.
+- New checks: run persistence suite (24), server suite (9), a seven-process network gauntlet (refresh, Wi-Fi drop, host crash, host return, empty-lobby resume, server-restart resume) and browser reload tests.
+
 ## 09 — Online co-op in the browser
 
 - Added a web export (Godot threaded WebAssembly build) and a small Node server that hosts it with the required cross-origin isolation headers, pre-compressed downloads and a WebSocket lobby relay. Deployment targets the user's domain through a Cloudflare Tunnel (Docker Compose or Host-Online.cmd).

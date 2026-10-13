@@ -26,7 +26,7 @@ For another operating system, use a compatible Godot editor and open project.god
 
 ## Persistence precautions
 
-Source profiles are save/archive.json and save/audio.json. Portable profiles are build/save/ (or the extracted bundle's save/). They are separate. Preserve existing profiles, and never commit them. Closing a run does not currently create a resume save. Progress records are written on completed/ended runs; discoveries are recorded when parts are fitted.
+Source profiles are save/archive.json and save/audio.json. Portable profiles are build/save/ (or the extracted bundle's save/). They are separate. Preserve existing profiles, and never commit them. Runs in progress are checkpointed to `save/run_checkpoint.dat` (web: `user://run_checkpoint.dat`) and resumed with Continue/Rejoin Dig; finishing a run deletes it. Tests pass isolated `--checkpoint-path=` or set `checkpoint_path`. Progress records are written on completed/ended runs; discoveries are recorded when parts are fitted.
 
 Tests and captures must use isolated save paths. game.smoke_test suppresses both saving and sound. To capture sound, leave it false and set game.save_path and sound.settings_path to test-only locations before events that write.
 
@@ -44,6 +44,6 @@ $env:LOCALAPPDATA = $env:APPDATA
 .\tools\Godot_v4.7.1-stable_win64_console.exe --headless --path . --export-pack 'Windows Desktop' build/RelicDiver.pck
 ```
 
-Use only relevant checks after changes. Other suites: tests/ui_checks.gd, tests/audio_checks.gd; built-in --smoke-test, --combat-test and --persistence-test. Online: `server/` npm test, `tests/net_test.sh <godot>`, `tests/web_e2e.mjs` and `tests/coop_preview.gd` (see NETWORK.md). After gameplay changes, also refresh the web bundle with tools/package-web.ps1 or tools/package-web.sh. Latest motion pass: character 3868/0 failures, combat 3207/0, movement traversal passed in source and packed game, export and GPU launch passed. Earlier UI/audio suites passed before that animation-only change.
+Use only relevant checks after changes. Other suites: tests/ui_checks.gd, tests/audio_checks.gd; built-in --smoke-test, --combat-test and --persistence-test. Online and persistence: `server/` npm test, `tests/run_resume_checks.gd`, `tests/net_test.sh <godot>`, `tests/web_e2e.mjs` and `tests/coop_preview.gd` (see NETWORK.md). After gameplay changes, also refresh the web bundle with tools/package-web.ps1 or tools/package-web.sh. Latest motion pass: character 3868/0 failures, combat 3207/0, movement traversal passed in source and packed game, export and GPU launch passed. Earlier UI/audio suites passed before that animation-only change.
 
 Export filters omit tools, tests, backups, screenshots and saves, while retaining required asset/font notices. Refresh build docs and recreate the portable ZIP after shipping a changed pack; never replace an existing user's save folder as part of rebuilding. The full editor executable currently acts as the portable runtime, making the bundle larger than a normal release-template export.
