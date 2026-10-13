@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="256" viewBox="0 0 512 256">
+<g stroke="#111c48" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+<!-- Lens -->
+<g transform="translate(0 0)"><path d="M15 50L24 39L35 45L26 56Z" fill="#a87532"/><circle cx="35" cy="27" r="19" fill="#e9b956"/><circle cx="35" cy="27" r="13" fill="#3e9cce"/><path d="M27 20L39 15L46 25L36 37L25 31Z" fill="#8ae0ec" stroke="none"/><path d="M29 20L36 18" stroke="#f9ffe6" stroke-width="4"/></g>
+<!-- Spring -->
+<g transform="translate(64 0)"><path d="M19 9H44V15H19ZM17 49H46V56H17Z" fill="#d3e5e7"/><path d="M20 16L44 24L20 32L44 40L20 48" fill="none" stroke="#15365c" stroke-width="12"/><path d="M20 16L44 24L20 32L44 40L20 48" fill="none" stroke="#73d5db" stroke-width="7"/><path d="M20 16L36 21M20 32L36 37" fill="none" stroke="#d6ffff" stroke-width="2"/></g>
+<!-- Heart -->
+<g transform="translate(128 0)"><path d="M32 55L8 31V19L18 10H27L32 17L38 10H47L57 19V31Z" fill="#ef7774"/><path d="M32 19V43L16 28V20L21 16H26Z" fill="#ffb0a0" stroke="none"/><path d="M10 32H24L28 25L34 40L39 30H55" fill="none" stroke="#fff1cb" stroke-width="4"/></g>
+<!-- Boots -->
+<g transform="translate(192 0)"><path d="M12 9H31L34 35L48 39L55 48V56H13L8 48L12 36Z" fill="#65a8df"/><path d="M13 10H30V18H13ZM11 46H52V52H13Z" fill="#c0e9ed"/><path d="M16 23H26V33H16" fill="#365aab"/><path d="M4 25H8M3 33H8M2 41H7" stroke="#ffcf5e"/></g>
+<!-- Shell -->
+<g transform="translate(256 0)"><path d="M32 7L54 17L51 40L32 57L13 40L10 17Z" fill="#a9c5a6"/><path d="M32 14L46 21L43 36L32 47Z" fill="#5b8d8a"/><path d="M18 21L20 34L27 40V18Z" fill="#e7eed1" stroke="none"/><path d="M20 24H25M39 24H44" stroke="#516c79"/></g>
+<!-- Moss -->
+<g transform="translate(320 0)"><path d="M22 56L27 35L44 15" stroke="#ae7b3d" stroke-width="6" fill="none"/><path d="M28 36C7 37 8 17 10 13C27 12 36 19 28 36ZM34 29C30 12 46 5 55 9C57 25 48 34 34 29ZM27 42C36 28 49 31 54 37C51 52 36 54 27 42Z" fill="#8acb87"/><path d="M15 20L25 31M41 22L48 15M35 43L45 40" stroke="#d2edac" stroke-width="3"/></g>
+<!-- Ember -->
+<g transform="translate(384 0)"><path d="M13 55V40L9 30L17 18L21 32L30 7L39 19L40 31L47 22L55 39L50 55Z" fill="#ec6f3e"/><path d="M24 53L20 42L28 29L32 37L37 25L45 43L40 53Z" fill="#ffcc5c"/><path d="M17 55H48V59H17Z" fill="#687c9b"/></g>
+<!-- Coil -->
+<g transform="translate(448 0)"><path d="M16 53H48V59H16ZM23 16H41V50H23Z" fill="#738aaf"/><path d="M21 20L43 26L21 32L43 38L21 44" stroke="#c0b9ff" stroke-width="6" fill="none"/><path d="M36 4L20 18H31L26 31L45 13H34Z" fill="#ffe37a"/></g>
+<!-- Prism -->
+<g transform="translate(0 64)"><path d="M16 12H46L58 31L32 57L6 31Z" fill="#ba8bdb"/><path d="M16 12L24 31L32 57L40 31L46 12ZM6 31H58" fill="none" stroke="#ede0fb" stroke-width="2"/><path d="M24 31L32 13L40 31Z" fill="#e8cefa" stroke="none"/></g>
+<!-- Echo -->
+<g transform="translate(64 64)"><path d="M8 16H28V48H8Z" fill="#7898b9"/><path d="M13 21H23V33H13Z" fill="#95e0ed"/><circle cx="18" cy="41" r="3" fill="#203958"/><path d="M34 23Q46 32 34 41M43 15Q63 32 43 49" fill="none" stroke="#8adce6" stroke-width="6"/><path d="M34 23Q46 32 34 41" stroke="#e2ffff" stroke-width="2" fill="none"/></g>
+<!-- Split -->
+<g transform="translate(128 64)"><path d="M24 38H40V56H24Z" fill="#93a8b9"/><path d="M31 39V22M31 29L13 16M31 29L51 14" stroke="#e4c575" stroke-width="7" fill="none"/><circle cx="13" cy="15" r="6" fill="#97daea"/><circle cx="51" cy="13" r="6" fill="#97daea"/><circle cx="31" cy="17" r="6" fill="#e4f5cf"/></g>
+<!-- Frost -->
+<g transform="translate(192 64)"><circle cx="32" cy="32" r="23" fill="#4f82b1"/><path d="M32 8V56M11 20L53 44M11 44L53 20M25 12L32 19L39 12M25 52L32 45L39 52M14 26L21 26L20 18M44 46L43 38L51 38M14 38L21 38L20 46M44 18L43 26L51 26" stroke="#c4f5ff" stroke-width="4" fill="none"/><circle cx="32" cy="32" r="5" fill="#f2ffff"/></g>
+<!-- Clover -->
+<g transform="translate(256 64)"><path d="M29 36L40 57" fill="none" stroke="#b7c86e" stroke-width="5"/><path d="M31 32C6 37 5 15 15 13C27 10 29 19 31 32ZM32 32C25 8 44 4 51 13C57 24 45 30 32 32ZM32 33C58 27 63 45 51 51C40 57 33 43 32 33ZM31 34C38 56 18 61 12 50C6 39 19 33 31 34Z" fill="#b2d87a"/><circle cx="31" cy="33" r="5" fill="#f3e6a2"/></g>
+<!-- Busters -->
+<g transform="translate(320 64)"><path d="M9 23L24 17L48 19L57 27V42L48 48L24 47L9 41Z" fill="#4f9ed7"/><path d="M9 23L19 27V43L9 41Z" fill="#1d407b"/><path d="M26 19V46M43 20V47" stroke="#b2e3f3" stroke-width="3"/><ellipse cx="51" cy="33" rx="9" ry="14" fill="#83c8e9"/><ellipse cx="53" cy="33" rx="5" ry="9" fill="#15274c"/><circle cx="53" cy="33" r="3" fill="#ffe46c"/></g>
+<g transform="translate(384 64)"><path d="M7 24L23 18H42L51 27V42L23 47L7 40Z" fill="#6d9ed9"/><path d="M23 20V44M37 21V44" stroke="#c7eaff"/><path d="M48 23H60V29H48ZM48 33H60V39H48Z" fill="#f1d072"/><path d="M9 28H17V37H9Z" fill="#234b86"/></g>
+<g transform="translate(448 64)"><path d="M7 20L22 13L51 17L59 25V45L49 53L21 50L7 43Z" fill="#7998bd"/><path d="M23 15V48M36 17V50" stroke="#d7e6de" stroke-width="4"/><ellipse cx="51" cy="35" rx="10" ry="16" fill="#a8c3ca"/><ellipse cx="53" cy="35" rx="6" ry="11" fill="#1c3152"/><path d="M53 31L57 35L53 39L49 35Z" fill="#f8c75a" stroke="none"/></g>
+<!-- Scrap, XP, map, lock, dash, cache, wrench, exit -->
+<g transform="translate(0 128)"><path d="M19 10H45L56 26L32 56L8 26Z" fill="#f3c14e"/><path d="M19 10L25 26L32 56L39 26L45 10M8 26H56" fill="none" stroke="#fff0a1" stroke-width="2"/></g>
+<g transform="translate(64 128)"><path d="M32 6L52 32L32 58L12 32Z" fill="#65d7a5"/><path d="M32 6L25 32L32 58L39 32Z" fill="#cafad8" stroke="none"/></g>
+<g transform="translate(128 128)"><path d="M7 17L23 10L41 17L57 10V49L41 56L23 49L7 56Z" fill="#b7e1df"/><path d="M23 10V49M41 17V56" stroke="#467caa"/><path d="M32 23L43 28L32 43L24 33Z" fill="#f5c653"/></g>
+<g transform="translate(192 128)"><path d="M19 29V19Q19 7 32 7Q45 7 45 19V29" stroke="#bcd4e0" stroke-width="7" fill="none"/><rect x="12" y="27" width="40" height="29" rx="4" fill="#8b9eb8"/><circle cx="32" cy="38" r="5" fill="#193657"/><path d="M32 40V48" stroke="#193657" stroke-width="5"/></g>
+<g transform="translate(256 128)"><path d="M10 20L29 32L10 45L21 45L42 32L21 20Z" fill="#a1e8ef"/><path d="M31 17L53 32L31 48" stroke="#ffdb69" stroke-width="6" fill="none"/></g>
+<g transform="translate(320 128)"><path d="M7 27L16 15H49L57 27V53H7Z" fill="#6388ae"/><path d="M7 27H57V34H7ZM27 18H37V45H27Z" fill="#f2ce72"/><path d="M12 39H22V48H12ZM42 39H52V48H42Z" fill="#324e7c"/></g>
+<g transform="translate(384 128)"><path d="M13 11L26 17L22 27L49 46L44 54L17 33L7 30L6 19L13 24L18 21Z" fill="#bbd2d9"/><circle cx="45" cy="48" r="3" fill="#284d77"/></g>
+<g transform="translate(448 128)"><path d="M9 9H38V55H9Z" fill="#5f89bd"/><path d="M15 15H31V49H15Z" fill="#172e60"/><path d="M27 27H45V19L59 32L45 45V37H27Z" fill="#f4d178"/></g>
+<!-- Life, settings, save, cursor, warning, record, eye, unknown -->
+<g transform="translate(0 192)"><path d="M20 8H44V22H57V43H44V57H20V43H7V22H20Z" fill="#8bd593"/><path d="M25 14H38V28H51V37H38V50H25V37H13V28H25Z" fill="#daefb6" stroke="none"/></g>
+<g transform="translate(64 192)"><path d="M25 6H39L42 16L53 18L59 30L52 39L50 50L38 57L29 50L17 50L8 38L14 28L14 17L25 16Z" fill="#9fb5c9"/><circle cx="33" cy="32" r="12" fill="#28538a"/><circle cx="33" cy="32" r="5" fill="#b5def0"/></g>
+<g transform="translate(128 192)"><path d="M9 8H47L56 17V56H9Z" fill="#6998ce"/><path d="M18 10H43V28H18ZM17 36H48V54H17Z" fill="#dfebdf"/><path d="M33 11H40V24H33Z" fill="#365687"/><path d="M23 41H43M23 47H43" stroke="#789ba9" stroke-width="2"/></g>
+<g transform="translate(192 192)"><path d="M15 10L52 32L15 54L22 32Z" fill="#ffdf65"/><path d="M21 18L40 32L26 32Z" fill="#fff4a7" stroke="none"/></g>
+<g transform="translate(256 192)"><path d="M32 6L59 55H5Z" fill="#ffcc59"/><path d="M29 21H35V38H29ZM29 44H35V49H29Z" fill="#8b472e" stroke="none"/></g>
+<g transform="translate(320 192)"><path d="M16 9H48V56H16Z" fill="#b9cbd5"/><path d="M24 6H40V15H24Z" fill="#6b8cae"/><path d="M24 25H42M24 33H42M24 41H38M24 49H42" stroke="#3e6599" stroke-width="3"/></g>
+<g transform="translate(384 192)"><path d="M5 32Q32 4 59 32Q32 60 5 32Z" fill="#e0e9d2"/><circle cx="32" cy="32" r="14" fill="#e98f59"/><circle cx="32" cy="32" r="6" fill="#1b3256"/></g>
+<g transform="translate(448 192)"><path d="M15 13H49V51H15Z" fill="#647aa6"/><path d="M24 25Q24 17 33 17Q43 17 43 26L33 35V39" fill="none" stroke="#d0dbed" stroke-width="6"/><circle cx="33" cy="47" r="3" fill="#d0dbed" stroke="none"/></g>
+</g></svg>

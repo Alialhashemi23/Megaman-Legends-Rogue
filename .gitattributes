@@ -1,0 +1,21 @@
+* text=auto eol=lf
+*.gd text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.png binary
+*.ttf binary
+*.glb binary
+*.ogg binary
+*.wav binary
+*.mid binary
+*.sf2 binary
+*.zip binary
+*.pck binary
+# Preserve upstream source bytes/hashes and notices exactly.
+*.dae binary
+*.obj binary
+*.mtl binary
+**/*LICENSE.txt -text -whitespace
+tools/audio/GeneralUser-README.md -text -whitespace

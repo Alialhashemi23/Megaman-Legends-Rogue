@@ -1,0 +1,198 @@
+{
+  "volnutt": {
+    "source": "tools\\model-sources\\volnutt\\Megaman.dae",
+    "source_sha256": "1ecf9065229f92e0c69d30c13d3cafb31abcd58babf10ad69766313737c1b818",
+    "texture_sha256": "162a59c65b4ab60c4064e65c8e9d62b7b40e0463fa49066160785e2b41377032",
+    "source_vertices": 307,
+    "triangles": 464,
+    "original_triangles": 486,
+    "left_glove_replaced_by_buster": true,
+    "bones": 18,
+    "height_m": 1.95,
+    "scale": 0.032072368421052634,
+    "floor_offset": 1.1642269736842106,
+    "joint_names": [
+      "Hips",
+      "Pelvis",
+      "RightUpperLeg",
+      "RightLowerLeg",
+      "RightFoot",
+      "LeftUpperLeg",
+      "LeftLowerLeg",
+      "LeftFoot",
+      "RightUpperArm",
+      "RightForeArm",
+      "RightHand",
+      "LeftUpperArm",
+      "LeftForeArm",
+      "LeftHand",
+      "Head",
+      "Mouth",
+      "Eyes",
+      "Face"
+    ],
+    "clips": {
+      "idle": 2.8,
+      "run": 0.48,
+      "backpedal": 0.56,
+      "strafe_left": 0.56,
+      "strafe_right": 0.56,
+      "jump": 0.6,
+      "fall": 0.7,
+      "dash": 0.32,
+      "hurt": 0.32,
+      "fire": 0.18,
+      "victory": 2.0,
+      "defeat": 0.8
+    },
+    "root_offset_ranges": {
+      "idle": [
+        -0.0017,
+        0.0017
+      ],
+      "run": [
+        -0.1123,
+        -0.0008
+      ],
+      "backpedal": [
+        -0.0321,
+        0.0522
+      ],
+      "strafe_left": [
+        -0.0349,
+        0.0109
+      ],
+      "strafe_right": [
+        -0.0349,
+        0.0109
+      ],
+      "jump": [
+        0,
+        0
+      ],
+      "fall": [
+        0,
+        0
+      ],
+      "dash": [
+        0.0367,
+        0.0367
+      ],
+      "hurt": [
+        0,
+        0
+      ],
+      "fire": [
+        0,
+        0
+      ],
+      "victory": [
+        0.0,
+        0.02
+      ],
+      "defeat": [
+        -0.3,
+        -0.0
+      ]
+    },
+    "source_weight_sums_valid": true
+  },
+  "roll": {
+    "source": "tools\\model-sources\\roll\\Roll_(Cutscene).dae",
+    "source_sha256": "f76d96a544d2c5f37402db350ba34f1516d4bbea6018b0a81cc775e4357e0ada",
+    "texture_sha256": "2bbc8769365ec8e8740546e94bbc4773335c9b8e436e544a6c45f646c47ce3c1",
+    "source_vertices": 314,
+    "triangles": 452,
+    "original_triangles": 476,
+    "left_glove_replaced_by_buster": true,
+    "bones": 18,
+    "height_m": 1.88,
+    "scale": 0.02977038796516231,
+    "floor_offset": 1.0866191607284243,
+    "joint_names": [
+      "Hips",
+      "Pelvis",
+      "RightUpperLeg",
+      "RightLowerLeg",
+      "RightFoot",
+      "LeftUpperLeg",
+      "LeftLowerLeg",
+      "LeftFoot",
+      "RightUpperArm",
+      "RightForeArm",
+      "RightHand",
+      "LeftUpperArm",
+      "LeftForeArm",
+      "LeftHand",
+      "Head",
+      "Mouth",
+      "Eyes",
+      "Face"
+    ],
+    "clips": {
+      "idle": 2.8,
+      "run": 0.48,
+      "backpedal": 0.56,
+      "strafe_left": 0.56,
+      "strafe_right": 0.56,
+      "jump": 0.6,
+      "fall": 0.7,
+      "dash": 0.32,
+      "hurt": 0.32,
+      "fire": 0.18,
+      "victory": 2.0,
+      "defeat": 0.8
+    },
+    "root_offset_ranges": {
+      "idle": [
+        -0.0,
+        0.0019
+      ],
+      "run": [
+        -0.1073,
+        -0.005
+      ],
+      "backpedal": [
+        -0.0425,
+        0.0539
+      ],
+      "strafe_left": [
+        -0.0438,
+        0.0022
+      ],
+      "strafe_right": [
+        -0.0438,
+        0.0022
+      ],
+      "jump": [
+        0,
+        0
+      ],
+      "fall": [
+        0,
+        0
+      ],
+      "dash": [
+        0.0493,
+        0.0493
+      ],
+      "hurt": [
+        0,
+        0
+      ],
+      "fire": [
+        0,
+        0
+      ],
+      "victory": [
+        0.0,
+        0.02
+      ],
+      "defeat": [
+        -0.3,
+        -0.0
+      ]
+    },
+    "source_weight_sums_valid": true
+  }
+}

@@ -1,0 +1,55 @@
+# Godot caches, local profiles and historical backups
+/.godot/
+/save/
+/backups/
+/export_templates/
+/feature_profiles/
+/script_templates/
+/text_editor_themes/
+**/__pycache__/
+*.py[cod]
+*.tmp
+*.log
+*.partial
+.DS_Store
+Thumbs.db
+.env
+.env.*
+*.pem
+*.key
+
+# Keep authoring inputs; omit machine runtimes and generated captures.
+/tools/*
+!/tools/.gdignore
+!/tools/model-sources/
+!/tools/audio/
+!/tools/setup-runtime.ps1
+!/tools/package-windows.ps1
+!/tools/requirements.txt
+/tools/audio/*
+!/tools/audio/compose.py
+!/tools/audio/validate.py
+!/tools/audio/scores/
+!/tools/audio/score-manifest.json
+!/tools/audio/GeneralUser-GS.sf2
+!/tools/audio/GeneralUser-LICENSE.txt
+!/tools/audio/GeneralUser-README.md
+!/tools/audio/FluidSynth-LICENSE.txt
+!/tools/audio/fluidsynth.zip
+
+# Portable bundle and notices are tracked, loose 179 MB executables are not.
+/build/*
+!/build/.gdignore
+!/build/RelicDiver-Windows.zip
+!/build/RelicDiver.pck
+!/build/README.md
+!/build/CHANGELOG.md
+!/build/LICENSE.md
+!/build/GODOT-LICENSE.txt
+!/build/CHARACTER-CREDITS.md
+!/build/AUDIO-NOTES.md
+!/build/font-licenses/
+!/build/audio-licenses/
+
+# Third-party reference screenshot is not a project asset.
+/screenshots/ui-reference.png

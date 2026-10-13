@@ -1,0 +1,76 @@
+{
+  "soundfont_sha256": "9575028c7a1f589f5770fccc8cff2734566af40cd26ed836944e9a5152688cfe",
+  "tracks": {
+    "title": {
+      "title": "Beyond the Breakwater",
+      "bpm": 96,
+      "bars": 24,
+      "seconds": 60.0,
+      "loop": true,
+      "peak": 0.641,
+      "rms": 0.105,
+      "notes": 694
+    },
+    "tidal": {
+      "title": "Footsteps in the Tidal Archive",
+      "bpm": 104,
+      "bars": 32,
+      "seconds": 73.846,
+      "loop": true,
+      "peak": 0.68,
+      "rms": 0.1005,
+      "notes": 1172
+    },
+    "garden": {
+      "title": "Engines in Bloom",
+      "bpm": 112,
+      "bars": 32,
+      "seconds": 68.571,
+      "loop": true,
+      "peak": 0.68,
+      "rms": 0.0922,
+      "notes": 1258
+    },
+    "core": {
+      "title": "Below the Sun",
+      "bpm": 124,
+      "bars": 32,
+      "seconds": 61.935,
+      "loop": true,
+      "peak": 0.6369,
+      "rms": 0.105,
+      "notes": 1144
+    },
+    "guardian": {
+      "title": "Keepers of the Old World",
+      "bpm": 138,
+      "bars": 32,
+      "seconds": 55.652,
+      "loop": true,
+      "peak": 0.5717,
+      "rms": 0.105,
+      "notes": 1154
+    },
+    "clear": {
+      "title": "Back to the Surface",
+      "bpm": 112,
+      "bars": 2,
+      "seconds": 7.286,
+      "loop": false,
+      "peak": 0.68,
+      "rms": 0.0985,
+      "notes": 12
+    },
+    "lost": {
+      "title": "A Light Left Below",
+      "bpm": 80,
+      "bars": 2,
+      "seconds": 9.0,
+      "loop": false,
+      "peak": 0.68,
+      "rms": 0.0793,
+      "notes": 10
+    }
+  },
+  "sound_effects": 29
+}
