@@ -48,7 +48,9 @@ The user then asked that runs persist through errors and mishaps before further 
 
 ## Scope and open decisions
 
-This is a playable prototype with a complete run loop, not a finished game. Controller support, authored story, a surface hub, environmental puzzles, extensive vertical traversal and unique boss meshes are not implemented. Their exact designs have not been approved. Do not claim them as complete or invent requirements for them.
+Pass 11 (user request): controller support for play and menus, a basic Options menu (sound, display, sensitivity, invert, vibration, rebinding), and a Leave Dig option for every player. The user decided solo digs don't need mid-run saving because runs are short; online digs keep checkpoints only so players can rejoin.
+
+This is a playable prototype with a complete run loop, not a finished game. Authored story, a surface hub, environmental puzzles, extensive vertical traversal and unique boss meshes are not implemented. Their exact designs have not been approved. Do not claim them as complete or invent requirements for them.
 
 The next priorities should follow human playtesting: movement feel, camera visibility, target readability, useful drops, exploration density, guardian fairness and sound balance. Preserve the direction above when changing implementation. See docs/handoff/PLAYTEST-ROADMAP.md for a practical review order.
 

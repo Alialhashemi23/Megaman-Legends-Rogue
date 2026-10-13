@@ -16,6 +16,7 @@ Godot 4.7.1, GDScript, GL Compatibility renderer, GodotPhysics3D. Entry point: p
 | scripts/sound.gd | Audio buses, voices, crossfades, settings and ambience |
 | scripts/art.gd | Environment/robot construction, materials and historical procedural character code |
 | scripts/net.gd | Online transport, lobby state, invite links (co-op rules live at the end of game.gd) |
+| scripts/settings.gd | Options and the InputMap: rebindable keyboard/controller actions, prompts, rumble, display (settings.json) |
 | server/ | Node web host and lobby relay for the browser build (NETWORK.md) |
 
 ## Setup and launch
@@ -44,6 +45,6 @@ $env:LOCALAPPDATA = $env:APPDATA
 .\tools\Godot_v4.7.1-stable_win64_console.exe --headless --path . --export-pack 'Windows Desktop' build/RelicDiver.pck
 ```
 
-Use only relevant checks after changes. Other suites: tests/ui_checks.gd, tests/audio_checks.gd; built-in --smoke-test, --combat-test and --persistence-test. Online and persistence: `server/` npm test, `tests/run_resume_checks.gd`, `tests/net_test.sh <godot>`, `tests/web_e2e.mjs` and `tests/coop_preview.gd` (see NETWORK.md). After gameplay changes, also refresh the web bundle with tools/package-web.ps1 or tools/package-web.sh. Latest motion pass: character 3868/0 failures, combat 3207/0, movement traversal passed in source and packed game, export and GPU launch passed. Earlier UI/audio suites passed before that animation-only change.
+Use only relevant checks after changes. Other suites: tests/ui_checks.gd, tests/audio_checks.gd; built-in --smoke-test, --combat-test and --persistence-test. Controls/options: `tests/options_checks.gd` (simulated controller input) and `tests/options_preview.gd` (renders). Online and persistence: `server/` npm test, `tests/run_resume_checks.gd`, `tests/net_test.sh <godot>`, `tests/web_e2e.mjs` and `tests/coop_preview.gd` (see NETWORK.md). After gameplay changes, also refresh the web bundle with tools/package-web.ps1 or tools/package-web.sh. Latest motion pass: character 3868/0 failures, combat 3207/0, movement traversal passed in source and packed game, export and GPU launch passed. Earlier UI/audio suites passed before that animation-only change.
 
 Export filters omit tools, tests, backups, screenshots and saves, while retaining required asset/font notices. Refresh build docs and recreate the portable ZIP after shipping a changed pack; never replace an existing user's save folder as part of rebuilding. The full editor executable currently acts as the portable runtime, making the bundle larger than a normal release-template export.

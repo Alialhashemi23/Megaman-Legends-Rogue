@@ -53,7 +53,13 @@ var new_pass_edit: LineEdit
 var chat_edit: LineEdit
 var copied_time = 0.0
 # Destructive buttons need a second click within a few seconds.
-const CONFIRM = ["leave_online", "abandon", "kick", "discard", "start_new", "give_up"]
+const CONFIRM = ["leave_online", "leave_dig", "abandon", "kick", "discard", "start_new", "give_up", "reset_controls"]
+# Options page rows: sound, display, then controls.
+const OPTIONS = ["master", "music", "effects", "ambience", "mute", "fullscreen", "camera", "fov", "mouse", "look", "invert", "vibration", "controls", "back"]
+const MENU_MODES = ["title", "pause", "options", "controls", "choice", "inventory", "archive", "end", "online", "lobby"]
+var options_return = "title"
+# Rebinding: {"id": action, "column": "kb"/"pad", "time": seconds left}.
+var listening: Dictionary = {}
 var confirming = ""
 var confirm_time = 0.0
 
@@ -197,7 +203,15 @@ func badge(pos: Vector2, value: String, width: float = 54, color: Color = YELLOW
     window(pos, Vector2(width, 30), INK, EDGE, false)
     text_at(pos + Vector2(10, 23), value, 20, color, true, width - 16)
 
+# Label of a control for the device in use (keyboard/mouse or controller).
+func p(id: String) -> String:
+    return game.settings.prompt(id)
+
+func pad() -> bool:
+    return game.settings.using_pad
+
 func keycap(pos: Vector2, value: String, width: float = 44) -> void:
+    width = maxf(width, heading.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x + 16) if value != "↑↓" else width
     window(pos, Vector2(width, 28), Color("d1e5ed"), WHITE, false)
     if value == "↑↓":
         draw_colored_polygon(PackedVector2Array([pos + Vector2(11, 12), pos + Vector2(17, 5), pos + Vector2(23, 12)]), INK)
@@ -243,39 +257,77 @@ func _input(event: InputEvent) -> void:
                     activate(hit.action, hit.value)
                     get_viewport().set_input_as_handled()
                     break
-    if event is InputEventKey and event.pressed and not event.echo and game.mode in ["title", "pause", "audio", "choice", "inventory", "archive", "end", "online", "lobby"] and not editing():
-        var key = event.physical_keycode
-        if key == 0: key = event.keycode
-        if key in [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]:
-            var delta = -1 if key in [KEY_UP, KEY_LEFT] else 1
-            pointer = Vector2(-100, -100)
-            if game.mode == "audio" and key in [KEY_LEFT, KEY_RIGHT]:
-                if focus_index < 4: game.sound.adjust_volume(["Master", "Music", "Effects", "Ambience"][focus_index], delta * 0.05)
-            elif game.mode == "choice": choice_preview = wrapi(choice_preview + delta, 0, 3)
-            elif game.mode in ["archive", "inventory"]: select_part(delta)
-            elif game.mode == "title" and key in [KEY_LEFT, KEY_RIGHT]:
-                if not hits.is_empty() and hits[clampi(focus_index, 0, hits.size()-1)].action == "character":
-                    select_character(1 - game.selected_character)
-                else:
-                    var count = 3 if game.meta.kills >= 50 else 2 if game.meta.kills >= 10 else 1
-                    game.selected_weapon = wrapi(game.selected_weapon + delta, 0, count)
-            else: move_focus(delta)
-            game.sound.play("menu_move")
+    if not listening.is_empty():
+        capture_binding(event)
+        return
+    # Keys and controller buttons; stick motion is handled by game.pad_motion().
+    if event is InputEventJoypadMotion or not event.is_pressed() or event.is_echo(): return
+    if not game.mode in MENU_MODES or editing(): return
+    if event is InputEventMouseButton: return
+    for dir in [["nav_up", -1, false], ["nav_down", 1, false], ["nav_left", -1, true], ["nav_right", 1, true]]:
+        if event.is_action_pressed(dir[0]):
+            navigate(dir[1], dir[2])
             get_viewport().set_input_as_handled()
-        elif key == KEY_C and game.mode == "title":
+            return
+    if event.is_action_pressed("switch_digger") and game.mode == "title":
+        select_character(1 - game.selected_character)
+        game.sound.play("menu_confirm")
+        get_viewport().set_input_as_handled()
+    elif event.is_action_pressed("nav_accept"):
+        confirm()
+        get_viewport().set_input_as_handled()
+    elif event.is_action_pressed("nav_back") and back():
+        get_viewport().set_input_as_handled()
+
+# Move the menu cursor (arrows, D-pad or left stick).
+func navigate(delta: int, horizontal: bool) -> void:
+    if not listening.is_empty() or editing() or not game.mode in MENU_MODES: return
+    pointer = Vector2(-100, -100)
+    if game.mode == "options" and horizontal:
+        if focus_index < OPTIONS.size(): adjust_option(focus_index, delta)
+    elif game.mode == "controls" and not horizontal and focus_index < DiverSettings.ACTIONS.size() * 2:
+        focus_index = clampi(focus_index + delta * 2, focus_index % 2, hits.size() - 1)
+    elif game.mode == "choice": choice_preview = wrapi(choice_preview + delta, 0, 3)
+    elif game.mode in ["archive", "inventory"]: select_part(delta)
+    elif game.mode == "title" and horizontal:
+        if not hits.is_empty() and hits[clampi(focus_index, 0, hits.size()-1)].action == "character":
             select_character(1 - game.selected_character)
-            game.sound.play("menu_confirm")
-            get_viewport().set_input_as_handled()
-        elif key == KEY_ENTER:
-            if game.mode == "choice": activate("choice", choice_preview)
-            elif game.mode in ["inventory", "archive"]: activate("resume" if game.mode == "inventory" else "title")
-            elif not hits.is_empty():
-                var hit = hits[clampi(focus_index, 0, hits.size() - 1)]
-                activate(hit.action, hit.value)
-            get_viewport().set_input_as_handled()
-        elif key == KEY_ESCAPE and game.mode in ["archive", "inventory", "audio", "online"]:
-            activate("pause" if game.mode == "audio" else "resume" if game.mode == "inventory" else "title")
-            get_viewport().set_input_as_handled()
+        else:
+            var count = 3 if game.meta.kills >= 50 else 2 if game.meta.kills >= 10 else 1
+            game.selected_weapon = wrapi(game.selected_weapon + delta, 0, count)
+    else: move_focus(delta)
+    game.sound.play("menu_move")
+
+func confirm() -> void:
+    if game.mode == "choice": activate("choice", choice_preview)
+    elif game.mode in ["inventory", "archive"]: activate("resume" if game.mode == "inventory" else "title")
+    elif not hits.is_empty():
+        var hit = hits[clampi(focus_index, 0, hits.size() - 1)]
+        activate(hit.action, hit.value)
+
+# Esc / B: step back out of the current menu. Returns true when handled.
+func back() -> bool:
+    match game.mode:
+        "archive", "online": activate("title")
+        "inventory", "pause": activate("resume")
+        "options": activate(options_return)
+        "controls": activate("options")
+        _: return false
+    return true
+
+func capture_binding(event: InputEvent) -> void:
+    get_viewport().set_input_as_handled()
+    if event is InputEventKey and event.pressed and event.physical_keycode == KEY_ESCAPE and listening.column == "pad":
+        listening = {}
+        return
+    if event is InputEventKey and event.pressed and event.physical_keycode == KEY_ESCAPE and listening.column == "kb" and listening.id != "menu":
+        listening = {}
+        return
+    var binding = game.settings.binding_from_event(event, listening.column)
+    if binding.is_empty(): return
+    game.settings.rebind(listening.id, listening.column, binding)
+    game.sound.play("menu_confirm")
+    listening = {}
 
 func move_focus(delta: int) -> void:
     var choices: Array[int] = []
@@ -317,7 +369,21 @@ func activate(action: String, value: int = 0) -> void:
             game.send_info()
         "character": select_character(value)
         "mute": game.sound.muted = not game.sound.muted
-        "audio": game.mode = "audio"
+        "options":
+            if game.mode in ["title", "pause"]: options_return = game.mode
+            game.mode = "options"
+            focus_index = 0
+        "option": activate_option(value)
+        "controls": game.mode = "controls"
+        "bind": listening = {"id": DiverSettings.ACTIONS[value / 2].id, "column": "kb" if value % 2 == 0 else "pad", "time": 6.0}
+        "reset_controls":
+            game.settings.reset_bindings()
+            game.settings.apply_bindings()
+            game.settings.save_settings()
+        "leave_dig":
+            game.end_reason = "You left the dig"
+            if game.net.active(): game.leave_online()
+            else: game.finish_run(false)
         "pause": game.mode = "pause"
         "volume":
             var bus: String = ["Master", "Music", "Effects", "Ambience"][value]
@@ -382,7 +448,8 @@ func _draw() -> void:
         "archive": draw_parts(true)
         "choice": draw_choice()
         "pause": draw_pause()
-        "audio": draw_audio()
+        "options": draw_options()
+        "controls": draw_controls()
         "inventory": draw_parts(false)
         "end": draw_end()
         _: draw_hud()
@@ -428,11 +495,11 @@ func page_title(title: String, detail: String) -> void:
     text_at(Vector2(166, 242), detail, 24, MUTED)
 
 func menu_footer(detail: String = "Select", back: String = "Back", confirm: String = "Confirm") -> void:
-    keycap(Vector2(64, 842), "↑↓", 46)
-    text_at(Vector2(124, 865), detail, 21)
-    keycap(Vector2(284, 842), "ENTER", 76)
+    keycap(Vector2(64, 842), "D-PAD" if pad() else "↑↓", 46)
+    text_at(Vector2(124 + (34 if pad() else 0), 865), detail, 21)
+    keycap(Vector2(284, 842), "A" if pad() else "ENTER", 76)
     text_at(Vector2(374, 865), confirm, 21)
-    keycap(Vector2(1150, 842), "ESC", 55)
+    keycap(Vector2(1150, 842), "B" if pad() else "ESC", 55)
     text_at(Vector2(1220, 865), back, 21)
 
 func draw_title() -> void:
@@ -468,7 +535,10 @@ func draw_title() -> void:
     menu_y += 56
     button(Vector2(64, menu_y), Vector2(476, 48), "Parts Collection", "archive")
     menu_y += 56
-    if not OS.has_feature("web"): button(Vector2(64, menu_y), Vector2(476, 48), "Quit", "quit")
+    if OS.has_feature("web"): button(Vector2(64, menu_y), Vector2(476, 48), "Options", "options")
+    else:
+        button(Vector2(64, menu_y), Vector2(230, 48), "Options", "options")
+        button(Vector2(310, menu_y), Vector2(230, 48), "Quit", "quit")
     window(Vector2(48, 690), Vector2(508, 156))
     text_at(Vector2(68, 723), "SELECT BUSTER", 21, WHITE, true)
     for i in 3:
@@ -487,7 +557,7 @@ func draw_title() -> void:
     text_at(Vector2(1162, 101), "%d digs   /   %d clears" % [game.meta.runs, game.meta.wins], 24, YELLOW)
     window(Vector2(1020, 414), Vector2(372, 134), Color(0.06, 0.16, 0.40, 0.96))
     text_at(Vector2(1042, 448), "SELECT DIGGER", 22, WHITE, true)
-    keycap(Vector2(1336, 426), "C", 34)
+    keycap(Vector2(1336, 426), "Y" if pad() else "C", 34)
     for i in 2:
         var pos = Vector2(1038 + i * 172, 465)
         var selected = game.selected_character == i
@@ -498,11 +568,11 @@ func draw_title() -> void:
         if hot: cursor(pos + Vector2(-22, 20), 24)
         hits.append({"rect": Rect2(pos, Vector2(162, 64)), "action": "character", "value": i})
     window(Vector2(1020, 574), Vector2(372, 274), Color(0.06, 0.16, 0.40, 0.94))
-    text_at(Vector2(1044, 613), "CONTROLS", 24, WHITE, true)
-    var controls = [["WASD", "Move"], ["LMB", "Fire buster"], ["SHIFT", "Dash"], ["SPACE", "Jump"], ["E", "Salvage / use"], ["Q", "Lock on"]]
+    text_at(Vector2(1044, 613), "CONTROLLER" if pad() else "CONTROLS", 24, WHITE, true)
+    var controls = [["move", "Move"], ["fire", "Fire buster"], ["dash", "Dash"], ["jump", "Jump"], ["interact", "Salvage / use"], ["lock_on", "Lock on"]]
     for i in controls.size():
         var y = 636 + i * 32
-        keycap(Vector2(1044, y), controls[i][0], 76)
+        keycap(Vector2(1044, y), p(controls[i][0]), 76)
         text_at(Vector2(1140, y + 23), controls[i][1], 23)
 
 func draw_hud() -> void:
@@ -568,7 +638,7 @@ func draw_hud() -> void:
     text_at(Vector2(114, 774), ["Pulse Buster", "Needle Buster", "Siege Buster"][p.weapon], 25, WHITE, true, 212)
     text_at(Vector2(114, 805), "POWER %d  /  RAPID %.1f" % [buster_power(), 1 / p.fire_delay()], 21, MUTED)
     pips(Vector2(48, 824), 270, 6, float(p.xp) / p.xp_required, 20, YELLOW)
-    keycap(Vector2(30, 856), "TAB", 54)
+    keycap(Vector2(30, 856), p("parts"), 54)
     text_at(Vector2(99, 879), "Buster Parts", 21)
     var n = 0
     for id in p.items:
@@ -586,7 +656,7 @@ func draw_hud() -> void:
     text_at(Vector2(1290, 779), "DASH", 20, WHITE, true)
     text_at(Vector2(1290, 809), "Ready" if p.dash_cooldown <= 0 else "Charging", 22, YELLOW if p.dash_cooldown <= 0 else MUTED)
     pips(Vector2(1240, 825), 156, 7, clampf(1 - p.dash_cooldown / 1.35, 0, 1), 8, CYAN)
-    keycap(Vector2(1240, 856), "ESC", 54)
+    keycap(Vector2(1240, 856), p("menu"), 54)
     text_at(Vector2(1308, 879), "Menu", 21)
     if game.net.active():
         draw_team()
@@ -594,11 +664,12 @@ func draw_hud() -> void:
         if game.chat_open:
             place_field(chat_edit, Vector2(1056, 708), Vector2(356, 40), 21)
             if not chat_edit.has_focus(): chat_edit.grab_focus()
-        else: text_at(Vector2(1064, 734), "T chat  ·  G ping  ·  1–4 callouts", 19, MUTED)
+        elif pad(): text_at(Vector2(1064, 734), "%s ping  ·  D-pad callouts" % p("ping"), 19, MUTED)
+        else: text_at(Vector2(1064, 734), "%s chat  ·  %s ping  ·  1–4 callouts" % [p("chat"), p("ping")], 19, MUTED)
         if game.net.reconnecting(): draw_reconnecting()
     if game.message_time > 0: draw_notice()
     if not game.nearest.is_empty() and game.mode == "play" and not p.downed: interaction_prompt()
-    if game.mode == "play" and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and DisplayServer.get_name() != "headless":
+    if game.mode == "play" and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and DisplayServer.get_name() != "headless" and not pad():
         window(Vector2(560, 384), Vector2(320, 46), INK, YELLOW, false)
         text_at(Vector2(584, 415), "Click to take aim", 24, YELLOW, true)
     if game.hurt_flash > 0: rect(Vector2.ZERO, BASE, Color(0.9, 0.2, 0.08, game.hurt_flash * 0.25))
@@ -617,7 +688,7 @@ func draw_notice() -> void:
 func interaction_prompt() -> void:
     var obj = game.nearest
     window(Vector2(450, 731), Vector2(540, 49), BLUE, YELLOW)
-    keycap(Vector2(462, 741), "E", 33)
+    keycap(Vector2(462, 741), p("interact"), 33)
     var title: String = {"cache": "Open Part Cache", "spring": "Use Restoration Well", "pot": "Salvage Vessel", "lift": "Extract" if game.depth == 3 else "Take the Lift"}.get(obj.kind, obj.title)
     if obj.kind == "lift" and not game.guardian_dead: title = "Lift sealed — defeat the guardian"
     elif obj.kind == "cache" and not game.rooms[obj.room].cleared: title = "Clear the room to open this cache"
@@ -668,10 +739,10 @@ func draw_pause() -> void:
     page_title("DIG MENU", "B%d / %s" % [game.depth, game.DEPTH_NAMES[game.depth - 1]] + ("   ·   The dig continues while this menu is open." if game.net.active() else ""))
     button(Vector2(64, 288), Vector2(400, 62), "Return to Ruins", "resume", 0, true)
     button(Vector2(64, 366), Vector2(400, 62), "Buster Parts", "inventory")
-    button(Vector2(64, 444), Vector2(400, 62), "Sound Settings", "audio")
-    button(Vector2(64, 522), Vector2(400, 62), "Camera Motion: " + ("On" if game.camera_effects else "Off"), "camera_fx")
-    if game.net.is_guest(): button(Vector2(64, 600), Vector2(400, 62), confirm_label("leave_online", 0, "Leave Lobby"), "leave_online")
-    else: button(Vector2(64, 600), Vector2(400, 62), confirm_label("abandon", 0, "End Dig for Everyone" if game.net.active() else "End Dig & Save Record"), "abandon")
+    button(Vector2(64, 444), Vector2(400, 62), "Options", "options")
+    # Anyone can leave; online, the others keep digging (hosting moves on).
+    button(Vector2(64, 522), Vector2(400, 62), confirm_label("leave_dig", 0, "Leave Dig"), "leave_dig")
+    if game.net.is_host(): button(Vector2(64, 600), Vector2(400, 62), confirm_label("abandon", 0, "End Dig for Everyone"), "abandon")
     window(Vector2(508, 280), Vector2(868, 392))
     window(Vector2(536, 308), Vector2(178, 226), BLUE)
     draw_texture_rect(portrait(), Rect2(542, 319, 166, 187), false)
@@ -688,26 +759,116 @@ func draw_pause() -> void:
     paragraph(Vector2(164, 744), "Watch the ground before an enemy attacks. Leave the warning area, jump over shockwaves, or dash through danger. Use cover to break a machine's aim.", 1176, 26, WHITE, 2)
     menu_footer("Select", "Return")
 
-func draw_audio() -> void:
+func option_label(id: String) -> String:
+    return {"master": "Master volume", "music": "Music", "effects": "Effects", "ambience": "Ambience", "mute": "Mute all", "fullscreen": "Fullscreen", "camera": "Camera motion", "fov": "Field of view", "mouse": "Mouse sensitivity", "look": "Controller look speed", "invert": "Invert look (up/down)", "vibration": "Controller vibration", "controls": "Controls & bindings…", "back": "Back"}.get(id, id)
+
+func option_value(id: String) -> String:
+    var s = game.settings
+    match id:
+        "master", "music", "effects", "ambience": return "%d%%" % roundi(game.sound.volumes[id.capitalize()] * 100)
+        "mute": return "On" if game.sound.muted else "Off"
+        "fullscreen": return "On" if s.fullscreen else "Off"
+        "camera": return "On" if s.camera_effects else "Off"
+        "fov": return "%d°" % int(s.fov)
+        "mouse": return "%.1f×" % s.mouse_sensitivity
+        "look": return "%.1f×" % s.look_speed
+        "invert": return "On" if s.invert_y else "Off"
+        "vibration": return "On" if s.vibration else "Off"
+    return ""
+
+# Left/right adjusts sliders and flips switches.
+func adjust_option(index: int, delta: int) -> void:
+    var id: String = OPTIONS[index]
+    var s = game.settings
+    match id:
+        "master", "music", "effects", "ambience": game.sound.adjust_volume(id.capitalize(), delta * 0.05)
+        "fov": s.fov = clampf(s.fov + delta * 2, 55, 85)
+        "mouse": s.mouse_sensitivity = clampf(snappedf(s.mouse_sensitivity + delta * 0.1, 0.1), 0.2, 3.0)
+        "look": s.look_speed = clampf(snappedf(s.look_speed + delta * 0.1, 0.1), 0.2, 3.0)
+        "mute", "fullscreen", "camera", "invert", "vibration": activate_option(index)
+        _: return
+    s.save_settings()
+
+# Enter / A / click: toggle, or step a slider up (wrapping).
+func activate_option(index: int) -> void:
+    var id: String = OPTIONS[clampi(index, 0, OPTIONS.size() - 1)]
+    var s = game.settings
+    focus_index = index
+    match id:
+        "master", "music", "effects", "ambience":
+            var bus = id.capitalize()
+            game.sound.adjust_volume(bus, -1.0 if game.sound.volumes[bus] >= 0.99 else 0.10)
+        "mute": game.sound.muted = not game.sound.muted
+        "fullscreen": s.set_fullscreen(not s.fullscreen)
+        "camera": s.camera_effects = not s.camera_effects
+        "fov": s.fov = 55.0 if s.fov >= 85 else s.fov + 5
+        "mouse": s.mouse_sensitivity = 0.2 if s.mouse_sensitivity >= 3.0 else snappedf(s.mouse_sensitivity + 0.2, 0.1)
+        "look": s.look_speed = 0.2 if s.look_speed >= 3.0 else snappedf(s.look_speed + 0.2, 0.1)
+        "invert": s.invert_y = not s.invert_y
+        "vibration":
+            s.vibration = not s.vibration
+            s.rumble(0.4, 0.4, 0.15)
+        "controls": game.mode = "controls"
+        "back": activate(options_return)
+    s.save_settings()
+
+func option_row(pos: Vector2, index: int) -> void:
+    var id: String = OPTIONS[index]
+    var area = Rect2(pos, Vector2(640, 54))
+    var hot = focus_index == index or area.has_point(pointer)
+    window(pos, area.size, SELECT if hot else PANEL, YELLOW if hot else EDGE, false)
+    if hot: cursor(pos + Vector2(-30, 12))
+    text_at(pos + Vector2(22, 36), option_label(id), 25, WHITE, false, 400)
+    var value = option_value(id)
+    if value != "":
+        if id in ["master", "music", "effects", "ambience"]:
+            pips(pos + Vector2(330, 21), 180, 12, game.sound.volumes[id.capitalize()], 12, CYAN if id == "music" else GREEN)
+        text_at(pos + Vector2(612 - heading.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x, 36), value, 22, YELLOW, true)
+    hits.append({"rect": area, "action": "option", "value": index})
+
+func draw_options() -> void:
     backdrop()
-    stats_header()
-    page_title("SOUND SETTINGS", "Find your balance. Changes are saved in this browser." if OS.has_feature("web") else "Find your balance. Changes are saved on this PC.")
-    var buses = ["Master", "Music", "Effects", "Ambience"]
-    for i in buses.size():
-        var bus: String = buses[i]
-        button(Vector2(64, 288 + i * 78), Vector2(440, 62), "%s   %d%%" % [bus, roundi(game.sound.volumes[bus] * 100)], "volume", i)
-    button(Vector2(64, 600), Vector2(440, 62), "Mute All: " + ("On" if game.sound.muted else "Off"), "mute")
-    button(Vector2(64, 678), Vector2(440, 62), "Return to Dig Menu", "pause")
-    window(Vector2(548, 280), Vector2(828, 460))
-    icon(Vector2(580, 308), "settings", 64)
-    text_at(Vector2(664, 350), "A SOUND FROM BELOW", 29, YELLOW, true)
-    paragraph(Vector2(584, 402), "Music follows your descent and changes when a guardian awakens. Ruin ambience and machine sounds have their own space in the mix.", 748, 27, WHITE, 4)
-    for i in buses.size():
-        var y = 544 + i * 40
-        text_at(Vector2(584, y + 17), buses[i], 23, MUTED)
-        pips(Vector2(770, y), 560, 16, game.sound.volumes[buses[i]], 20, CYAN if i == 1 else GREEN)
-    paragraph(Vector2(66, 788), "Left / right: adjust by 5%. Click or Enter: raise by 10% (wraps to Off). M: mute all.", 1260, 24, MUTED, 1)
-    menu_footer("Select", "Dig Menu", "Adjust")
+    page_title("OPTIONS", "Sound, display and controls. Changes save right away%s." % (" in this browser" if OS.has_feature("web") else " on this PC"))
+    text_at(Vector2(66, 278), "SOUND & DISPLAY", 20, CYAN, true)
+    text_at(Vector2(738, 278), "CONTROLS", 20, CYAN, true)
+    for i in OPTIONS.size():
+        option_row(Vector2(64, 292 + i * 62) if i < 8 else Vector2(736, 292 + (i - 8) * 62), i)
+    window(Vector2(736, 680), Vector2(640, 104), Color(0.06, 0.16, 0.40, 0.9))
+    paragraph(Vector2(758, 716), "Left / right adjusts. Plug in a controller any time: prompts switch to it automatically.", 600, 23, MUTED, 2)
+    menu_footer("Select", "Back", "Change")
+
+func draw_controls() -> void:
+    backdrop()
+    if not listening.is_empty():
+        listening.time -= get_process_delta_time()
+        if listening.time <= 0: listening = {}
+    page_title("CONTROLS", "Select a binding, then press the new key, mouse button or controller button.")
+    var actions = DiverSettings.ACTIONS
+    var s = game.settings
+    for i in actions.size():
+        var column = 0 if i < 9 else 1
+        var row = i if i < 9 else i - 9
+        var pos = Vector2(64 + column * 672, 300 + row * 52)
+        text_at(pos + Vector2(0, 32), actions[i].name, 22, WHITE, false, 280)
+        for c in 2:
+            var cell = Rect2(pos + Vector2(300 + c * 166, 0), Vector2(156, 44))
+            var index = i * 2 + c
+            var hot = focus_index == hits.size() or cell.has_point(pointer)
+            var waiting = not listening.is_empty() and listening.id == actions[i].id and listening.column == ["kb", "pad"][c]
+            window(cell.position, cell.size, YELLOW.darkened(0.55) if waiting else SELECT if hot else INK, YELLOW if hot or waiting else EDGE, false)
+            var label = "Press…" if waiting else s.binding_label(s.bindings[actions[i].id]["kb" if c == 0 else "pad"])
+            if c == 1 and label == "—" and actions[i].id.begins_with("move_"): label = "L-Stick"
+            text_at(cell.position + Vector2(14, 30), label, 21, YELLOW if waiting else WHITE, false, 132)
+            hits.append({"rect": cell, "action": "bind", "value": index})
+    text_at(Vector2(364, 290), "KEYBOARD", 17, CYAN, true)
+    text_at(Vector2(530, 290), "CONTROLLER", 17, CYAN, true)
+    text_at(Vector2(1036, 290), "KEYBOARD", 17, CYAN, true)
+    text_at(Vector2(1202, 290), "CONTROLLER", 17, CYAN, true)
+    button(Vector2(736, 726), Vector2(310, 54), confirm_label("reset_controls", 0, "Reset to Defaults"), "reset_controls")
+    button(Vector2(1066, 726), Vector2(310, 54), "Back", "options", 0, true)
+    var note = "Waiting for input… (Esc cancels)" if not listening.is_empty() else "The right stick always looks around. Taking a key from another action swaps them."
+    text_at(Vector2(736, 812), note, 21, YELLOW if not listening.is_empty() else MUTED, false, 640)
+    menu_footer("Select", "Options", "Rebind")
 
 func stat_line(pos: Vector2, title: String, value: String, width: float) -> void:
     text_at(pos, title, 26, MUTED)
@@ -819,11 +980,11 @@ func draw_choice() -> void:
     button(Vector2(800, 706), Vector2(544, 48), "Fit This Part" if relic else "Apply Upgrade", "choice", choice_preview)
     window(Vector2(64, 706), Vector2(664, 62))
     text_at(Vector2(86, 747), "Parts stay fitted until this dig ends.", 27, MUTED)
-    keycap(Vector2(64, 842), "1 2 3", 86)
+    keycap(Vector2(64, 842), "D-PAD" if pad() else "1 2 3", 86)
     text_at(Vector2(168, 865), "Quick select", 22)
-    keycap(Vector2(382, 842), "↑↓", 46)
+    keycap(Vector2(382, 842), "D-PAD" if pad() else "↑↓", 46)
     text_at(Vector2(443, 865), "Browse", 22)
-    keycap(Vector2(1050, 842), "ENTER", 76)
+    keycap(Vector2(1050, 842), "A" if pad() else "ENTER", 76)
     text_at(Vector2(1142, 865), "Fit selected part", 22)
 
 func draw_end() -> void:
@@ -1069,4 +1230,4 @@ func draw_team() -> void:
         text_at(Vector2(446, 292), "YOU'RE DOWN!", 30, YELLOW, true)
         text_at(Vector2(446, 330), "A teammate can revive you by standing close.", 23, WHITE, false, 550)
         pips(Vector2(446, 342), 548, 8, game.player.revive, 24, YELLOW)
-        text_at(Vector2(446, 378), "Watching %s  ·  click to switch" % watching.display_name if watching else "Hold on — help is on the way.", 21, MUTED, false, 550)
+        text_at(Vector2(446, 378), "Watching %s  ·  %s to switch" % [watching.display_name, "A" if pad() else "click"] if watching else "Hold on — help is on the way.", 21, MUTED, false, 550)

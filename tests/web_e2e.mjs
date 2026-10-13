@@ -93,7 +93,9 @@ try {
   // Mishap 1: the guest reloads the tab. The page asks first, then comes back into the same dig.
   const prompts = [];
   for (const page of [host, guest]) page.on("dialog", (d) => { prompts.push(d.type()); d.accept(); });
-  await guest.waitForTimeout(6000); // let a checkpoint land in browser storage
+  // Let a checkpoint land in browser storage (written to IndexedDB asynchronously).
+  await waitLog(guest, /ONLINE: checkpoint saved/, 60000);
+  await guest.waitForTimeout(5000);
   const runId = (guest.logs.find((l) => l.includes("dig started")) || "").match(/seed=(\d+)/)[1];
   guest.logs = [];
   await guest.reload();

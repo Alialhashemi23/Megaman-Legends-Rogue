@@ -50,6 +50,7 @@ Binary frames are game packets. A client sends `[target][var_to_bytes(Array of m
   - Saved with `store_var` every 5 s and 0.5 s after any build change, via a temp file then rename. A corrupted file is ignored, and a leftover `.tmp` is the fallback.
   - The host also uploads each save to the server.
   - Paths: web `user://run_checkpoint.dat`, desktop `res://save/run_checkpoint.dat`, override `--checkpoint-path=`. Bump `CHECKPOINT_VERSION` if the format changes.
+- Solo digs are not checkpointed (`solo_checkpoints = false`, the user's pass 11 choice); `persisting()` requires an online lobby. Tests turn the flag on to exercise the shared restore path.
 - **Takeover:** the newest of the server copy and the local copy (same run → larger run time) wins. A live, rejoining digger keeps its own fresher build. `finish_run` clears the checkpoint. A replaced saved dig is "retired": its machines go into the record.
 - **Host migration** (`become_host`): robots start from their last snapshot positions, and pickup ids jump past anything seen.
 - **Web:** `onbeforeunload` asks before leaving during a dig or lobby. Invite links carry `&key=` for password lobbies. Opening an invite link whose code matches a saved dig resumes it.

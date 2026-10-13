@@ -1,4 +1,4 @@
-# Relic Diver handoff — 2026-10-13 (pass 10: runs that survive mishaps)
+# Relic Diver handoff — 2026-10-13 (pass 11: controller, Options, Leave Dig)
 
 ## User intent and constraints
 
@@ -21,7 +21,16 @@ Workspace: `C:\Users\Temp\Documents\Codex\2026-10-13\hey-i-want-to-build-a`
 - PowerShell. Set APPDATA and LOCALAPPDATA to workspace `tools/runtime` for tool/test runs.
 - Python: `C:\Users\Temp\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe`; NumPy installed. FFmpeg/ffprobe in PATH.
 
-## Latest completed work: mishap-proof runs (pass 10)
+## Latest completed work: controller, Options, Leave Dig (pass 11)
+
+The user asked for a way to leave a run, controller support and a basic options menu, and said solo mid-run saving isn't needed (runs are short).
+
+- `scripts/settings.gd` owns the InputMap: every gameplay action has one rebindable keyboard/mouse and one controller binding, plus fixed sticks and menu navigation. Defaults are Xbox-style (RT fire, LT lock, A jump, B dash, X use, LB ping, View parts, Start menu, D-pad callouts). Prompts follow the last device; hits rumble. Saved to `settings.json`.
+- Player, game and HUD read actions only. Key and button presses are handled per event; trigger and stick edges are tracked from motion events (holding never repeats a toggle), with menu repeat while the stick is held.
+- Options (title and pause) cover sound, display (fullscreen, camera motion, FOV) and controls (mouse sensitivity, look speed, invert, vibration). Controls & bindings has two columns, swap-on-conflict and reset.
+- The pause menu has **Leave Dig** for everyone. Online, the leaver's slot frees and hosting migrates; the host also has End Dig for Everyone. `solo_checkpoints = false`, so only online digs checkpoint.
+
+## Mishap-proof runs (pass 10)
 
 The user said multiplayer robustness was the biggest gap and wanted runs to persist correctly before moving on.
 
@@ -72,6 +81,9 @@ Latest pass **07 is finished and rebuilt**: distinct contact/push-off/recovery p
 
 ## Verified current state
 
+Pass 11 (Linux): options/controller suite 39/0 (simulated controller: stick movement/look, triggers fire and lock without repeat toggles, Start/B/View, D-pad and stick menu navigation, Y digger switch, options adjustments, rebinding with swaps and persistence, reset, Leave Dig confirm, solo digs unsaved). UI 47/0, audio 66/0, character 3868/0, combat 3207/0, run persistence 24/0, network gauntlet passes, server 9/9; smoke, combat, movement and persistence modes pass. Renders: `screenshots/options-*.png`.
+
+
 Pass 10 (Linux): server 9/9; run persistence 24/0 (exact restore, damaged files, 400 fuzzed messages with no script errors); `tests/net_test.sh` passes all 7 processes (co-op play, guest refresh, Wi-Fi drop and auto-reconnect, host crash and migration, host return, empty-lobby resume from the server checkpoint, server-restart resume from a local checkpoint); `tests/web_e2e.mjs` passes in real Chromium including a guest page reload (beforeunload prompt, IndexedDB save found, resynced) and a host page reload (hosting moved to the guest, host rejoined). Character 3868/0, combat 3207/0, UI 47/0, audio 66/0; smoke, combat, movement and persistence modes pass. Renders in `screenshots/coop-*.png`.
 
 
@@ -102,4 +114,4 @@ Read the FULL visualize skill before creating/updating inline previews. Helpers:
 
 ## Taking over efficiently
 
-The last requested work, mishap-proof runs and co-op communication (pass 10), is complete on branch `online-coop`, on top of pass 09's online co-op. The user's next step is deployment per docs/ONLINE.md; offer help with the tunnel setup and co-op tuning after they play. Earlier: the animation refinement, then DESIGN.md, subsystem handoffs, Git tracking, a portable ZIP and fresh-clone setup. User is switching instances to save context/tokens. Start from this handoff and inspect only files needed for the next request; do not scan backups, dump entire scripts, rerun all tests, rebuild, or redo completed work just to establish context. Briefly acknowledge readiness, then follow the user's next task. Human playtesting is still needed; this remains a prototype, with no controller support or mid-run resume. Check Git status/log for the exact repository synchronization state.
+The last requested work, controller support, Options and Leave Dig (pass 11), is complete on branch `online-coop`, on top of pass 10's mishap-proof online runs and pass 09's online co-op. The user's next step is deployment per docs/ONLINE.md; offer help with the tunnel setup and co-op tuning after they play. Earlier: the animation refinement, then DESIGN.md, subsystem handoffs, Git tracking, a portable ZIP and fresh-clone setup. User is switching instances to save context/tokens. Start from this handoff and inspect only files needed for the next request; do not scan backups, dump entire scripts, rerun all tests, rebuild, or redo completed work just to establish context. Briefly acknowledge readiness, then follow the user's next task. Human playtesting is still needed; this remains a prototype (no authored story; solo digs intentionally don't save mid-run). Check Git status/log for the exact repository synchronization state.

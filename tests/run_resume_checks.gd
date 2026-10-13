@@ -33,6 +33,8 @@ func run() -> void:
 	game.sound.settings_path = "res://save/resume-test-audio.json"
 	game.save_path = "res://save/resume-test-archive.json"
 	game.checkpoint_path = "res://save/resume-test-run.dat"
+	# Solo digs aren't saved by default; the restore path is the one online rejoins use.
+	game.solo_checkpoints = true
 	game.clear_checkpoint()
 	game.meta = {"kills": 0, "runs": 0, "wins": 0, "deepest": 0, "discovered": {}, "best_time": 0.0}
 	await process_frame

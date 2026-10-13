@@ -126,11 +126,16 @@ func _physics_process(dt: float) -> void:
 			lock_blocked = lock_blocked + dt if not get_world_3d().direct_space_state.intersect_ray(sight).is_empty() else 0
 			if lock_blocked > 0.75: lock_target = null
 			else: yaw = lerp_angle(yaw, atan2(-direction.x, -direction.z), dt * 8)
-	var input = Vector2(float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A)), float(Input.is_physical_key_pressed(KEY_S)) - float(Input.is_physical_key_pressed(KEY_W))).normalized()
+	# Keyboard or left stick (analog, so a light tilt walks).
+	var input = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	if not controls: input = Vector2.ZERO
+	elif not is_instance_valid(lock_target):
+		var look = Input.get_vector("look_left", "look_right", "look_up", "look_down")
+		yaw -= look.x * 2.7 * game.settings.look_speed * dt
+		pitch = clampf(pitch - look.y * 1.9 * game.settings.look_speed * dt * (-1.0 if game.settings.invert_y else 1.0), -0.85, 0.50)
 	move_input = input
 	var move = Vector3(input.x, 0, input.y).rotated(Vector3.UP, yaw)
-	if controls and Input.is_physical_key_pressed(KEY_SHIFT) and dash_cooldown <= 0:
+	if controls and Input.is_action_pressed("dash") and dash_cooldown <= 0:
 		dash_direction = move if move.length() > 0 else Vector3(0, 0, -1).rotated(Vector3.UP, yaw)
 		dash_time = 0.19
 		dash_cooldown = maxf(0.65, 1.35 - count("boots") * 0.06)
@@ -146,7 +151,7 @@ func _physics_process(dt: float) -> void:
 	if not is_on_floor(): velocity.y -= 25 * dt
 	else:
 		velocity.y = 0
-		if controls and Input.is_physical_key_pressed(KEY_SPACE):
+		if controls and Input.is_action_pressed("jump"):
 			velocity.y = 8
 			game.sound.play("jump")
 	var was_grounded = is_on_floor()
@@ -159,7 +164,7 @@ func _physics_process(dt: float) -> void:
 		hurt(15)
 	art.root.rotation.y = lerp_angle(art.root.rotation.y, yaw, dt * 16)
 	art.root.rotation.z = lerpf(art.root.rotation.z, -input.x * 0.065, dt * 8)
-	var aiming = controls and (Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or is_instance_valid(lock_target) or cooldown > 0)
+	var aiming = controls and (Input.is_action_pressed("fire") or is_instance_valid(lock_target) or cooldown > 0)
 	aiming_now = aiming
 	visual.equip(weapon)
 	if downed:
@@ -170,7 +175,7 @@ func _physics_process(dt: float) -> void:
 		game.sound.play("step", 1.0, global_position)
 		footstep_time = .08
 	art.root.visible = invincible <= 0 or int(invincible * 25) % 2 == 0
-	if controls and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and cooldown <= 0 and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	if controls and Input.is_action_pressed("fire") and cooldown <= 0 and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or game.settings.using_pad):
 		shoot()
 	update_camera(dt)
 
@@ -190,7 +195,7 @@ func update_camera(dt: float) -> void:
 	camera.global_position = camera.global_position.lerp(desired, minf(dt * 20, 1))
 	camera.rotation = Vector3(pitch, yaw, 0)
 	if is_instance_valid(lock_target) and focus == self: camera.look_at(lock_target.global_position + Vector3.UP * (2.5 if lock_target.kind == 3 else 1.15))
-	camera.fov = lerpf(camera.fov, 67 + (recoil * 0.8 if game.camera_effects else 0.0), minf(1, dt * 14))
+	camera.fov = lerpf(camera.fov, game.settings.fov + (recoil * 0.8 if game.camera_effects else 0.0), minf(1, dt * 14))
 	var amount = trauma * 0.09 if game.camera_effects else 0.0
 	camera.h_offset = sin(Time.get_ticks_msec() * 0.061) * amount
 	camera.v_offset = cos(Time.get_ticks_msec() * 0.077) * amount
@@ -200,8 +205,9 @@ func add_trauma(amount: float) -> void:
 
 func look_mouse(relative: Vector2) -> void:
 	if is_instance_valid(lock_target): return
-	yaw -= relative.x * 0.0027
-	pitch = clampf(pitch - relative.y * 0.0024, -0.85, 0.50)
+	var sensitivity = game.settings.mouse_sensitivity
+	yaw -= relative.x * 0.0027 * sensitivity
+	pitch = clampf(pitch - relative.y * 0.0024 * sensitivity * (-1.0 if game.settings.invert_y else 1.0), -0.85, 0.50)
 
 func toggle_lock() -> void:
 	lock_blocked = 0
@@ -263,6 +269,7 @@ func hurt(amount: float) -> void:
 	game.hurt_flash = 0.5
 	add_trauma(0.22)
 	game.sound.play("hurt")
+	game.settings.rumble(0.35, 0.65, 0.22)
 	game.float_text(global_position + Vector3.UP * 2, "−%d" % int(amount), Color("ff795f"))
 	if hp <= 0: game.local_player_down()
 

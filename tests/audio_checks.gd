@@ -57,11 +57,12 @@ func run() -> void:
 	verify(game.sound.desired_cue() == "clear", "Extraction selects clear cue")
 	game.outcome = false
 	verify(game.sound.desired_cue() == "lost", "Defeat selects loss cue")
-	game.mode = "audio"
+	game.mode = "pause"
+	game.hud.activate("options")
 	game.hud.queue_redraw()
 	await process_frame
 	await process_frame
-	verify(game.hud.hits.size() == 6, "Audio menu exposes levels, mute and return")
+	verify(game.hud.hits.size() == 14, "Options expose sound, display and control settings")
 	var music_level = game.sound.volumes.Music
 	press(KEY_DOWN)
 	press(KEY_LEFT)

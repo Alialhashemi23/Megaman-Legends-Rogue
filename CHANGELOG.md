@@ -1,5 +1,20 @@
 # Local build history
 
+## 11 — Controller support, Options and Leave Dig
+
+- Full controller support (Xbox-style names; works with any pad Godot recognises):
+  - **Play:** left stick moves, right stick looks, RT fires, LT locks on, A jumps, B dashes, X salvages/uses, LB pings, View opens Buster Parts, Start opens the menu, and the D-pad sends callouts.
+  - **Menus:** D-pad or left stick moves, A confirms, B goes back, Y switches digger on the title.
+  - **Prompts and feel:** button prompts follow the last device used; hits rumble the controller.
+- New **Options** menu (title and pause):
+  - **Sound:** master, music, effects, ambience, mute.
+  - **Display:** fullscreen, camera motion, field of view.
+  - **Controls:** mouse sensitivity, controller look speed, invert look, vibration.
+  - **Controls & bindings:** rebind every action for keyboard/mouse and controller separately, with automatic swaps on conflicts and a reset to defaults. Settings save to `settings.json` (`audio.json` keeps the volumes).
+- **Leave Dig** in the pause menu for everyone, with a second click to confirm. Online, a leaving host hands the dig to the others; the host also has **End Dig for Everyone**.
+- Solo digs no longer save mid-run (they're short). Online digs keep their checkpoints so rejoining still works.
+- New checks: controller, options, rebinding and leave suite (39). Existing suites pass.
+
 ## 10 — Runs that survive mishaps, plus co-op communication
 
 - Host migration: when the host leaves or crashes, the next digger takes over hosting from the world they already see and the dig continues.

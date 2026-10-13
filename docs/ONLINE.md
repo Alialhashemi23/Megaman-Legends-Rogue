@@ -66,6 +66,7 @@ The Windows build can join the same lobbies: **Play Online → Dig Server**, ent
 - At 0 Life a digger goes **down**. Any teammate standing next to them for about 2.5 seconds revives them with 35% Life. The dig ends only when everyone is down. Taking the lift also revives downed diggers.
 - The lift waits until every standing digger is aboard.
 - Menus and part choices don't pause the dig online. While you choose a part you're protected and robots look for other targets.
+- Controllers work everywhere (see Options → Controls & bindings to remap). In a dig: LB pings and the D-pad sends callouts.
 - Talk with **T** (or Enter), mark a spot, robot, cache or lift for the team with **G** (or middle mouse), and shout quick callouts with **1–4** (*Help!*, *Over here!*, *Nice!*, *Wait up!*). Chat also works in the lobby room.
 - While you're down, the camera follows a standing teammate. Click to switch who you watch.
 - The host can **Remove** a player (they can't rejoin that lobby), **Lock** the lobby so only people already in it can come back, or set a **password** when creating it. Password lobbies show a lock in the browser, and the invite link carries the password.
@@ -83,7 +84,7 @@ A dig survives the usual accidents:
 | Wi-Fi drops briefly | The dig freezes for that player with a *Reconnecting…* banner, then they're back automatically (it keeps trying for 90 seconds). |
 | Everyone drops out | The server keeps the lobby and the host's latest checkpoint for 15 minutes (`RUN_GRACE_MINUTES`). The first player back resumes the dig and everyone else rejoins with the same link. |
 | The server restarts | Each browser keeps its own copy of the dig. **Rejoin Dig** recreates the lobby under the same code and restores it, and friends rejoin with the same link. |
-| A solo run gets interrupted | **Continue Dig** on the title screen picks it up again. |
+| Someone wants to stop playing | **Leave Dig** in the pause menu (second click confirms). The others keep going; a leaving host hands hosting to the next player. The host can also **End Dig for Everyone**. |
 
 The game saves every 5 seconds and immediately whenever a build changes, so at most a few seconds of robot fighting are ever lost. Starting a new dig over a saved one asks for confirmation, and the abandoned dig's machines still count toward unlocks. Leaving a lobby, ending a dig for everyone and removing players all need a second click.
 

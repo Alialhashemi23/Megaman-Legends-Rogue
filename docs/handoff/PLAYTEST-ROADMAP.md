@@ -24,8 +24,8 @@ For each issue, note character, descent, room or nearby landmark, weapon/parts, 
 | Exploration | Denser environmental storytelling, stronger room identities, secrets/puzzles | Five cover arrangements; puzzle design undecided |
 | Progression | Drop frequency, stack balance, cache prices and unlock pacing | Complete prototype systems; balance unproven |
 | Character expression | Additional faithful poses or per-character personality | Twelve authored clips for each; mechanics shared |
-| Accessibility/input | Controller support and more settings | Not implemented |
-| Run continuity | Mid-run resume | Implemented in pass 10 (checkpoints, Continue/Rejoin Dig); see NETWORK.md |
+| Accessibility/input | Controller support and more settings | Pass 11: controller, Options menu, rebinding; more accessibility options possible |
+| Run continuity | Mid-run resume | Online rejoin only (pass 10); solo mid-run saving dropped by the user in pass 11 |
 | Boss identity | Distinct meshes and silhouettes | Guardians currently share a base silhouette |
 
 This list is a set of possibilities, not authorization to implement every feature. Prioritize the user's next request. Keep exploration unhurried, power reset between runs, the Legends art direction, and the existing playable loop intact.

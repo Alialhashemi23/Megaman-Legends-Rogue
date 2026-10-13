@@ -14,7 +14,9 @@ Play in the browser with up to four diggers. Choose **Play Online** on the title
 
 Everyone shares the run: the same ruins and robots, shared scrap and experience. Builds are personal: each cache offers every digger their own part, and each guardian drops a core per digger. Robots grow tougher with each digger. A digger at 0 Life goes down; stand beside them to revive them, and while down you watch a teammate. The dig ends only when the whole team is down, and the lift waits for everyone. Online menus don't pause the action. Chat with T, ping with G and use 1–4 for quick callouts. Hosts can remove players, lock the lobby or set a password.
 
-Runs are protected against mishaps (pass 10): a refresh, crash or dropped connection brings you back into the same dig with your exact build; if the host leaves, hosting moves to another player; if everyone drops out, the server holds the dig for 15 minutes; and every browser keeps its own checkpoint, so even a server restart can be resumed with **Rejoin Dig**. Solo digs get **Continue Dig** too.
+Pass 11 adds full controller support, an **Options** menu (sound, display, sensitivity, invert look, vibration and full key/button rebinding) and **Leave Dig** in the pause menu for every player. Online, a host who leaves hands the dig to the others. Solo digs are short and don't save mid-run.
+
+Runs are protected against mishaps (pass 10): a refresh, crash or dropped connection brings you back into the same dig with your exact build; if the host leaves, hosting moves to another player; if everyone drops out, the server holds the dig for 15 minutes; and every browser keeps its own checkpoint, so even a server restart can be resumed with **Rejoin Dig**. (Solo digs don't save mid-run as of pass 11.)
 
 To host it on your domain, see [docs/ONLINE.md](docs/ONLINE.md): `docker compose up -d --build` with a Cloudflare Tunnel token, or **Host-Online.cmd** without Docker. The web bundle is `build/RelicDiver-Web.zip`; rebuild it with `tools/package-web.ps1` or `tools/package-web.sh`. Implementation notes are in [docs/handoff/NETWORK.md](docs/handoff/NETWORK.md).
 
@@ -40,7 +42,7 @@ Seven original music cues now cover the title, each of the three descents, guard
 
 There are 29 original sound effects: distinct Pulse, Needle and Siege busters, varied metal impacts and footsteps, jump/landing, dashes, robot weapons and destruction, attack warnings, scrap, healing, parts and menu cues. Robot effects have 3D positioning. A quiet ventilation and resonant machinery loop fills the ruins. No original Mega Man music or game sound files were used.
 
-Pause → **Sound Settings** adjusts Master, Music, Effects and Ambience separately. Use arrows to select/adjust, or click a row. **M** toggles all sound. Settings save locally in `save/audio.json`; they do not change your run records. The local build has been updated. Full sources, editable MIDI scores and a soundtrack preview are in `tools/audio/`; see `assets/audio/AUDIO-NOTES.md` for credits and implementation details.
+Pause → **Options** (pass 11; formerly Sound Settings) adjusts Master, Music, Effects and Ambience separately. Use arrows to select/adjust, or click a row. **M** toggles all sound. Settings save locally in `save/audio.json`; they do not change your run records. The local build has been updated. Full sources, editable MIDI scores and a soundtrack preview are in `tools/audio/`; see `assets/audio/AUDIO-NOTES.md` for credits and implementation details.
 
 ## Historical visual pass 02
 
@@ -207,6 +209,6 @@ The first three do not save a player profile. The persistence test uses a separa
 
 ## Prototype scope
 
-This is a playable prototype with a complete start-to-extraction loop. Mega and Roll use the supplied original meshes, textures and skeletons with newly authored animation clips and a runtime buster aiming layer. The three guardians share a base silhouette with different palettes and attack mixes. Enemy navigation uses a flat dungeon grid; dynamic crowd avoidance and more elaborate vertical traversal remain future improvements. Balancing needs human playtesting. There is no controller support, online play, full accessibility settings menu, authored story, or mid-run save yet.
+This is a playable prototype with a complete start-to-extraction loop. Mega and Roll use the supplied original meshes, textures and skeletons with newly authored animation clips and a runtime buster aiming layer. The three guardians share a base silhouette with different palettes and attack mixes. Enemy navigation uses a flat dungeon grid; dynamic crowd avoidance and more elaborate vertical traversal remain future improvements. Balancing needs human playtesting. Later passes added online co-op (09–10) and controller support with an Options menu (11); there is still no authored story.
 
 The next development pass should use human playtest feedback to tune movement, attack timing, progression, room density, and readability. Distinct boss silhouettes, environmental puzzles, and mid-run resume are useful subsequent improvements. Original code and locally authored assets are MIT licensed; the supplied Capcom character meshes, textures and skeletons are excluded. See LICENSE.md. Godot's license notice is in GODOT-LICENSE.txt. Mega Man Volnutt, Roll Caskett and Mega Man Legends belong to Capcom. No original-game music, sound effects or animation clips are included.

@@ -109,7 +109,7 @@ func desired_cue() -> String:
 	var game = get_parent()
 	if game.mode in ["title", "archive", "online", "lobby"]: return "title"
 	if game.mode == "end": return "clear" if game.outcome else "lost"
-	if game.mode in ["pause", "audio", "inventory", "choice"]: return retained_cue
+	if game.mode in ["pause", "options", "controls", "inventory", "choice"]: return retained_cue
 	if not game.guardian_dead:
 		for enemy in game.enemies:
 			if is_instance_valid(enemy) and not enemy.dead and enemy.kind == 3 and enemy.active and enemy.room_id == game.current_room:
@@ -132,7 +132,7 @@ func _process(dt: float) -> void:
 	clock += dt
 	if DisplayServer.get_name() == "headless" or get_parent().smoke_test: return
 	change_music(desired_cue())
-	var duck = get_parent().mode in ["pause", "audio", "inventory", "choice"]
+	var duck = get_parent().mode in ["pause", "options", "controls", "inventory", "choice"]
 	for i in 2:
 		music_gains[i] = move_toward(music_gains[i], (0.42 if duck else 1.0) if i == active_music else 0.0, dt * 0.85)
 		music_players[i].volume_db = linear_to_db(maxf(0.0001, music_gains[i])) - 6

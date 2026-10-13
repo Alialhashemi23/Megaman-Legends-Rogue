@@ -36,7 +36,19 @@ var obstacles: Array = []
 var navigation = DiverNavigation.new()
 var hit_confirm = 0.0
 var kill_confirm = 0.0
-var camera_effects = true
+var settings: DiverSettings
+# Camera shake/recoil zoom lives in the player's settings.
+var camera_effects: bool:
+	get: return settings.camera_effects if settings else true
+	set(value):
+		if settings:
+			settings.camera_effects = value
+			settings.save_settings()
+# Solo digs are short, so only online digs keep a checkpoint (for rejoining).
+var solo_checkpoints = false
+# Trigger and stick edges are polled so holding a trigger can't repeat a toggle.
+var pad_held: Dictionary = {}
+var nav_repeat = 0.0
 var depth = 1
 var current_room = 0
 var exit_room = 0
@@ -70,7 +82,7 @@ var movement_origin = Vector3.ZERO
 var test_enemy: DiverEnemy
 const SAVE_PATH = "res://save/archive.json"
 const WEB_SAVE_PATH = "user://archive.json"
-const OVERLAY_MODES = ["pause", "audio", "inventory", "choice"]
+const OVERLAY_MODES = ["pause", "options", "controls", "inventory", "choice"]
 var save_path = SAVE_PATH
 # Online co-op state. Remote teammates are DiverPlayer proxies keyed by lobby slot.
 var net: DiverNet
@@ -100,6 +112,7 @@ var chat_open = false
 var pings: Array = []
 var spectate_index = 0
 var leave_guard = false
+var logged_checkpoint = ""
 
 func _ready() -> void:
 	if OS.has_feature("web"):
@@ -108,6 +121,8 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--checkpoint-path="): checkpoint_path = arg.substr(18)
 	load_meta()
+	settings = DiverSettings.new()
+	add_child(settings)
 	sound = DiverSound.new()
 	add_child(sound)
 	net = DiverNet.new()
@@ -518,42 +533,103 @@ func create_interactable(pos: Vector3, kind: String, title: String, cost: int, r
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and mode == "play" and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		player.look_mouse(event.relative)
-	if event is InputEventKey and event.pressed and not event.echo:
-		match event.physical_keycode:
-			KEY_T, KEY_ENTER, KEY_KP_ENTER:
-				if mode == "play" and net.active():
-					chat_open = true
-					get_viewport().set_input_as_handled()
-			KEY_G:
-				if mode == "play": ping_here()
-			KEY_1, KEY_2, KEY_3, KEY_4:
-				if mode == "play" and net.active(): say(QUICK_CHAT[event.physical_keycode - KEY_1], true)
-		match event.physical_keycode:
-			KEY_ESCAPE:
-				if mode == "play": mode = "pause"; Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-				elif mode == "pause": resume_game()
-			KEY_E:
-				if mode == "play": interact()
-			KEY_Q:
-				if mode == "play": player.toggle_lock()
-			KEY_TAB:
-				if mode == "play": mode = "inventory"; Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-				elif mode == "inventory": resume_game()
-			KEY_M:
-				sound.muted = not sound.muted
-			KEY_1, KEY_2, KEY_3:
-				if mode == "choice": choose(event.physical_keycode - KEY_1)
-			KEY_ENTER:
-				if mode == "title" or (mode == "end" and not net.active()): start_run()
 	if event is InputEventMouseButton and event.pressed:
 		# Browsers only grant pointer lock on a click (e.g. after an online dig starts).
 		if mode == "play" and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 			return
-		if event.button_index == MOUSE_BUTTON_MIDDLE and mode == "play": ping_here()
 		# Downed diggers watch a teammate; clicking switches who.
 		if event.button_index == MOUSE_BUTTON_LEFT and mode == "play" and player.downed: spectate_index += 1
-		if event.button_index == MOUSE_BUTTON_RIGHT and mode == "play": player.toggle_lock()
+	if event is InputEventJoypadMotion:
+		pad_motion(event)
+		return
+	if not event.is_pressed() or event.is_echo(): return
+	for id in ["chat", "ping", "callout_1", "callout_2", "callout_3", "callout_4", "menu", "interact", "lock_on", "parts", "mute", "choice_1", "choice_2", "choice_3", "nav_accept", "jump"]:
+		if event.is_action_pressed(id) and game_action(id): get_viewport().set_input_as_handled()
+
+# Gameplay actions from any device. Returns true when the action was used.
+func game_action(id: String) -> bool:
+	match id:
+		"chat":
+			if mode == "play" and net.active():
+				chat_open = true
+				return true
+		"nav_accept":
+			if mode == "play" and net.active() and not settings.using_pad:
+				chat_open = true
+				return true
+			if mode == "title" or (mode == "end" and not net.active()):
+				start_run()
+				return true
+		"ping":
+			if mode == "play": ping_here(); return true
+		"callout_1", "callout_2", "callout_3", "callout_4":
+			if mode == "play" and net.active():
+				say(QUICK_CHAT[int(id.right(1)) - 1], true)
+				return true
+		"menu":
+			if mode == "play":
+				mode = "pause"
+				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+				return true
+			if mode == "pause":
+				resume_game()
+				return true
+		"interact":
+			if mode == "play": interact(); return true
+		"lock_on":
+			if mode == "play": player.toggle_lock(); return true
+		"parts":
+			if mode == "play":
+				mode = "inventory"
+				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+				return true
+			if mode == "inventory":
+				resume_game()
+				return true
+		"mute":
+			sound.muted = not sound.muted
+			return true
+		"choice_1", "choice_2", "choice_3":
+			if mode == "choice":
+				choose(int(id.right(1)) - 1)
+				return true
+		"jump":
+			# A downed digger cycles which teammate they watch.
+			if mode == "play" and player.downed:
+				spectate_index += 1
+				return true
+	return false
+
+# Controller sticks and triggers: edge-detect so holds don't repeat toggles.
+func pad_motion(event: InputEventJoypadMotion) -> void:
+	for a in DiverSettings.ACTIONS:
+		var pad: Dictionary = settings.bindings[a.id].pad
+		if not pad.has("axis") or a.id == "fire" or int(pad.axis) != event.axis: continue
+		var down = event.axis_value * float(pad.get("sign", 1)) > 0.6
+		if down and not pad_held.get(a.id, false): game_action(a.id)
+		pad_held[a.id] = down
+	# The left stick steps through menus.
+	if event.axis in [JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y] and mode != "play":
+		var axis_key = "stick%d" % event.axis
+		var dir = 0 if absf(event.axis_value) < 0.5 else (1 if event.axis_value > 0 else -1)
+		if dir != pad_held.get(axis_key, 0):
+			pad_held[axis_key] = dir
+			if dir != 0:
+				nav_repeat = 0.32
+				hud.navigate(dir, event.axis == JOY_AXIS_LEFT_X)
+
+# Holding the stick in a menu keeps scrolling.
+func poll_pad(dt: float) -> void:
+	if mode == "play": return
+	for axis_index in [JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y]:
+		var dir = pad_held.get("stick%d" % axis_index, 0)
+		if dir == 0: continue
+		nav_repeat -= dt
+		if nav_repeat <= 0:
+			nav_repeat = 0.11
+			hud.navigate(dir, axis_index == JOY_AXIS_LEFT_X)
+		return
 
 func resume_game() -> void:
 	mode = "play"
@@ -572,6 +648,7 @@ func world_running() -> bool:
 func _process(dt: float) -> void:
 	hurt_flash = maxf(0, hurt_flash - dt)
 	message_time = maxf(0, message_time - dt)
+	poll_pad(dt)
 	if world_running():
 		hit_confirm = maxf(0, hit_confirm - dt)
 		kill_confirm = maxf(0, kill_confirm - dt)
@@ -1312,7 +1389,7 @@ func checkpoint_data() -> Dictionary:
 	return {"v": CHECKPOINT_VERSION, "online": net.active(), "lobby_code": net.lobby_code, "lobby_name": str(net.lobby.get("name", "")), "public": bool(net.lobby.get("isPublic", true)), "password": net.lobby_password, "run_id": run_id, "saved": Time.get_unix_time_from_system(), "world": world_state(), "build": build_state(), "roster": roster.duplicate(true), "selected": [selected_character, selected_weapon]}
 
 func persisting() -> bool:
-	return not smoke_test or net_test != ""
+	return (not smoke_test or net_test != "") and (net.active() or solo_checkpoints)
 
 func save_checkpoint() -> void:
 	checkpoint_clock = 0.0
@@ -1327,7 +1404,10 @@ func save_checkpoint() -> void:
 	f.store_var(data)
 	f.close()
 	if FileAccess.file_exists(checkpoint_path): DirAccess.remove_absolute(ProjectSettings.globalize_path(checkpoint_path))
-	DirAccess.rename_absolute(ProjectSettings.globalize_path(temp), ProjectSettings.globalize_path(checkpoint_path))
+	var moved = DirAccess.rename_absolute(ProjectSettings.globalize_path(temp), ProjectSettings.globalize_path(checkpoint_path))
+	if logged_checkpoint != run_id:
+		logged_checkpoint = run_id
+		print("ONLINE: checkpoint saved run=%s (%s)" % [run_id, error_string(moved)])
 	if net.is_host(): net.store_checkpoint(var_to_bytes(data))
 
 func load_checkpoint() -> Dictionary:
