@@ -17,15 +17,14 @@ Players open `https://your-domain/`, choose **Play Online** and either create a 
 
 ## 1. Create the tunnel (once)
 
-1. In the Cloudflare dashboard open **Zero Trust → Networks → Tunnels** and choose **Create a tunnel**. Pick **Cloudflared** and give the tunnel a name such as `relic-diver`.
-2. Cloudflare shows install commands containing a long **token**, the text after `--token` or `service install`. Copy it and keep it private. It works like a password for your tunnel.
-3. Add a **public hostname** (newer dashboards call these *published application routes*):
+1. In the Cloudflare dashboard open **Networking → Tunnels** (older dashboards: **Zero Trust → Networks → Tunnels**) and choose **Create a tunnel**. Pick **Cloudflared** if asked, and name the tunnel e.g. `relic-diver`.
+2. On the install screen choose **Docker** (or **Windows** if you skip Docker). Don't run the shown command; copy only the long **token** after `--token`. Keep it private: it works like a password for your tunnel.
+3. Open the tunnel's **Routes** tab → **Add route** → **Published application** (older dashboards: **Public hostname**):
    - **Domain**: your domain. Leave the subdomain empty for `your-domain`, or use e.g. `play` for `play.your-domain`.
-   - **Service type**: `HTTP`
-   - **URL**: `relic-diver:8080` if you use Docker (option A), or `localhost:8080` without Docker (option B).
+   - **Service URL**: `http://relic-diver:8080` with Docker (option A), or `http://localhost:8080` without Docker (option B).
 4. Save. Cloudflare creates the DNS record automatically.
 
-WebSockets are enabled by default on Cloudflare. Leave **Rocket Loader** off for this hostname. The game needs its scripts untouched.
+WebSockets are on by default. Leave **Rocket Loader** off for this hostname, since the game needs its scripts untouched. If friends get stuck on a challenge page, turn off **Bot Fight Mode** for the domain.
 
 ## 2A. Run with Docker (recommended)
 
