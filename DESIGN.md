@@ -40,6 +40,10 @@ Menus use cobalt mechanical frames, cream lettering, a yellow selector, green Li
 
 Music should suggest an adventurous late-1990s console world through melodic electric piano, bells, marimba, guitar, bass and restrained percussion. The seven existing cues are original compositions. Ruin ambience and mechanical effects support space and feedback; attacks, pickups and menu actions need distinct sounds. Godot native audio currently handles these requirements.
 
+## Online co-op (accepted, pass 09)
+
+The user asked for seamless browser co-op on their own domain: make a lobby, send friends a link or let them join from a lobby browser, and play together. Accepted choices: up to four diggers; one shared run with personal builds (shared scrap and XP, every digger picks their own part from each cache, one guardian core each); downed diggers are revived by a teammate standing close, and the run ends when everyone is down; open access (public lobbies listed, private lobbies by link/code). Robots scale with party size. Online menus and choices don't pause the dig. Run power still resets; unlocks stay per player.
+
 ## Scope and open decisions
 
 This is a playable prototype with a complete run loop, not a finished game. Controller support, mid-run resume, authored story, a surface hub, environmental puzzles, extensive vertical traversal and unique boss meshes are not implemented. Their exact designs have not been approved. Do not claim them as complete or invent requirements for them.
@@ -48,4 +52,4 @@ The next priorities should follow human playtesting: movement feel, camera visib
 
 ## Repository and distribution intent
 
-The user initially requested local-only work, then explicitly authorized committing this project and its handoff documents to https://github.com/Alialhashemi23/Megaman-Legends-Rogue. That authorization covers this repository. It does not request hosted gameplay, public releases, deployment, monetization or uploading personal saves. Preserve attribution and the distinction between original project work and Capcom assets.
+The user initially requested local-only work, then explicitly authorized committing this project and its handoff documents to https://github.com/Alialhashemi23/Megaman-Legends-Rogue. That authorization covers this repository. The user then requested browser play with online co-op on their own domain, published from their machines through a Cloudflare Tunnel; the project ships the server and deployment files, and the user runs the deployment. It still does not request public releases, monetization or uploading personal saves; keep the site non-commercial. Preserve attribution and the distinction between original project work and Capcom assets.

@@ -26,3 +26,7 @@ environment/defaults/default_clear_color=Color(0.035, 0.065, 0.10, 1)
 
 [debug]
 file_logging/enable_file_logging=false
+
+[audio]
+
+general/default_playback_type.web=0

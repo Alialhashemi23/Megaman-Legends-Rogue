@@ -45,11 +45,70 @@ var selected_item = 0
 var list_scroll = 0
 var choice_preview = 0
 var previous_mode = ""
+var name_edit: LineEdit
+var code_edit: LineEdit
+var server_edit: LineEdit
+var copied_time = 0.0
 
 func _ready() -> void:
     mouse_filter = Control.MOUSE_FILTER_IGNORE
     texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
     for id in ["volnutt", "roll"]: portraits.append(load("res://assets/ui/%s_portrait.png" % id))
+    name_edit = make_field(16, "Your digger name")
+    name_edit.text_submitted.connect(func(_text): commit_name(); get_viewport().gui_release_focus())
+    name_edit.focus_exited.connect(commit_name)
+    code_edit = make_field(12, "CODE")
+    code_edit.text_submitted.connect(func(_text): activate("join_code"))
+    server_edit = make_field(120, "wss://your-domain/ws")
+    server_edit.text_submitted.connect(func(_text): commit_server(); get_viewport().gui_release_focus())
+    server_edit.focus_exited.connect(commit_server)
+
+# Text fields styled like the cobalt menu windows.
+func make_field(max_length: int, hint: String) -> LineEdit:
+    var field = LineEdit.new()
+    field.max_length = max_length
+    field.placeholder_text = hint
+    field.visible = false
+    field.mouse_filter = Control.MOUSE_FILTER_STOP
+    field.add_theme_font_override("font", font)
+    field.add_theme_color_override("font_color", WHITE)
+    field.add_theme_color_override("font_placeholder_color", Color(0.68, 0.78, 0.91, 0.6))
+    field.add_theme_color_override("caret_color", YELLOW)
+    field.add_theme_color_override("selection_color", Color(0.16, 0.37, 0.72))
+    for state in ["normal", "focus", "read_only"]:
+        var style = StyleBoxFlat.new()
+        style.bg_color = INK
+        style.border_color = YELLOW if state == "focus" else EDGE
+        style.set_border_width_all(2)
+        style.set_corner_radius_all(4)
+        style.content_margin_left = 12
+        style.content_margin_right = 12
+        field.add_theme_stylebox_override(state, style)
+    add_child(field)
+    return field
+
+func place_field(field: LineEdit, pos: Vector2, size: Vector2, font_size: int = 24) -> void:
+    field.visible = true
+    field.position = ui_offset + pos * ui_scale
+    field.size = size * ui_scale
+    field.add_theme_font_size_override("font_size", maxi(8, int(font_size * ui_scale)))
+
+func editing() -> bool:
+    return get_viewport().gui_get_focus_owner() is LineEdit
+
+func commit_name() -> void:
+    var value = name_edit.text.strip_edges()
+    if value != "" and value != game.net.player_name:
+        game.net.rename(value)
+        if game.mode == "lobby": game.send_info()
+
+func commit_server() -> void:
+    var value = server_edit.text.strip_edges()
+    if value == "" or value == game.net.server_url: return
+    game.net.disconnect_server()
+    game.net.server_url = value
+    game.net.save_profile()
+    game.net.connect_server()
 
 func portrait() -> Texture2D:
     return portraits[game.player.character]
@@ -58,6 +117,7 @@ func select_character(index: int) -> void:
     game.selected_character = clampi(index, 0, 1)
     game.player.set_character(game.selected_character)
     game.player.visual.preview(0)
+    game.send_info()
 
 func text_at(pos: Vector2, value: String, size: int = 24, color: Color = WHITE, display: bool = false, width: float = -1) -> void:
     var face: Font = heading if display else font
@@ -146,13 +206,16 @@ func _input(event: InputEvent) -> void:
             select_part(-1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1)
             get_viewport().set_input_as_handled()
         elif event.button_index == MOUSE_BUTTON_LEFT:
+            if editing():
+                var owner_field: Control = get_viewport().gui_get_focus_owner()
+                if not owner_field.get_global_rect().has_point(event.position): get_viewport().gui_release_focus()
             var point = (event.position - ui_offset) / ui_scale
             for hit in hits:
                 if hit.rect.has_point(point):
                     activate(hit.action, hit.value)
                     get_viewport().set_input_as_handled()
                     break
-    if event is InputEventKey and event.pressed and not event.echo and game.mode in ["title", "pause", "audio", "choice", "inventory", "archive", "end"]:
+    if event is InputEventKey and event.pressed and not event.echo and game.mode in ["title", "pause", "audio", "choice", "inventory", "archive", "end", "online", "lobby"] and not editing():
         var key = event.physical_keycode
         if key == 0: key = event.keycode
         if key in [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]:
@@ -182,7 +245,7 @@ func _input(event: InputEvent) -> void:
                 var hit = hits[clampi(focus_index, 0, hits.size() - 1)]
                 activate(hit.action, hit.value)
             get_viewport().set_input_as_handled()
-        elif key == KEY_ESCAPE and game.mode in ["archive", "inventory", "audio"]:
+        elif key == KEY_ESCAPE and game.mode in ["archive", "inventory", "audio", "online"]:
             activate("pause" if game.mode == "audio" else "resume" if game.mode == "inventory" else "title")
             get_viewport().set_input_as_handled()
 
@@ -207,7 +270,9 @@ func activate(action: String, value: int = 0) -> void:
         "inventory": game.mode = "inventory"
         "inspect": selected_item = value
         "title": game.show_title()
-        "weapon": game.selected_weapon = value
+        "weapon":
+            game.selected_weapon = value
+            game.send_info()
         "character": select_character(value)
         "mute": game.sound.muted = not game.sound.muted
         "audio": game.mode = "audio"
@@ -217,7 +282,30 @@ func activate(action: String, value: int = 0) -> void:
             game.sound.adjust_volume(bus, -1.0 if game.sound.volumes[bus] >= 0.99 else 0.10)
         "camera_fx": game.camera_effects = not game.camera_effects
         "quit": game.get_tree().quit()
-        "abandon": game.finish_run(false)
+        "abandon":
+            if game.net.is_host(): game.end_run_all(false)
+            else: game.finish_run(false)
+        "online":
+            game.mode = "online"
+            game.net.error_text = ""
+            game.net.refresh_list()
+        "create_public", "create_private":
+            commit_name()
+            game.net.create_lobby("%s's Dig" % game.net.player_name, action == "create_public")
+        "join":
+            if value < game.net.public_lobbies.size(): game.net.join_lobby(str(game.net.public_lobbies[value].code))
+        "join_code":
+            if code_edit.text.strip_edges().length() >= 3:
+                commit_name()
+                game.net.join_lobby(code_edit.text)
+                get_viewport().gui_release_focus()
+        "refresh": game.net.refresh_list()
+        "copy_link":
+            DisplayServer.clipboard_set(game.net.invite_link())
+            copied_time = 2.5
+        "start_online": game.host_start_run()
+        "lobby_room": game.enter_lobby_room()
+        "leave_online": game.leave_online()
 
 func _draw() -> void:
     ui_scale = minf(get_viewport_rect().size.x / BASE.x, get_viewport_rect().size.y / BASE.y)
@@ -231,9 +319,13 @@ func _draw() -> void:
         choice_preview = 0
         pointer = Vector2(-100, -100)
     hits.clear()
+    copied_time = maxf(0, copied_time - get_process_delta_time())
+    for field in [name_edit, code_edit, server_edit]: field.visible = false
     match game.mode:
         "model_preview": return
         "title": draw_title()
+        "online": draw_online()
+        "lobby": draw_lobby()
         "archive": draw_parts(true)
         "choice": draw_choice()
         "pause": draw_pause()
@@ -244,9 +336,11 @@ func _draw() -> void:
 
 func backdrop() -> void:
     var extra = ui_offset / ui_scale
-    rect(-extra, BASE + extra * 2, BLUE)
+    # Online menus stay slightly see-through: the dig keeps going behind them.
+    var live = game.world_running()
+    rect(-extra, BASE + extra * 2, Color(BLUE, 0.84) if live else BLUE)
     for x in range(floori(-extra.x / 256), ceili((BASE.x + extra.x) / 256)):
-        for y in range(floori(-extra.y / 256), ceili((BASE.y + extra.y) / 256)): draw_texture_rect(pattern, Rect2(x * 256, y * 256, 256, 256), false, Color(0.75, 0.85, 1, 0.62))
+        for y in range(floori(-extra.y / 256), ceili((BASE.y + extra.y) / 256)): draw_texture_rect(pattern, Rect2(x * 256, y * 256, 256, 256), false, Color(0.75, 0.85, 1, 0.35 if live else 0.62))
     rect(Vector2.ZERO, BASE, Color(0.02, 0.05, 0.20, 0.12))
 
 func pips(pos: Vector2, width: float, height: float, fraction: float, count: int = 16, color: Color = GREEN) -> void:
@@ -307,9 +401,10 @@ func draw_title() -> void:
     window(Vector2(64, 315), Vector2(476, 46), BLUE)
     text_at(Vector2(86, 347), "THE TIDAL ARCHIVE", 24, WHITE, true)
     text_at(Vector2(66, 399), "A dungeon-crawling fan adventure", 25, MUTED)
-    button(Vector2(64, 438), Vector2(476, 62), "Start Dig", "start", 0, true)
-    button(Vector2(64, 516), Vector2(476, 62), "Parts Collection", "archive")
-    button(Vector2(64, 594), Vector2(476, 62), "Quit", "quit")
+    button(Vector2(64, 426), Vector2(476, 56), "Start Dig", "start", 0, true)
+    button(Vector2(64, 494), Vector2(476, 56), "Play Online", "online", 0, true)
+    button(Vector2(64, 562), Vector2(476, 56), "Parts Collection", "archive")
+    if not OS.has_feature("web"): button(Vector2(64, 630), Vector2(476, 56), "Quit", "quit")
     window(Vector2(48, 690), Vector2(508, 156))
     text_at(Vector2(68, 723), "SELECT BUSTER", 21, WHITE, true)
     for i in 3:
@@ -429,8 +524,12 @@ func draw_hud() -> void:
     pips(Vector2(1240, 825), 156, 7, clampf(1 - p.dash_cooldown / 1.35, 0, 1), 8, CYAN)
     keycap(Vector2(1240, 856), "ESC", 54)
     text_at(Vector2(1308, 879), "Menu", 21)
+    if game.net.active(): draw_team()
     if game.message_time > 0: draw_notice()
-    if not game.nearest.is_empty() and game.mode == "play": interaction_prompt()
+    if not game.nearest.is_empty() and game.mode == "play" and not p.downed: interaction_prompt()
+    if game.mode == "play" and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and DisplayServer.get_name() != "headless":
+        window(Vector2(560, 384), Vector2(320, 46), INK, YELLOW, false)
+        text_at(Vector2(584, 415), "Click to take aim", 24, YELLOW, true)
     if game.hurt_flash > 0: rect(Vector2.ZERO, BASE, Color(0.9, 0.2, 0.08, game.hurt_flash * 0.25))
 
 func draw_notice() -> void:
@@ -495,12 +594,13 @@ func visited_count() -> int:
 func draw_pause() -> void:
     backdrop()
     stats_header()
-    page_title("DIG MENU", "B%d / %s" % [game.depth, game.DEPTH_NAMES[game.depth - 1]])
+    page_title("DIG MENU", "B%d / %s" % [game.depth, game.DEPTH_NAMES[game.depth - 1]] + ("   ·   The dig continues while this menu is open." if game.net.active() else ""))
     button(Vector2(64, 288), Vector2(400, 62), "Return to Ruins", "resume", 0, true)
     button(Vector2(64, 366), Vector2(400, 62), "Buster Parts", "inventory")
     button(Vector2(64, 444), Vector2(400, 62), "Sound Settings", "audio")
     button(Vector2(64, 522), Vector2(400, 62), "Camera Motion: " + ("On" if game.camera_effects else "Off"), "camera_fx")
-    button(Vector2(64, 600), Vector2(400, 62), "End Dig & Save Record", "abandon")
+    if game.net.is_guest(): button(Vector2(64, 600), Vector2(400, 62), "Leave Lobby", "leave_online")
+    else: button(Vector2(64, 600), Vector2(400, 62), "End Dig for Everyone" if game.net.active() else "End Dig & Save Record", "abandon")
     window(Vector2(508, 280), Vector2(868, 392))
     window(Vector2(536, 308), Vector2(178, 226), BLUE)
     draw_texture_rect(portrait(), Rect2(542, 319, 166, 187), false)
@@ -520,7 +620,7 @@ func draw_pause() -> void:
 func draw_audio() -> void:
     backdrop()
     stats_header()
-    page_title("SOUND SETTINGS", "Find your balance. Changes are saved on this PC.")
+    page_title("SOUND SETTINGS", "Find your balance. Changes are saved in this browser." if OS.has_feature("web") else "Find your balance. Changes are saved on this PC.")
     var buses = ["Master", "Music", "Effects", "Ambience"]
     for i in buses.size():
         var bus: String = buses[i]
@@ -658,7 +758,7 @@ func draw_choice() -> void:
 func draw_end() -> void:
     backdrop()
     stats_header()
-    page_title("DIG COMPLETE!" if game.outcome else "DIG ENDED", "Core recovered. You've returned to the surface." if game.outcome else "Record saved. Equipment resets when you start another dig.")
+    page_title("DIG COMPLETE!" if game.outcome else "DIG ENDED", "Core recovered. You've returned to the surface." if game.outcome else (game.end_reason + ". Record saved." if game.end_reason != "" else "Record saved. Equipment resets when you start another dig."))
     window(Vector2(64, 282), Vector2(1312, 146))
     var labels = ["DEPTH", "MACHINES", "TIME", "LEVEL"]
     var values = ["B%d / B3" % game.depth, str(game.kills), game.time_string(), str(game.player.level)]
@@ -691,8 +791,160 @@ func draw_end() -> void:
     stat_line(Vector2(948, 608), "Successful digs", str(game.meta.wins), 398)
     var next_unlock = 10 if game.meta.kills < 10 else 25 if game.meta.kills < 25 else 50
     text_at(Vector2(948, 673), "%d to next unlock" % (next_unlock - game.meta.kills) if game.meta.kills < 50 else "All parts unlocked!", 27, YELLOW)
-    button(Vector2(64, 764), Vector2(620, 62), "Start Another Dig" if game.outcome else "Try Again", "start", 0, true)
-    button(Vector2(716, 764), Vector2(660, 62), "Return to Title", "title")
+    if game.net.active():
+        button(Vector2(64, 764), Vector2(620, 62), "Return to Lobby", "lobby_room", 0, true)
+        button(Vector2(716, 764), Vector2(660, 62), "Leave Lobby", "leave_online")
+    else:
+        button(Vector2(64, 764), Vector2(620, 62), "Start Another Dig" if game.outcome else "Try Again", "start", 0, true)
+        button(Vector2(716, 764), Vector2(660, 62), "Return to Title", "title")
     icon(Vector2(64, 848), "save", 32)
-    text_at(Vector2(108, 873), "Dig record saved on this computer.", 23, MUTED)
+    text_at(Vector2(108, 873), "Dig record saved in this browser." if OS.has_feature("web") else "Dig record saved on this computer.", 23, MUTED)
 
+
+# --- Online co-op screens -----------------------------------------------------
+
+func status_line(pos: Vector2) -> void:
+    var net = game.net
+    var text = net.error_text
+    var color = ORANGE
+    if text == "":
+        color = MUTED
+        text = {"offline": "Not connected", "connecting": "Connecting to the dig server…", "online": "Connected · %d ms" % net.ping_ms if net.ping_ms > 0 else "Connected"}.get(net.status, "")
+        if net.status != "online" and net.pending.get("t", "") == "join": text = "Joining lobby %s…" % str(net.pending.code)
+    draw_circle(pos + Vector2(8, -7), 6, GREEN if net.status == "online" and net.error_text == "" else YELLOW if net.status == "connecting" else ORANGE)
+    text_at(pos + Vector2(24, 0), text, 22, color, false, 1200)
+
+func draw_online() -> void:
+    backdrop()
+    page_title("PLAY ONLINE", "Dig together with up to four diggers. Share a link or pick an open lobby.")
+    window(Vector2(64, 276), Vector2(448, 104))
+    text_at(Vector2(86, 309), "YOUR NAME", 20, WHITE, true)
+    if not editing() or get_viewport().gui_get_focus_owner() != name_edit: name_edit.text = game.net.player_name
+    place_field(name_edit, Vector2(86, 322), Vector2(404, 44))
+    button(Vector2(64, 400), Vector2(448, 58), "Create Public Lobby", "create_public", 0, true)
+    button(Vector2(64, 470), Vector2(448, 58), "Create Private Lobby", "create_private")
+    window(Vector2(64, 548), Vector2(448, 104))
+    text_at(Vector2(86, 581), "JOIN BY CODE", 20, WHITE, true)
+    place_field(code_edit, Vector2(86, 594), Vector2(250, 44))
+    button(Vector2(352, 594), Vector2(138, 44), "Join", "join_code")
+    if not OS.has_feature("web"):
+        window(Vector2(64, 672), Vector2(448, 104))
+        text_at(Vector2(86, 705), "DIG SERVER", 20, WHITE, true)
+        if not editing() or get_viewport().gui_get_focus_owner() != server_edit: server_edit.text = game.net.server_url
+        place_field(server_edit, Vector2(86, 718), Vector2(404, 44), 20)
+    window(Vector2(544, 276), Vector2(832, 560))
+    text_at(Vector2(570, 316), "OPEN LOBBIES", 26, WHITE, true)
+    button(Vector2(1184, 292), Vector2(170, 44), "Refresh", "refresh")
+    var lobbies: Array = game.net.public_lobbies
+    if lobbies.is_empty():
+        icon(Vector2(896, 430), "map", 128)
+        paragraph(Vector2(620, 616), "No open lobbies right now. Create one, then send your friends the invite link.", 680, 28, WHITE, 3)
+    for i in mini(7, lobbies.size()):
+        var info: Dictionary = lobbies[i]
+        var pos = Vector2(568, 352 + i * 68)
+        var area = Rect2(pos, Vector2(784, 60))
+        var full = int(info.players) >= int(info.max)
+        var hot = focus_index == hits.size() or area.has_point(pointer)
+        window(pos, area.size, SELECT if hot else INK, YELLOW if hot else EDGE, false)
+        if hot: cursor(pos + Vector2(-30, 14))
+        icon(pos + Vector2(8, 6), "record" if info.state == "lobby" else "map", 48)
+        text_at(pos + Vector2(66, 27), str(info.name), 24, WHITE, false, 380)
+        text_at(pos + Vector2(66, 51), "Host: " + str(info.host), 19, MUTED, false, 380)
+        text_at(pos + Vector2(470, 38), "Waiting" if info.state == "lobby" else "Digging B%d" % int(info.depth), 22, YELLOW if info.state == "lobby" else CYAN)
+        text_at(pos + Vector2(650, 39), "%d / %d" % [int(info.players), int(info.max)], 25, ORANGE if full else WHITE, true)
+        if not full: hits.append({"rect": area, "action": "join", "value": i})
+    window(Vector2(64, 846), Vector2(1312, 40), INK, EDGE, false)
+    status_line(Vector2(80, 874))
+    button(Vector2(1144, 790), Vector2(232, 46), "Back to Title", "title")
+
+func digger_card(pos: Vector2, member_slot: int, member_name: String, character: int, weapon: int, level_text: String) -> void:
+    window(pos, Vector2(672, 92), BLUE if member_slot == game.net.slot else INK, DiverNet.SLOT_COLORS[member_slot], false)
+    window(pos + Vector2(10, 8), Vector2(68, 76), BLUE, EDGE, false)
+    draw_texture_rect(portraits[clampi(character, 0, 1)], Rect2(pos + Vector2(13, 10), Vector2(62, 72)), false)
+    text_at(pos + Vector2(94, 38), member_name, 27, DiverNet.SLOT_COLORS[member_slot], true, 330)
+    text_at(pos + Vector2(94, 72), "%s  ·  %s" % [DiverCharacter.SHORT_NAMES[clampi(character, 0, 1)].capitalize(), ["Pulse", "Needle", "Siege"][clampi(weapon, 0, 2)] + " Buster"], 22, MUTED, false, 360)
+    if member_slot == 1: badge(pos + Vector2(560, 14), "HOST", 92, YELLOW)
+    if member_slot == game.net.slot: badge(pos + Vector2(560 if member_slot != 1 else 466, 14 if member_slot != 1 else 14), "YOU", 80, CYAN)
+    if level_text != "": text_at(pos + Vector2(560, 72), level_text, 21, WHITE)
+
+func draw_lobby() -> void:
+    backdrop()
+    var net = game.net
+    var info: Dictionary = net.lobby
+    page_title(str(info.get("name", "Lobby")).to_upper(), "%s lobby · Code %s" % ["Public" if info.get("isPublic", true) else "Private", net.lobby_code])
+    window(Vector2(64, 276), Vector2(560, 150))
+    text_at(Vector2(86, 310), "INVITE LINK", 20, WHITE, true)
+    text_at(Vector2(86, 346), net.invite_link(), 22, CYAN, false, 516)
+    button(Vector2(86, 362), Vector2(272, 50), "Copied!" if copied_time > 0 else "Copy Invite Link", "copy_link", 0, true)
+    text_at(Vector2(390, 400), net.lobby_code, 38, YELLOW, true)
+    window(Vector2(64, 444), Vector2(560, 100))
+    text_at(Vector2(86, 476), "YOUR NAME", 20, WHITE, true)
+    if not editing() or get_viewport().gui_get_focus_owner() != name_edit: name_edit.text = net.player_name
+    place_field(name_edit, Vector2(86, 488), Vector2(516, 44))
+    window(Vector2(64, 562), Vector2(560, 196))
+    text_at(Vector2(86, 594), "YOUR DIGGER", 20, WHITE, true)
+    for i in 2:
+        var pos = Vector2(86 + i * 176, 606)
+        var selected = game.selected_character == i
+        var hot = Rect2(pos, Vector2(164, 60)).has_point(pointer)
+        window(pos, Vector2(164, 60), SELECT if selected else INK, YELLOW if selected or hot else EDGE, false)
+        draw_texture_rect(portraits[i], Rect2(pos + Vector2(4, 3), Vector2(48, 54)), false)
+        text_at(pos + Vector2(62, 39), "Mega" if i == 0 else "Roll", 24, WHITE, true)
+        hits.append({"rect": Rect2(pos, Vector2(164, 60)), "action": "character", "value": i})
+    for i in 3:
+        var pos = Vector2(86 + i * 176, 680)
+        var available = game.meta.kills >= [0, 10, 50][i]
+        var selected = game.selected_weapon == i
+        window(pos, Vector2(164, 62), SELECT if selected else INK, YELLOW if selected else EDGE, false)
+        icon(pos + Vector2(6, 7), ["pulse", "needle", "siege"][i] if available else "lock", 46, Color.WHITE if available else Color("8197bc"))
+        text_at(pos + Vector2(58, 28), ["Pulse", "Needle", "Siege"][i], 21, WHITE if available else MUTED)
+        text_at(pos + Vector2(58, 52), "Fitted" if selected else "Select" if available else "%d kills" % [0, 10, 50][i], 17, YELLOW if selected else MUTED)
+        if available: hits.append({"rect": Rect2(pos, Vector2(164, 62)), "action": "weapon", "value": i})
+    if net.is_host(): button(Vector2(64, 778), Vector2(280, 58), "Start Dig", "start_online", 0, true)
+    else:
+        window(Vector2(64, 778), Vector2(280, 58), INK, EDGE, false)
+        text_at(Vector2(84, 815), "Waiting for host…", 23, YELLOW)
+    button(Vector2(364, 778), Vector2(260, 58), "Leave Lobby", "leave_online")
+    var members: Array = net.members()
+    window(Vector2(656, 276), Vector2(720, 470))
+    text_at(Vector2(680, 314), "PARTY   %d / %d" % [members.size(), DiverNet.MAX_PLAYERS], 26, WHITE, true)
+    for i in DiverNet.MAX_PLAYERS:
+        var pos = Vector2(680, 330 + i * 102)
+        if i < members.size():
+            var member_slot = int(members[i].slot)
+            if member_slot == net.slot: digger_card(pos, member_slot, net.player_name, game.selected_character, game.selected_weapon, "")
+            else:
+                var peer: Dictionary = game.peers.get(member_slot, {})
+                digger_card(pos, member_slot, str(members[i].name), int(peer.get("character", 0)), int(peer.get("weapon", 0)), "")
+        else:
+            window(pos, Vector2(672, 92), Color(0.05, 0.12, 0.32, 0.6), Color("4c6ea6"), false)
+            text_at(pos + Vector2(28, 54), "Open slot — waiting for a digger", 23, Color("6f8fc0"))
+    paragraph(Vector2(660, 784), "Robots get tougher and more numerous with each digger. Friends can join a dig already in progress.", 716, 22, MUTED, 2)
+    window(Vector2(64, 846), Vector2(1312, 40), INK, EDGE, false)
+    status_line(Vector2(80, 874))
+
+# Teammate Life and revive status during an online dig.
+func draw_team() -> void:
+    var row = 0
+    for member_slot in game.remote_players:
+        var mate: DiverPlayer = game.remote_players[member_slot]
+        if not is_instance_valid(mate): continue
+        var pos = Vector2(28, 486 + row * 80)
+        window(pos, Vector2(268, 72), Color(0.05, 0.13, 0.35, 0.88), DiverNet.SLOT_COLORS[clampi(member_slot, 0, 4)], false)
+        draw_texture_rect(portraits[clampi(mate.character, 0, 1)], Rect2(pos + Vector2(6, 5), Vector2(54, 62)), false)
+        text_at(pos + Vector2(70, 27), mate.display_name, 21, DiverNet.SLOT_COLORS[clampi(member_slot, 0, 4)], true, 180)
+        if mate.downed:
+            text_at(pos + Vector2(70, 58), "DOWN", 21, ORANGE, true)
+            pips(Vector2(pos.x + 140, pos.y + 44), 112, 10, mate.revive, 8, YELLOW)
+        else: pips(Vector2(pos.x + 72, pos.y + 42), 182, 12, mate.hp / maxf(1, mate.max_hp()), 12, GREEN if mate.hp > mate.max_hp() * 0.3 else ORANGE)
+        if mate.downed and not game.player.downed and mate.global_position.distance_to(game.player.global_position) < 2.4:
+            window(Vector2(450, 674), Vector2(540, 49), BLUE, YELLOW)
+            icon(Vector2(460, 677), "life", 42)
+            text_at(Vector2(512, 707), "Reviving %s…" % mate.display_name, 23, WHITE, false, 300)
+            pips(Vector2(812, 692), 160, 14, mate.revive, 8, YELLOW)
+        row += 1
+    if game.player.downed:
+        window(Vector2(420, 250), Vector2(600, 112), Color(0.30, 0.08, 0.10, 0.92), ORANGE)
+        text_at(Vector2(446, 292), "YOU'RE DOWN!", 30, YELLOW, true)
+        text_at(Vector2(446, 330), "A teammate can revive you by standing close.", 23, WHITE, false, 550)
+        pips(Vector2(446, 342), 548, 8, game.player.revive, 24, YELLOW)

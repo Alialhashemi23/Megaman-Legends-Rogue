@@ -1,4 +1,4 @@
-# Relic Diver handoff — 2026-10-13
+# Relic Diver handoff — 2026-10-13 (pass 09: online co-op)
 
 ## User intent and constraints
 
@@ -6,7 +6,7 @@ Continue this existing local Godot project. It is a non-profit Mega Man Legends 
 
 Keep the presentation and animation close to the original PS1 Legends: painted textures, original character proportions, compact springy motion, responsive controls, restrained sway. Mega is helmet-off with brown hair and blue armor. Roll is also playable. The user disliked the former blocky procedural character and stiff marching animation.
 
-**Updated authorization:** The user subsequently requested committing this complete project and its design/handoffs to https://github.com/Alialhashemi23/Megaman-Legends-Rogue. This supersedes the earlier no-repository preference for that destination. Do not deploy, publish releases, upload personal saves or publish elsewhere without a request. Local HTTP preview is bound to 127.0.0.1 only. No subagents unless the user asks. Proceed autonomously on authorized changes; avoid repeated confirmations.
+**Updated authorization:** The user subsequently requested committing this complete project and its design/handoffs to https://github.com/Alialhashemi23/Megaman-Legends-Rogue. This supersedes the earlier no-repository preference for that destination. Do not deploy, publish releases, upload personal saves or publish elsewhere without a request. Local HTTP preview is bound to 127.0.0.1 only. **Later request (pass 09):** the user asked for seamless online co-op playable in the browser on their own newly registered domain, hosted from their own computers through a Cloudflare Tunnel. The repo now ships the web build, lobby server and deployment files; the user performs the deployment (never commit `.env` or tunnel tokens). No subagents unless the user asks. Proceed autonomously on authorized changes; avoid repeated confirmations.
 
 Design intent is in DESIGN.md. Subsystem handoffs and a fresh-instance prompt are indexed in docs/handoff/README.md. Repository packaging and exclusions are explained in docs/handoff/REPOSITORY.md.
 
@@ -21,13 +21,25 @@ Workspace: `C:\Users\Temp\Documents\Codex\2026-10-13\hey-i-want-to-build-a`
 - PowerShell. Set APPDATA and LOCALAPPDATA to workspace `tools/runtime` for tool/test runs.
 - Python: `C:\Users\Temp\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe`; NumPy installed. FFmpeg/ffprobe in PATH.
 
+## Latest completed work: online co-op (pass 09)
+
+Browser play plus online co-op for up to four diggers. Pass 09 was built in a Linux cloud container with Godot 4.7.1 (Linux editor and export templates), Node 22, Xvfb and Playwright Chromium.
+
+- **Flow:** Title → Play Online (name, public/private lobby, lobby browser, join by code) → lobby room (party, character/buster, Copy Invite Link) → host starts. Invite links `https://domain/?lobby=CODE` (or `/j/CODE`) open straight into the lobby. Late joiners sync into a dig in progress.
+- **Rules (user-chosen):** shared run with personal builds. Shared scrap and XP; every digger picks from each cache; one guardian core each; party-scaled robots; downed/revive by standing close; the run ends when everyone is down; the lift waits for the team. Online menus don't pause.
+- **Architecture:** host-authoritative over a WebSocket relay (`server/`, Node + `ws`). Deterministic per-floor seeding; victim decides digger damage; shooter decides robot damage. Details and protocol: `docs/handoff/NETWORK.md`. Deployment: `docs/ONLINE.md` (Docker Compose + cloudflared, or Host-Online.cmd).
+- **Web specifics:** threaded export needs COOP/COEP headers (the server sends them) and a secure context (HTTPS domain or localhost). Web saves live in `user://` (IndexedDB). Click-to-aim after a networked start, because browsers require a gesture for pointer lock.
+- **Bundles:** `build/RelicDiver-Web.zip` (tracked, served by the Docker image) and a refreshed Windows `.pck`/ZIP. The Windows build can join via Play Online → Dig Server (`wss://domain/ws`).
+
+Not yet done: a human playtest of co-op balance (party scaling numbers are first guesses), host migration, and a real deployment on the user's domain (the user needs to create the tunnel and token).
+
 ## Implemented
 
 Complete playable three-descent loop, seeded branching rooms, five cover arrangements, robot navigation and telegraphed attacks, three guardians with different attack mixes, three busters, thirteen stackable parts, XP, scrap, caches, healing, unlocks and local records. Console-inspired cobalt/cream/yellow menus, Life gauges, custom icons and bundled fonts. Seven original music cues rendered locally using GeneralUser GS/FluidSynth, 29 effects, ambience, buses, crossfades and sound settings.
 
 Source saves: `save/archive.json`, `save/audio.json`. Portable saves: `build/save/`. Preserve them. Preview/test scripts use isolated paths; `game.smoke_test` suppresses saving AND sound.
 
-## Characters and latest completed work
+## Characters and motion pass 07
 
 User supplied Mega and Roll ZIPs. Unmodified archives and extracted sources are in `tools/model-sources/`. The Models Resource assets are Capcom meshes/textures/skeletons, excluded from MIT; credits in `assets/characters/CREDITS.md`. Roll uses `Roll_(Cutscene)`. Both retain 18 original rigid-weight joints. Archives contain NO original animation clips; our twelve clips are newly authored.
 
@@ -46,6 +58,9 @@ Latest pass **07 is finished and rebuilt**: distinct contact/push-off/recovery p
 - `README.md`, `CHANGELOG.md`: longer documentation; read only relevant sections.
 
 ## Verified current state
+
+Pass 09 (Linux): server tests 5/5. `tests/net_test.sh` passes (host + guest + late joiner, identical floors at B1/B2, hits, drops, choices, revive, lift, late join, shared ending). `tests/web_e2e.mjs` passes in real Chromium (menus, lobby creation, clipboard invite link, join via link, both diggers in one dig). Character 3868/0, combat 3207/0, UI 47/0, audio 66/0; smoke, combat, movement and persistence modes pass. Co-op HUD renders: `screenshots/coop-*.png`.
+
 
 After latest changes: character suite **3868 checks, 0 failures**; combat suite **3207 checks, 0 failures**. Keyboard doorway/corridor traversal passes in source AND packed game. Updated pack exports and launches on local GPU successfully. Earlier UI/audio suites passed before this animation-only pass.
 
@@ -71,4 +86,4 @@ Read the FULL visualize skill before creating/updating inline previews. Helpers:
 
 ## Taking over efficiently
 
-The last requested animation refinement is complete. The following documentation/repository pass adds DESIGN.md, subsystem handoffs, Git tracking, a portable ZIP and fresh-clone setup. User is switching instances to save context/tokens. Start from this handoff and inspect only files needed for the next request; do not scan backups, dump entire scripts, rerun all tests, rebuild, or redo completed work just to establish context. Briefly acknowledge readiness, then follow the user's next task. Human playtesting is still needed; this remains a prototype, with no controller support or mid-run resume. Check Git status/log for the exact repository synchronization state.
+The last requested work, online co-op in the browser (pass 09), is complete on branch `online-coop`. The user's next step is deployment per docs/ONLINE.md; offer help with the tunnel setup and co-op tuning after they play. Earlier: the animation refinement, then DESIGN.md, subsystem handoffs, Git tracking, a portable ZIP and fresh-clone setup. User is switching instances to save context/tokens. Start from this handoff and inspect only files needed for the next request; do not scan backups, dump entire scripts, rerun all tests, rebuild, or redo completed work just to establish context. Briefly acknowledge readiness, then follow the user's next task. Human playtesting is still needed; this remains a prototype, with no controller support or mid-run resume. Check Git status/log for the exact repository synchronization state.

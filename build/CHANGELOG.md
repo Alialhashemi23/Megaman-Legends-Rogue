@@ -1,5 +1,14 @@
 # Local build history
 
+## 09 — Online co-op in the browser
+
+- Added a web export (Godot threaded WebAssembly build) and a small Node server that hosts it with the required cross-origin isolation headers, pre-compressed downloads and a WebSocket lobby relay. Deployment targets the user's domain through a Cloudflare Tunnel (Docker Compose or Host-Online.cmd).
+- Title → **Play Online**: name entry, public/private lobbies, a live lobby browser, join by code, and invite links (`/?lobby=CODE`) that open straight into the lobby. The lobby room shows the party with each digger's character and buster, plus a copy-link button.
+- Co-op for up to four diggers in one seeded run. The host simulates robots and loot; each digger controls their own movement, Life and build. Shared scrap and XP, a personal cache pick for everyone, a guardian core per digger, party-scaled robots, downed/revive by standing close, the lift waits for the team, and late joiners sync into a dig in progress.
+- Online menus and part choices no longer pause the dig; choosing is protected. Teammate nametags, a team Life panel, revive prompts and a click-to-aim hint for browsers.
+- Saves use browser storage on the web; desktop saves are unchanged. The Windows build can join lobbies through **Dig Server**.
+- New checks: server tests, a three-instance host/guest/late-join network test, a real-browser lobby test and co-op HUD renders. Existing character, combat, UI, audio, smoke, movement and persistence checks pass.
+
 ## 08 — Design documentation and repository handoff
 
 - Added DESIGN.md and focused handoffs for implementation, art/animation, audio/UI, playtesting and repository workflow, plus a concise fresh-instance prompt.

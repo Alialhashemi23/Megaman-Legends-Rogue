@@ -36,11 +36,21 @@ var route_cooldown = 0.0
 var hit_overlay: StandardMaterial3D
 var meshes: Array[MeshInstance3D] = []
 var overdrive_triggered = false
+# Online: the host simulates robots; guests show proxies that follow snapshots.
+var net_id = -1
+var net_pos = Vector3.ZERO
+var net_rot = 0.0
+var net_seen = false
+var target: Node3D
+var last_source: Node3D
+var my_last_hit = -100000
 
 func _ready() -> void:
 	collision_layer = 4
 	collision_mask = 1 | 4
 	max_health = [34.0, 27.0, 65.0, 650.0][kind] * (1 + (game.depth - 1) * 0.40)
+	# Bigger parties face sturdier machines (guardians scale the most).
+	max_health *= 1.0 + (game.party_size - 1) * (0.60 if kind == 3 else 0.35)
 	health = max_health
 	var col = CollisionShape3D.new()
 	var shape = CapsuleShape3D.new()
@@ -63,9 +73,17 @@ func _ready() -> void:
 	add_to_group("enemies")
 
 func _physics_process(dt: float) -> void:
-	if dead or game.mode != "play" or not is_instance_valid(game.player): return
-	var distance = global_position.distance_to(game.player.global_position)
-	active = active or (game.current_room == room_id and distance < 27) or health < max_health
+	if dead or not game.world_running() or not is_instance_valid(game.player): return
+	if game.net.is_guest():
+		proxy_process(dt)
+		return
+	target = game.target_for(self)
+	if target == null:
+		velocity = Vector3(0, velocity.y - dt * 25, 0)
+		move_and_slide()
+		return
+	var distance = global_position.distance_to(target.global_position)
+	active = active or game.room_has_player(room_id, global_position) or health < max_health
 	if not active: return
 	slow -= dt
 	flash -= dt
@@ -84,7 +102,7 @@ func _physics_process(dt: float) -> void:
 	art.root.scale = Vector3.ONE * (2.35 if kind == 3 else 1.0)
 	health_bar.visible = health < max_health
 	health_bar.scale.x = maxf(0.01, health / max_health)
-	var direction = game.player.position - position
+	var direction = target.position - position
 	direction.y = 0
 	direction = direction.normalized()
 	var movement = Vector3.ZERO
@@ -102,9 +120,7 @@ func _physics_process(dt: float) -> void:
 		state_time -= dt
 		movement = aim_direction
 		speed = 14.0
-		if distance < 1.7 and not charge_hit and has_sight():
-			game.player.hurt(18 + game.depth * 2)
-			charge_hit = true
+		check_charge_contact()
 		if state_time <= 0 or is_on_wall(): recover(0.8)
 	elif state == "recover":
 		state_time -= dt
@@ -113,7 +129,7 @@ func _physics_process(dt: float) -> void:
 		if state_time <= 0: state = "approach"
 	else:
 		rotation.y = lerp_angle(rotation.y, atan2(-direction.x, -direction.z), minf(1, dt * 5))
-		var sight = has_sight()
+		var sight = sees(target)
 		movement = chase_direction(dt, direction, sight)
 		if kind == 1 and sight:
 			movement = direction * (1 if distance > 10 else -0.45 if distance < 6 else 0) + direction.cross(Vector3.UP) * 0.5 * strafe_sign
@@ -139,8 +155,17 @@ func _physics_process(dt: float) -> void:
 	move_and_slide()
 	for i in art.limbs.size(): art.limbs[i].rotation.x = sin(phase + i * PI) * movement.length() * 0.45
 
+# Damage checks always use this machine's own digger; the AI uses sees(target).
 func has_sight() -> bool:
-	return unobstructed(global_position + Vector3.UP * 1.2, game.player.global_position + Vector3.UP)
+	return sees(game.player)
+
+func sees(who: Node3D) -> bool:
+	return unobstructed(global_position + Vector3.UP * 1.2, who.global_position + Vector3.UP)
+
+func check_charge_contact() -> void:
+	if not charge_hit and global_position.distance_to(game.player.global_position) < 1.7 and has_sight():
+		game.player.hurt(18 + game.depth * 2)
+		charge_hit = true
 
 func unobstructed(from: Vector3, to: Vector3) -> bool:
 	var ray = PhysicsRayQueryParameters3D.create(from, to, 1)
@@ -150,7 +175,7 @@ func chase_direction(_dt: float, direction: Vector3, sight: bool) -> Vector3:
 	if sight and not is_on_wall(): return direction
 	if route_cooldown <= 0 or path.is_empty():
 		route_cooldown = 0.65 + float(get_instance_id() % 5) * 0.06
-		path = game.navigation.route(position, game.player.position)
+		path = game.navigation.route(position, target.position)
 		path_index = 1 if path.size() > 1 else 0
 	if not path.is_empty():
 		while path_index < path.size() - 1 and Vector2(position.x - path[path_index].x, position.z - path[path_index].z).length() < 0.55: path_index += 1
@@ -160,12 +185,17 @@ func chase_direction(_dt: float, direction: Vector3, sight: bool) -> Vector3:
 	return (direction + get_wall_normal()).normalized() if is_on_wall() else direction
 
 func begin_attack(type: String, duration: float) -> void:
+	var aim = (target if is_instance_valid(target) else game.player).global_position + Vector3.UP
+	game.net.broadcast([DiverNet.M_ATTACK, game.depth, net_id, type, duration, aim])
+	show_attack(type, duration, aim)
+
+func show_attack(type: String, duration: float, point: Vector3) -> void:
 	clear_marker()
 	planned = type
 	state = "windup"
 	windup_duration = duration
 	state_time = duration
-	aim_point = game.player.global_position + Vector3.UP
+	aim_point = point
 	aim_direction = (aim_point - global_position - Vector3.UP).normalized()
 	aim_direction.y = 0
 	aim_direction = aim_direction.normalized()
@@ -203,6 +233,7 @@ func warning_line(from: Vector3, to: Vector3, width: float, color: Color) -> voi
 	line.look_at(to + Vector3(0, 0.001, 0))
 
 func resolve_attack() -> void:
+	if game.net.is_host(): game.net.broadcast([DiverNet.M_RESOLVE, game.depth, net_id, global_position])
 	clear_marker()
 	match planned:
 		"melee":
@@ -264,34 +295,37 @@ func clear_marker() -> void:
 	if is_instance_valid(marker): marker.queue_free()
 	marker = null
 
-func take_damage(amount: float, effects: bool = true) -> void:
+func take_damage(amount: float, effects: bool = true, source: Node3D = null) -> void:
 	if dead: return
+	# Part effects come from whoever fired the shot, local or remote.
+	if not is_instance_valid(source): source = game.player
+	var local_shot = source == game.player
 	active = true
 	flash = 0.1
 	if effects:
-		game.hit_confirm = 0.14
+		last_source = source
+		if local_shot: game.hit_confirm = 0.14
 		if kind != 3:
-			knockback = (global_position - game.player.global_position).normalized() * 2.5
+			knockback = (global_position - source.global_position).normalized() * 2.5
 	var crit = false
-	if effects and game.rng.randf() < minf(0.6, game.player.count("prism") * 0.08):
+	if effects and game.rng.randf() < minf(0.6, source.count("prism") * 0.08):
 		amount *= 2
 		crit = true
 	health -= amount
 	if kind == 3 and not overdrive_triggered and health > 0 and health < max_health * 0.5:
 		overdrive_triggered = true
 		recover(1.2)
-		game.notify("OVERDRIVE / " + game.BOSS_NAMES[game.depth - 1], "The guardian is speeding up. Watch its attack warnings.")
+		game.announce("OVERDRIVE / " + game.BOSS_NAMES[game.depth - 1], "The guardian is speeding up. Watch its attack warnings.")
 		game.sound.play("warning", 0.7)
 	game.total_damage += amount
-	game.float_text(global_position + Vector3.UP * (3.5 if kind == 3 else 1.8), str(int(amount)) + ("!" if crit else ""), DiverArt.GOLD if crit else Color("c3f5ee"))
-	game.burst(global_position + Vector3.UP, Color("ffca68"), 4)
-	game.sound.play("hit", 1.0, global_position)
-	if effects: game.player.add_trauma(0.025)
+	show_damage(amount, crit, true)
+	if game.net.is_host(): game.net.broadcast([DiverNet.M_DAMAGE, game.depth, net_id, amount, crit, source.slot if effects else 0])
+	if effects and local_shot: game.player.add_trauma(0.025)
 	if effects:
-		if game.player.count("ember") > 0:
+		if source.count("ember") > 0:
 			burn_time = 3
-			burn_damage = 2.0 * game.player.count("ember")
-		if game.player.count("coil") > 0 and game.rng.randf() < minf(0.75, 0.18 * game.player.count("coil")):
+			burn_damage = 2.0 * source.count("ember")
+		if source.count("coil") > 0 and game.rng.randf() < minf(0.75, 0.18 * source.count("coil")):
 			var candidates = game.enemies.duplicate()
 			var chains = 0
 			for other in candidates:
@@ -300,7 +334,7 @@ func take_damage(amount: float, effects: bool = true) -> void:
 					game.lightning(global_position + Vector3.UP, other.global_position + Vector3.UP)
 					other.take_damage(amount * 0.45, false)
 					chains += 1
-					if chains >= 1 + game.player.count("coil"): break
+					if chains >= 1 + source.count("coil"): break
 	if health <= 0: die()
 
 func die() -> void:
@@ -308,20 +342,93 @@ func die() -> void:
 	dead = true
 	game.sound.play("guardian_down" if kind == 3 else "destroy", 1.0, global_position)
 	clear_marker()
-	game.hit_confirm = 0.25
-	game.kill_confirm = 0.25
+	if not is_instance_valid(last_source) or last_source == game.player:
+		game.hit_confirm = 0.25
+		game.kill_confirm = 0.25
 	collision_layer = 0
 	game.kills += 1
 	game.burst(global_position + Vector3.UP, DiverArt.TEAL, 12 if kind != 3 else 30)
 	game.impact_ring(global_position + Vector3.UP * 0.10, 1.0 if kind != 3 else 3.5, DiverArt.TEAL, 0.25)
+	game.net.broadcast([DiverNet.M_DIE, game.depth, net_id])
+	var killer = last_source if is_instance_valid(last_source) else game.player
 	game.drop_pickup(position + Vector3.UP * 0.5, "xp", 18 if kind == 3 else 5 if kind == 2 else 3)
 	game.drop_pickup(position + Vector3(0.4, 0.5, 0), "scrap", 30 if kind == 3 else game.rng.randi_range(2, 5))
-	if game.player.count("moss") > 0: game.player.heal(1.5 * game.player.count("moss"))
+	if killer.count("moss") > 0: game.heal_player(killer, 1.5 * killer.count("moss"))
 	if game.rng.randf() < 0.12: game.drop_pickup(position + Vector3(-0.4, 0.5, 0), "health", 12)
 	if kind == 3:
 		game.guardian_dead = true
 		game.notify("GUARDIAN SILENCED", "The extraction lift is online. Collect the core and head to the beacon.")
-		game.drop_relic(position + Vector3(0, 0.8, 1))
-	elif game.rng.randf() < 0.07 + game.player.count("clover") * 0.025:
+		# Each digger gets their own guardian core.
+		var diggers = game.all_players()
+		for i in diggers.size():
+			game.drop_relic(position + Vector3((i - (diggers.size() - 1) * 0.5) * 1.3, 0.8, 1), diggers[i].slot if diggers.size() > 1 else 0)
+	elif game.rng.randf() < 0.07 + killer.count("clover") * 0.025:
 		game.drop_relic(position + Vector3.UP)
+	queue_free()
+
+# Hit numbers, sparks and sound shared by the host and guest views.
+func show_damage(amount: float, crit: bool, with_sound: bool) -> void:
+	flash = 0.1
+	game.float_text(global_position + Vector3.UP * (3.5 if kind == 3 else 1.8), str(int(amount)) + ("!" if crit else ""), DiverArt.GOLD if crit else Color("c3f5ee"))
+	game.burst(global_position + Vector3.UP, Color("ffca68"), 4)
+	if with_sound: game.sound.play("hit", 1.0, global_position)
+
+func apply_snapshot(pos: Vector3, rot: float, life: float) -> void:
+	if not net_seen or pos.distance_to(global_position) > 8: global_position = pos
+	net_seen = true
+	net_pos = pos
+	net_rot = rot
+	health = life
+	active = true
+
+# Guest-side robot: follow the host, play warnings, and check hits on our digger.
+func proxy_process(dt: float) -> void:
+	flash -= dt
+	phase += dt * 7
+	for mesh in meshes: mesh.material_overlay = hit_overlay if flash > 0 else null
+	art.root.scale = Vector3.ONE * (2.35 if kind == 3 else 1.0)
+	health_bar.visible = health < max_health
+	health_bar.scale.x = maxf(0.01, health / max_health)
+	var before = global_position
+	if net_seen:
+		global_position = global_position.lerp(net_pos, minf(1, dt * 12))
+		rotation.y = lerp_angle(rotation.y, net_rot, minf(1, dt * 12))
+	var moved = Vector2(global_position.x - before.x, global_position.z - before.z).length() / maxf(dt, 0.001)
+	match state:
+		"windup":
+			state_time -= dt
+			var progress = 1 - maxf(0, state_time) / windup_duration
+			art.root.rotation.x = -0.16 * progress
+			art.root.position.y = -0.10 * progress
+			if is_instance_valid(marker): marker.visible = state_time > 0.20 or int(state_time * 35) % 2 == 0
+			if state_time < -2.0:
+				clear_marker()
+				state = "approach"
+		"charge":
+			state_time -= dt
+			check_charge_contact()
+			if state_time <= 0: recover(0.8)
+		"recover":
+			state_time -= dt
+			art.root.rotation.x = lerpf(art.root.rotation.x, 0, dt * 9)
+			art.root.position.y = lerpf(art.root.position.y, 0, dt * 9)
+			if state_time <= 0: state = "approach"
+		_:
+			if kind == 1: art.root.position.y = sin(phase * 0.5) * 0.12
+	for i in art.limbs.size(): art.limbs[i].rotation.x = sin(phase + i * PI) * clampf(moved / 3.0, 0, 1) * 0.45
+
+func remote_die() -> void:
+	if dead: return
+	dead = true
+	game.sound.play("guardian_down" if kind == 3 else "destroy", 1.0, global_position)
+	clear_marker()
+	if Time.get_ticks_msec() - my_last_hit < 600:
+		game.hit_confirm = 0.25
+		game.kill_confirm = 0.25
+	collision_layer = 0
+	game.burst(global_position + Vector3.UP, DiverArt.TEAL, 12 if kind != 3 else 30)
+	game.impact_ring(global_position + Vector3.UP * 0.10, 1.0 if kind != 3 else 3.5, DiverArt.TEAL, 0.25)
+	if kind == 3:
+		game.guardian_dead = true
+		game.notify("GUARDIAN SILENCED", "The extraction lift is online. Each digger has a core waiting. Head to the beacon together.")
 	queue_free()

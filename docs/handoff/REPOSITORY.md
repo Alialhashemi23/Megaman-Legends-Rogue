@@ -10,6 +10,10 @@ Ignore .godot caches, personal save profiles, backups, Python caches, runtime lo
 
 The SoundFont and FluidSynth are authoring tools; the game itself plays finished audio. Original character ZIPs are provenance and editable input, not an additional runtime requirement. assets/characters/*.glb and rendered portraits are the files actually used by Godot.
 
+## Web build and server
+
+`build/RelicDiver-Web.zip` is the tracked browser bundle (game files plus notices); the loose `build/web/` export is ignored. `server/` holds the lobby relay and static host (`node_modules` ignored). The root `docker-compose.yml`, `.dockerignore`, `.env.example` and `Host-Online.cmd` deploy it. `.env` carries the user's Cloudflare Tunnel token and must never be committed. The user runs the deployment on their own machines and domain.
+
 ## Build handling
 
 Use the pinned engine version when rebuilding. Export the content pack, refresh build notices/docs, recreate the ZIP with the executable, console helper, pack, README, CHANGELOG, licenses and character/audio credits. Exclude save/ and preview/ from that archive. Keep the previous good build locally if a change is risky.

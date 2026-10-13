@@ -6,7 +6,15 @@ A local, third-person 3D dungeon roguelike fan prototype made in Godot 4.7.1. It
 
 The intended experience is documented in [DESIGN.md](DESIGN.md). Start a new coding session with [HANDOFF.md](HANDOFF.md), then read only the relevant [subsystem handoff](docs/handoff/README.md). These cover technical setup, art/animation, audio/UI, playtest priorities and repository packaging.
 
-The user authorized this repository after the initial local-only development: https://github.com/Alialhashemi23/Megaman-Legends-Rogue. No hosted game or public release is configured. Personal saves, import caches, historical backups and raw video captures remain local and are ignored by Git.
+The user authorized this repository after the initial local-only development: https://github.com/Alialhashemi23/Megaman-Legends-Rogue. The user later requested browser co-op hosted on their own domain; the server and deployment files are included, and the user runs the deployment. No public release is configured. Personal saves, import caches, historical backups and raw video captures remain local and are ignored by Git.
+
+## Online co-op pass 09
+
+Play in the browser with up to four diggers. Choose **Play Online** on the title screen to create a public or private lobby, browse open lobbies, or join by code. **Copy Invite Link** gives friends a link that opens the game straight into your lobby. Friends can also join a dig already in progress.
+
+Everyone shares the run: the same ruins and robots, shared scrap and experience. Builds are personal: each cache offers every digger their own part, and each guardian drops a core per digger. Robots grow tougher with each digger. A digger at 0 Life goes down; stand beside them to revive them. The dig ends only when the whole team is down, and the lift waits for everyone. Online menus don't pause the action.
+
+To host it on your domain, see [docs/ONLINE.md](docs/ONLINE.md): `docker compose up -d --build` with a Cloudflare Tunnel token, or **Host-Online.cmd** without Docker. The web bundle is `build/RelicDiver-Web.zip`; rebuild it with `tools/package-web.ps1` or `tools/package-web.sh`. Implementation notes are in [docs/handoff/NETWORK.md](docs/handoff/NETWORK.md).
 
 On a fresh Windows clone, double-click Play.cmd or Edit.cmd. The launcher extracts the tracked build/RelicDiver-Windows.zip and prepares the pinned Godot runtime if necessary. Alternatively, extract that ZIP to a folder and run RelicDiver.exe. Keep the executable, pack and notices together. The original PC's existing runtime and saves are preserved.
 

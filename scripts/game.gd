@@ -69,12 +69,28 @@ var movement_test = false
 var movement_origin = Vector3.ZERO
 var test_enemy: DiverEnemy
 const SAVE_PATH = "res://save/archive.json"
+const WEB_SAVE_PATH = "user://archive.json"
+const OVERLAY_MODES = ["pause", "audio", "inventory", "choice"]
 var save_path = SAVE_PATH
+# Online co-op state. Remote teammates are DiverPlayer proxies keyed by lobby slot.
+var net: DiverNet
+var remote_players: Dictionary = {}
+var peers: Dictionary = {}
+var party_size = 1
+var pickup_seq = 0
+var choice_queue: Array = []
+var net_clock = 0.0
+var end_reason = ""
+var net_test = ""
 
 func _ready() -> void:
+	if OS.has_feature("web"): save_path = WEB_SAVE_PATH
 	load_meta()
 	sound = DiverSound.new()
 	add_child(sound)
+	net = DiverNet.new()
+	net.game = self
+	add_child(net)
 	setup_environment()
 	var canvas = CanvasLayer.new()
 	add_child(canvas)
@@ -113,6 +129,21 @@ func _ready() -> void:
 		player.shoot()
 	if "--persistence-test" in OS.get_cmdline_user_args():
 		validate_persistence.call_deferred()
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--net-test="): net_test = arg.substr(11)
+	if OS.has_feature("web"):
+		var query = JavaScriptBridge.eval("new URLSearchParams(location.search).get('nettest') || ''", true)
+		if query is String and query != "": net_test = query
+	if net_test != "":
+		var tester = load("res://tests/net_driver.gd").new() if ResourceLoader.exists("res://tests/net_driver.gd") else null
+		if tester:
+			tester.game = self
+			tester.role = net_test
+			add_child(tester)
+	elif net.invited_code() != "":
+		# Invite links open straight into the lobby.
+		mode = "online"
+		net.join_lobby(net.invited_code())
 	if "--movement-test" in OS.get_cmdline_user_args():
 		smoke_test = true
 		movement_test = true
@@ -158,21 +189,34 @@ func show_title() -> void:
 	position_title_camera()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
-func start_run(seed_value: int = 0) -> void:
+func start_run(seed_value: int = 0, party: int = 1) -> void:
 	run_seed = seed_value if seed_value != 0 else int(Time.get_unix_time_from_system()) % 1000000
 	rng.seed = run_seed
+	party_size = clampi(party, 1, DiverNet.MAX_PLAYERS)
 	depth = 1
 	scrap = 0
 	kills = 0
 	run_time = 0
 	total_damage = 0
 	queue_level = false
+	choice_queue.clear()
+	end_reason = ""
+	pickup_seq = 0
 	new_unlocks.clear()
 	build_floor(false)
 	player.weapon = selected_weapon
 	mode = "play"
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	notify("DESCENT 01 / " + DEPTH_NAMES[0], "Search the chambers. Defeat the guardian. Find the lift.")
+	notify("DESCENT 01 / " + DEPTH_NAMES[0], "Search the chambers. Defeat the guardian. Find the lift." if party_size == 1 else "Dig together. Stand beside a downed teammate to revive them.")
+	if net.active():
+		print("ONLINE: dig started seed=%d party=%d slot=%d rooms=%d exit=%d robots=%d" % [run_seed, party_size, net.slot, rooms.size(), exit_room, enemies.size()])
+		send_info()
+		net.report_status("run", depth)
+
+# Every client generates the same floor from the run seed and descent.
+func floor_seed(level: int) -> int:
+	# Plain integer math keeps native and WebAssembly builds in agreement.
+	return (run_seed * 7919 + level * 104729 + 1) & 0x7fffffff
 
 func build_floor(keep_player: bool) -> void:
 	var old_player = player
@@ -226,13 +270,16 @@ func build_floor(keep_player: bool) -> void:
 		player = old_player
 		world.add_child(player)
 		player.lock_target = null
-		player.heal(player.max_hp() * 0.25)
+		if player.downed: player.revive_now(0.25)
+		else: player.heal(player.max_hp() * 0.25)
 	else:
 		player = DiverPlayer.new()
 		player.game = self
 		player.character = selected_character
 		world.add_child(player)
-	player.position = Vector3(0, 0.12, 3)
+	player.slot = net.slot
+	player.display_name = net.player_name
+	player.position = Vector3([0.0, 1.6, -1.6, 3.2][clampi(net.slot - 1, 0, 3)], 0.12, 3)
 	player.velocity = Vector3.ZERO
 	player.yaw = 0
 	player.pitch = -0.20
@@ -245,7 +292,7 @@ func build_floor(keep_player: bool) -> void:
 			spawn_enemy(rooms[i].center, 3, i)
 			for n in depth: spawn_enemy(rooms[i].center + Vector3(-5 + n * 4, 0, -2), 1, i)
 		else:
-			var count = 2 + depth + rng.randi_range(0, 2)
+			var count = 2 + depth + rng.randi_range(0, 2) + (party_size - 1)
 			for n in count:
 				var spawn = rooms[i].center
 				for attempt in 64:
@@ -255,6 +302,8 @@ func build_floor(keep_player: bool) -> void:
 			create_interactable(rooms[i].center + Vector3(4, 0, -3), "cache", "PART CACHE", 10 + depth * 3 + rng.randi_range(0, 5), i)
 			if i % 3 == 1: create_interactable(rooms[i].center + Vector3(-4, 0, 3), "spring", "REPAIR WELL", 12 + depth * 2, i)
 			for n in 2: create_interactable(rooms[i].center + Vector3(-7 + n * 14, 0, 6), "pot", "SALVAGE VESSEL", 0, i)
+	remote_players.clear()
+	if net.active() and mode != "title": spawn_remote_players()
 
 func build_room(index: int, cells: Array[Vector2i], directions: Array) -> void:
 	var room = rooms[index]
@@ -389,8 +438,10 @@ func spawn_enemy(pos: Vector3, kind: int, room_id: int) -> DiverEnemy:
 	e.game = self
 	e.kind = kind
 	e.room_id = room_id
+	e.net_id = enemies.size()
 	world.add_child(e)
 	e.position = pos + Vector3.UP * 0.1
+	e.net_pos = e.position
 	enemies.append(e)
 	return e
 
@@ -444,22 +495,35 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_1, KEY_2, KEY_3:
 				if mode == "choice": choose(event.physical_keycode - KEY_1)
 			KEY_ENTER:
-				if mode == "title" or mode == "end": start_run()
+				if mode == "title" or (mode == "end" and not net.active()): start_run()
 	if event is InputEventMouseButton and event.pressed:
+		# Browsers only grant pointer lock on a click (e.g. after an online dig starts).
+		if mode == "play" and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+			return
 		if event.button_index == MOUSE_BUTTON_RIGHT and mode == "play": player.toggle_lock()
 
 func resume_game() -> void:
 	mode = "play"
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if not choice_queue.is_empty():
+		var next = choice_queue.pop_front()
+		if next == "relic": open_relic_choice()
+		else: open_level_choice()
+
+# Solo menus pause the dig. Online, the ruins keep moving behind the menus.
+func world_running() -> bool:
+	return mode == "play" or (net.active() and mode in OVERLAY_MODES)
 
 func _process(dt: float) -> void:
 	hurt_flash = maxf(0, hurt_flash - dt)
 	message_time = maxf(0, message_time - dt)
-	if mode == "play":
+	if world_running():
 		hit_confirm = maxf(0, hit_confirm - dt)
 		kill_confirm = maxf(0, kill_confirm - dt)
 		run_time += dt
 		update_world(dt)
+		if net.active(): net_tick(dt)
 		if queue_level:
 			queue_level = false
 			open_level_choice()
@@ -473,7 +537,7 @@ func _process(dt: float) -> void:
 		if screenshot_timer < 0: capture_image.call_deferred()
 	if movement_test: run_movement_test(dt)
 	elif combat_test: run_combat_test(dt)
-	elif smoke_test: run_smoke(dt)
+	elif smoke_test and net_test == "": run_smoke(dt)
 	hud.queue_redraw()
 
 func update_world(dt: float) -> void:
@@ -488,13 +552,18 @@ func update_world(dt: float) -> void:
 					rooms[i].visited = true
 					notify(BOSS_NAMES[depth - 1] if i == exit_room else ROOM_NAMES[rooms[i].layout], "Guardian signal detected." if i == exit_room else "Chamber %02d · Ancient machines are waking." % (i + 1))
 			break
-	var room_enemies = 0
-	for e in enemies:
-		if is_instance_valid(e) and not e.dead and e.room_id == current_room: room_enemies += 1
-	if room_enemies == 0 and not rooms[current_room].cleared:
-		rooms[current_room].cleared = true
-		scrap += 5
-		notify("CHAMBER SECURED", "+5 scrap · caches available")
+	# The host decides when any occupied chamber is secured.
+	if not net.is_guest():
+		for room_index in occupied_rooms():
+			if rooms[room_index].cleared: continue
+			var room_enemies = 0
+			for e in enemies:
+				if is_instance_valid(e) and not e.dead and e.room_id == room_index: room_enemies += 1
+			if room_enemies == 0:
+				rooms[room_index].cleared = true
+				scrap += 5
+				if room_index == current_room: notify("CHAMBER SECURED", "+5 scrap · caches available")
+				net.broadcast([DiverNet.M_CLEARED, depth, room_index])
 	for obj in interactables:
 		var dist = player.position.distance_to(obj.node.position)
 		if is_instance_valid(obj.caption): obj.caption.visible = not obj.used and dist < 7.5
@@ -507,16 +576,21 @@ func update_world(dt: float) -> void:
 		if not is_instance_valid(p.node): pickups.remove_at(i); continue
 		p.age += dt
 		p.node.rotation.y += dt * 1.7
-		var dist = player.position.distance_to(p.node.position)
-		if dist < (2.8 if p.kind == "relic" else 5.5):
-			p.node.position = p.node.position.move_toward(player.position + Vector3.UP * 0.7, dt * 10)
+		# Pickups drift toward the closest digger who may take them; the host awards them.
+		var collector: DiverPlayer = null
+		var dist = 999.0
+		for candidate in all_players():
+			if candidate.downed or (p.owner != 0 and candidate.slot != p.owner): continue
+			if net.is_guest() and candidate != player: continue
+			var d = candidate.position.distance_to(p.node.position)
+			if d < dist:
+				dist = d
+				collector = candidate
+		if collector and dist < (2.8 if p.kind == "relic" else 5.5):
+			p.node.position = p.node.position.move_toward(collector.position + Vector3.UP * 0.7, dt * 10)
 		else: p.node.position.y = p.base_y + sin(p.age * 3) * 0.10
-		if dist < 1.2:
-			match p.kind:
-				"xp": player.gain_xp(int(p.value))
-				"scrap": scrap += int(p.value); sound.play("scrap")
-				"health": player.heal(p.value); sound.play("health")
-				"relic": player.add_item(p.id)
+		if collector and dist < 1.2 and not net.is_guest():
+			award_pickup(p, collector)
 			p.node.queue_free()
 			pickups.remove_at(i)
 	for i in range(particles.size() - 1, -1, -1):
@@ -548,33 +622,72 @@ func update_world(dt: float) -> void:
 func interact() -> void:
 	if nearest.is_empty(): return
 	var obj = nearest
+	if net.is_guest():
+		net.to_host([DiverNet.M_INTERACT, depth, interactables.find(obj)])
+		nearest = {}
+		return
+	perform_interact(obj, player)
+
+# Runs on the host (or solo) for whoever pressed E.
+func perform_interact(obj: Dictionary, who: DiverPlayer) -> void:
+	if obj.used: return
 	if obj.kind == "lift":
-		if not guardian_dead: notify("LIFT SEALED", "Defeat the Archive Keeper to restore power."); return
-		if depth >= 3: finish_run(true); return
-		depth += 1
-		sound.play("door")
-		build_floor(true)
-		notify("DESCENT %02d / %s" % [depth, DEPTH_NAMES[depth - 1]], "Restored 25% health. The machinery grows stronger.")
+		if not guardian_dead: tell(who, "LIFT SEALED", "Defeat the Archive Keeper to restore power."); return
+		var ready = 0
+		var standing = 0
+		for p in all_players():
+			if p.downed: continue
+			standing += 1
+			if p.position.distance_to(obj.node.position) < 8: ready += 1
+		if all_players().size() > 1 and ready < standing: tell(who, "GATHER AT THE LIFT", "%d of %d diggers are aboard. The lift waits for everyone standing." % [ready, standing]); return
+		if depth >= 3: end_run_all(true); return
+		descend()
 		return
 	if obj.kind == "cache" and not rooms[obj.room].cleared:
-		notify("CACHE SEALED", "Secure this chamber before salvaging its relic."); return
-	if scrap < obj.cost: notify("INSUFFICIENT SCRAP", "%d scrap required." % obj.cost); return
+		tell(who, "CACHE SEALED", "Secure this chamber before salvaging its relic."); return
+	if scrap < obj.cost: tell(who, "INSUFFICIENT SCRAP", "%d scrap required." % obj.cost); return
 	scrap -= obj.cost
 	obj.used = true
+	use_interactable(obj)
+	net.broadcast([DiverNet.M_USED, depth, interactables.find(obj)])
 	match obj.kind:
 		"cache":
-			obj.node.scale.y = 0.55
+			# Online, every digger gets their own pick from the cache.
+			net.broadcast([DiverNet.M_CHOICE])
 			open_relic_choice()
 		"spring":
-			player.heal(player.max_hp() * 0.45)
-			sound.play("loot")
-			notify("SYSTEMS RESTORED", "Recovered 45% of maximum health.")
+			net.broadcast([DiverNet.M_RESTORE, 0.45])
+			restore_life(0.45)
 		"pot":
-			burst(obj.node.position + Vector3.UP * 0.5, Color("bf9878"), 8)
 			drop_pickup(obj.node.position + Vector3.UP * 0.5, "scrap", rng.randi_range(3, 7))
 			if rng.randf() < 0.3: drop_pickup(obj.node.position + Vector3.UP, "health", 8)
-			obj.node.visible = false
 	nearest = {}
+
+func use_interactable(obj: Dictionary) -> void:
+	obj.used = true
+	match obj.kind:
+		"cache": obj.node.scale.y = 0.55
+		"pot":
+			burst(obj.node.position + Vector3.UP * 0.5, Color("bf9878"), 8)
+			obj.node.visible = false
+	if nearest == obj: nearest = {}
+
+func restore_life(fraction: float) -> void:
+	player.heal(player.max_hp() * fraction)
+	sound.play("loot")
+	notify("SYSTEMS RESTORED", "Recovered %d%% of maximum health." % int(fraction * 100))
+
+func descend() -> void:
+	depth += 1
+	rng.seed = floor_seed(depth)
+	net.broadcast([DiverNet.M_FLOOR, depth, party_size])
+	enter_floor()
+
+func enter_floor() -> void:
+	sound.play("door")
+	build_floor(true)
+	notify("DESCENT %02d / %s" % [depth, DEPTH_NAMES[depth - 1]], "Restored 25% health. The machinery grows stronger.")
+	net.report_status("run", depth)
 
 func pool() -> Array:
 	var result = []
@@ -583,6 +696,9 @@ func pool() -> Array:
 	return result
 
 func open_relic_choice() -> void:
+	if mode == "choice":
+		choice_queue.append("relic")
+		return
 	choice_kind = "relic"
 	choice_items.clear()
 	var options = pool()
@@ -595,6 +711,9 @@ func open_relic_choice() -> void:
 	sound.play("loot")
 
 func open_level_choice() -> void:
+	if mode == "choice":
+		choice_queue.append("level")
+		return
 	choice_kind = "level"
 	choice_items = ["power", "vitality", "haste"]
 	mode = "choice"
@@ -610,36 +729,68 @@ func choose(index: int) -> void:
 			"power": player.base_damage += 3; notify("BUSTER CALIBRATED", "+3 base damage")
 			"vitality": player.base_health += 20; player.heal(35); notify("CORE EXPANDED", "+20 maximum health · restore 35 health")
 			"haste": player.fire_multiplier += 0.15; notify("CAPACITOR TUNED", "+15% base fire rate")
+		send_info()
 	resume_game()
 
 func drop_pickup(pos: Vector3, kind: String, value: float) -> void:
-	var root = Node3D.new()
-	world.add_child(root)
-	root.position = pos
-	var color = DiverArt.TEAL if kind == "xp" else DiverArt.GOLD if kind == "scrap" else Color("95d89d")
-	DiverArt.orb(root, Vector3.ZERO, 0.14 if kind == "xp" else 0.19, color, 0.7)
-	pickups.append({"node": root, "kind": kind, "value": value, "age": 0.0, "base_y": pos.y})
+	if net.is_guest(): return
+	pickup_seq += 1
+	make_pickup(pickup_seq, pos, kind, value, "", 0)
+	net.broadcast([DiverNet.M_PICKUP, depth, pickup_seq, pos, kind, value, "", 0])
 
-func drop_relic(pos: Vector3) -> void:
+# owner_slot > 0 reserves a part for one digger (each teammate gets a guardian core).
+func drop_relic(pos: Vector3, owner_slot: int = 0) -> void:
+	if net.is_guest(): return
 	var options = pool()
 	var id = options[rng.randi_range(0, options.size() - 1)]
+	pickup_seq += 1
+	make_pickup(pickup_seq, pos, "relic", 0, id, owner_slot)
+	net.broadcast([DiverNet.M_PICKUP, depth, pickup_seq, pos, "relic", 0, id, owner_slot])
+
+func make_pickup(id: int, pos: Vector3, kind: String, value: float, item_id: String, owner_slot: int) -> void:
 	var root = Node3D.new()
 	world.add_child(root)
 	root.position = pos
-	DiverArt.box(root, Vector3.ZERO, Vector3(0.45, 0.45, 0.45), Color(ITEMS[id].color), false, 1)
-	DiverArt.label(root, Vector3(0, 0.8, 0), ITEMS[id].name, Color(ITEMS[id].color), 25)
-	pickups.append({"node": root, "kind": "relic", "id": id, "value": 0, "age": 0.0, "base_y": pos.y})
+	if kind == "relic":
+		DiverArt.box(root, Vector3.ZERO, Vector3(0.45, 0.45, 0.45), Color(ITEMS[item_id].color), false, 1)
+		var title: String = ITEMS[item_id].name
+		if owner_slot > 0 and party_size > 1: title = "%s · %s" % [net.member_name(owner_slot), title]
+		DiverArt.label(root, Vector3(0, 0.8, 0), title, Color(ITEMS[item_id].color), 25)
+	else:
+		var color = DiverArt.TEAL if kind == "xp" else DiverArt.GOLD if kind == "scrap" else Color("95d89d")
+		DiverArt.orb(root, Vector3.ZERO, 0.14 if kind == "xp" else 0.19, color, 0.7)
+	pickups.append({"node": root, "kind": kind, "id": item_id, "value": value, "age": 0.0, "base_y": pos.y, "net_id": id, "owner": owner_slot})
 
-func spawn_bolt(pos: Vector3, dir: Vector3, amount: float, hostile: bool, heavy: bool, _unused: int) -> void:
+# Host/solo: hand a collected pickup to the digger who reached it.
+func award_pickup(p: Dictionary, who: DiverPlayer) -> void:
+	match p.kind:
+		"xp":
+			player.gain_xp(int(p.value))
+			net.broadcast([DiverNet.M_XP, int(p.value)])
+		"scrap":
+			scrap += int(p.value)
+			if who == player: sound.play("scrap")
+		"health":
+			heal_player(who, p.value)
+			if who == player: sound.play("health")
+		"relic":
+			if who == player: player.add_item(p.id)
+			else: net.send(who.slot, [DiverNet.M_ITEM, p.id])
+	net.broadcast([DiverNet.M_PICKUP_GONE, depth, p.net_id, who.slot, p.kind])
+
+func spawn_bolt(pos: Vector3, dir: Vector3, amount: float, hostile: bool, heavy: bool, _unused: int = 0, source: Node3D = null, cosmetic: bool = false) -> void:
 	var bolt = DiverBolt.new()
 	bolt.game = self
 	bolt.direction = dir.normalized()
 	bolt.amount = amount
 	bolt.hostile = hostile
 	bolt.heavy = heavy
+	bolt.source = source
+	bolt.cosmetic = cosmetic
 	world.add_child(bolt)
 	bolt.global_position = pos
 	bolt.look_at(pos + dir)
+	if source == player and not cosmetic and net.active(): net.broadcast([DiverNet.M_SHOT, depth, pos, dir, heavy])
 
 func register_effect(node: Node3D, duration: float, grow: float = 0) -> void:
 	if effects.size() > 120: node.queue_free(); return
@@ -665,6 +816,7 @@ func burst(pos: Vector3, color: Color, number: int) -> void:
 		particles.append({"node": p, "velocity": Vector3(rng.randf_range(-2, 2), rng.randf_range(1, 3), rng.randf_range(-2, 2)), "life": rng.randf_range(0.2, 0.5)})
 
 func lightning(from: Vector3, to: Vector3) -> void:
+	if net.is_host(): net.broadcast([DiverNet.M_LIGHTNING, depth, from, to])
 	var length = from.distance_to(to)
 	var p = DiverArt.box(world, (from + to) * 0.5, Vector3(0.06, 0.06, length), Color("a9bdff"), false, 2)
 	p.look_at(to)
@@ -699,6 +851,8 @@ func finish_run(won: bool) -> void:
 	mode = "end"
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	sound.play("win" if won else "hurt")
+	choice_queue.clear()
+	if net.is_host(): net.report_status("lobby", depth)
 
 func load_meta() -> void:
 	if not FileAccess.file_exists(save_path): return
@@ -714,7 +868,7 @@ func load_meta() -> void:
 
 func save_meta() -> void:
 	if smoke_test: return
-	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://save"))
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(save_path.get_base_dir()))
 	var f = FileAccess.open(save_path, FileAccess.WRITE)
 	if f != null: f.store_string(JSON.stringify(meta, "\t"))
 
@@ -874,3 +1028,379 @@ func run_movement_test(dt: float) -> void:
 		Input.parse_input_event(key)
 		print("MOVEMENT_PASS: keyboard input, grounded movement, doorway and corridor traversal")
 		get_tree().quit()
+
+# ---------------------------------------------------------------------------
+# Online co-op. The lobby host (slot 1) owns robots, pickups, scrap and doors;
+# every digger owns their own movement, Life and fitted parts. Damage to a
+# digger is decided on that digger's machine, damage to robots by the shooter.
+
+func all_players() -> Array:
+	var result = [player] if is_instance_valid(player) else []
+	for proxy in remote_players.values():
+		if is_instance_valid(proxy): result.append(proxy)
+	return result
+
+func room_index_at(pos: Vector3) -> int:
+	for i in rooms.size():
+		var delta = pos - rooms[i].center
+		if absf(delta.x) < 10 and absf(delta.z) < 10: return i
+	return -1
+
+func occupied_rooms() -> Array:
+	var result = []
+	for p in all_players():
+		var index = current_room if p == player else room_index_at(p.position)
+		if index >= 0 and not result.has(index): result.append(index)
+	return result
+
+func room_has_player(room_id: int, from: Vector3) -> bool:
+	for p in all_players():
+		var index = current_room if p == player else room_index_at(p.position)
+		if index == room_id and p.global_position.distance_to(from) < 27: return true
+	return false
+
+# Robots chase the closest standing digger who isn't busy choosing a part.
+func target_for(enemy: Node3D) -> DiverPlayer:
+	var best: DiverPlayer = null
+	var best_distance = INF
+	for p in all_players():
+		if p.downed: continue
+		var d = p.global_position.distance_to(enemy.global_position)
+		if p.net_flags & DiverPlayer.FLAG_CHOOSING or (p == player and mode == "choice"): d += 30
+		if d < best_distance:
+			best_distance = d
+			best = p
+	return best
+
+func tell(who: DiverPlayer, title: String, detail: String) -> void:
+	if who == player: notify(title, detail)
+	else: net.send(who.slot, [DiverNet.M_NOTIFY, title, detail])
+
+func announce(title: String, detail: String) -> void:
+	notify(title, detail)
+	net.broadcast([DiverNet.M_NOTIFY, title, detail])
+
+func heal_player(who: DiverPlayer, amount: float) -> void:
+	if amount <= 0 or not is_instance_valid(who): return
+	if who == player: player.heal(amount)
+	else: net.send(who.slot, [DiverNet.M_HEAL, amount])
+
+func frost_burst(pos: Vector3, amount: float) -> void:
+	if net.is_guest():
+		net.to_host([DiverNet.M_FROST, depth, pos, amount])
+		return
+	for enemy in enemies:
+		if is_instance_valid(enemy) and not enemy.dead and enemy.position.distance_to(pos) < 6:
+			enemy.slow = amount
+
+# Guests report their hits to the host, who applies damage and part effects.
+func damage_enemy(enemy: DiverEnemy, amount: float, source: Node3D, effects: bool = true) -> void:
+	if not net.is_guest():
+		enemy.take_damage(amount, effects, source)
+		return
+	if source != player: return
+	net.to_host([DiverNet.M_HIT, depth, enemy.net_id, amount])
+	hit_confirm = 0.14
+	enemy.flash = 0.1
+	enemy.my_last_hit = Time.get_ticks_msec()
+	sound.play("hit", 1.0, enemy.global_position)
+
+func local_player_down() -> void:
+	if all_players().size() <= 1 and not net.active():
+		finish_run(false)
+		return
+	player.downed = true
+	player.revive = 0
+	player.lock_target = null
+	player.visual.current_clip = ""
+	notify("YOU'RE DOWN!", "Hang on. A teammate can revive you by standing close.")
+	send_state()
+
+func send_info() -> void:
+	if not net.active() or not is_instance_valid(player): return
+	net.broadcast([DiverNet.M_INFO, selected_character, selected_weapon if mode in ["lobby", "online", "title"] else player.weapon, player.items, player.level, net.player_name])
+
+func send_state() -> void:
+	var p = player
+	net.broadcast([DiverNet.M_STATE, depth, p.global_position, p.velocity, p.yaw, p.pitch, p.move_input, p.state_flags(), p.hp, p.max_hp(), p.revive])
+
+func spawn_remote_players() -> void:
+	for member in net.members():
+		var member_slot = int(member.slot)
+		if member_slot == net.slot: continue
+		create_remote_player(member_slot)
+
+func create_remote_player(member_slot: int) -> DiverPlayer:
+	if remote_players.has(member_slot) and is_instance_valid(remote_players[member_slot]): return remote_players[member_slot]
+	var info: Dictionary = peers.get(member_slot, {})
+	var proxy = DiverPlayer.new()
+	proxy.game = self
+	proxy.is_local = false
+	proxy.slot = member_slot
+	proxy.display_name = net.member_name(member_slot)
+	proxy.character = int(info.get("character", 0))
+	proxy.weapon = int(info.get("weapon", 0))
+	proxy.items = info.get("items", {}).duplicate()
+	proxy.level = int(info.get("level", 1))
+	world.add_child(proxy)
+	proxy.position = Vector3([0.0, 1.6, -1.6, 3.2][clampi(member_slot - 1, 0, 3)], 0.12, 3)
+	proxy.net_pos = proxy.position
+	remote_players[member_slot] = proxy
+	print("ONLINE: teammate %s (slot %d) is in the dig" % [proxy.display_name, member_slot])
+	return proxy
+
+func remove_remote_player(member_slot: int) -> void:
+	if remote_players.has(member_slot):
+		if is_instance_valid(remote_players[member_slot]): remote_players[member_slot].queue_free()
+		remote_players.erase(member_slot)
+
+func in_run() -> bool:
+	return mode == "play" or mode in OVERLAY_MODES
+
+# Called every frame while the dig runs online.
+func net_tick(dt: float) -> void:
+	net_clock += dt
+	if net_clock < 0.05: return
+	net_clock = 0.0
+	send_state()
+	if not net.is_host(): return
+	var data = PackedFloat32Array()
+	for e in enemies:
+		if not is_instance_valid(e) or e.dead or not e.active: continue
+		data.append_array([e.net_id, e.global_position.x, e.global_position.y, e.global_position.z, e.rotation.y, e.health])
+	net.broadcast([DiverNet.M_SNAP, depth, scrap, kills, guardian_dead, run_time, data])
+	# The dig ends only when every digger is down.
+	var standing = 0
+	for p in all_players():
+		if not p.downed: standing += 1
+	if standing == 0: end_run_all(false)
+
+func end_run_all(won: bool) -> void:
+	net.broadcast([DiverNet.M_END, won])
+	finish_run(won)
+
+func host_start_run() -> void:
+	if not net.is_host(): return
+	var seed_value = randi() % 1000000 + 1
+	var party = maxi(1, net.members().size())
+	net.broadcast([DiverNet.M_START, seed_value, party])
+	start_run(seed_value, party)
+
+func enter_lobby_room() -> void:
+	mode = "lobby"
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	position_title_camera()
+	send_info()
+
+func leave_online() -> void:
+	net.leave_lobby()
+	peers.clear()
+	for member_slot in remote_players.keys(): remove_remote_player(member_slot)
+	if in_run(): finish_run(false)
+	else: show_title()
+
+# --- lobby server callbacks -------------------------------------------------
+
+func lobby_entered() -> void:
+	print("ONLINE: joined lobby %s as slot %d" % [net.lobby_code, net.slot])
+	peers.clear()
+	if mode in ["title", "online", "end", "archive"]: enter_lobby_room()
+	if net_test == "": net.save_profile()
+
+func lobby_updated() -> void:
+	var present = []
+	for member in net.members(): present.append(int(member.slot))
+	for member_slot in peers.keys():
+		if not present.has(member_slot): peers.erase(member_slot)
+	for member_slot in remote_players.keys():
+		if not present.has(member_slot): remove_remote_player(member_slot)
+		elif is_instance_valid(remote_players[member_slot]): remote_players[member_slot].display_name = net.member_name(member_slot)
+
+func peer_entered(member_slot: int) -> void:
+	send_info()
+	if net.is_host() and in_run(): send_sync(member_slot)
+
+func peer_left(member_slot: int) -> void:
+	var who = net.member_name(member_slot)
+	peers.erase(member_slot)
+	remove_remote_player(member_slot)
+	# Cores reserved for a departed digger become free for anyone.
+	for p in pickups:
+		if p.owner == member_slot: p.owner = 0
+	if in_run(): notify("%s LEFT THE DIG" % who.to_upper(), "The remaining diggers press on.")
+
+func lobby_closed(reason: String) -> void:
+	peers.clear()
+	for member_slot in remote_players.keys(): remove_remote_player(member_slot)
+	if in_run():
+		end_reason = reason
+		finish_run(false)
+	elif mode == "lobby":
+		mode = "online"
+		net.error_text = reason + "."
+
+# Late joiners rebuild the current floor from its seed, then apply what changed.
+func send_sync(member_slot: int) -> void:
+	var dead = PackedInt32Array()
+	var healths = PackedFloat32Array()
+	for i in enemies.size():
+		var e = enemies[i]
+		if not is_instance_valid(e) or e.dead: dead.append(i)
+		elif e.health < e.max_health: healths.append_array([i, e.health])
+	var used = PackedInt32Array()
+	for i in interactables.size():
+		if interactables[i].used: used.append(i)
+	var cleared = PackedInt32Array()
+	for i in rooms.size():
+		if rooms[i].cleared: cleared.append(i)
+	var items = []
+	for p in pickups:
+		if is_instance_valid(p.node): items.append([p.net_id, p.node.position, p.kind, p.value, p.id, p.owner])
+	net.send(member_slot, [DiverNet.M_SYNC, run_seed, depth, party_size, rng.seed if depth == 1 else floor_seed(depth), scrap, kills, run_time, guardian_dead, dead, healths, used, cleared, items, pickup_seq])
+
+func apply_sync(m: Array) -> void:
+	run_seed = int(m[1])
+	party_size = int(m[3])
+	scrap = 0
+	kills = 0
+	run_time = 0
+	total_damage = 0
+	queue_level = false
+	choice_queue.clear()
+	new_unlocks.clear()
+	depth = int(m[2])
+	rng.seed = int(m[4])
+	build_floor(false)
+	player.weapon = selected_weapon
+	scrap = int(m[5])
+	kills = int(m[6])
+	run_time = float(m[7])
+	guardian_dead = bool(m[8])
+	for id in m[9]:
+		if id >= 0 and id < enemies.size() and is_instance_valid(enemies[id]):
+			enemies[id].dead = true
+			enemies[id].queue_free()
+	var healths: PackedFloat32Array = m[10]
+	for i in range(0, healths.size(), 2):
+		var e = enemy_by_id(int(healths[i]))
+		if e: e.health = healths[i + 1]
+	for index in m[11]:
+		if index >= 0 and index < interactables.size(): use_interactable(interactables[index])
+	for index in m[12]:
+		if index >= 0 and index < rooms.size(): rooms[index].cleared = true
+	for item in m[13]: make_pickup(int(item[0]), item[1], item[2], float(item[3]), str(item[4]), int(item[5]))
+	pickup_seq = int(m[14])
+	mode = "play"
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	notify("JOINED THE DIG", "B%d · %s. Catch up with your team!" % [depth, DEPTH_NAMES[depth - 1]])
+	send_info()
+
+func enemy_by_id(id: int) -> DiverEnemy:
+	if id < 0 or id >= enemies.size(): return null
+	var e = enemies[id]
+	return e if is_instance_valid(e) and not e.dead else null
+
+func sender(from_slot: int) -> DiverPlayer:
+	var proxy = remote_players.get(from_slot)
+	return proxy if is_instance_valid(proxy) else null
+
+# --- game messages ----------------------------------------------------------
+
+func net_message(from_slot: int, m: Array) -> void:
+	var kind = int(m[0])
+	# Messages tagged with a descent are ignored once that floor is gone.
+	if kind in [DiverNet.M_STATE, DiverNet.M_SHOT, DiverNet.M_SNAP, DiverNet.M_ATTACK, DiverNet.M_RESOLVE, DiverNet.M_DAMAGE, DiverNet.M_DIE, DiverNet.M_PICKUP, DiverNet.M_PICKUP_GONE, DiverNet.M_USED, DiverNet.M_HIT, DiverNet.M_INTERACT, DiverNet.M_FROST, DiverNet.M_LIGHTNING, DiverNet.M_CLEARED]:
+		if not in_run() or int(m[1]) != depth: return
+	var from_host = from_slot == 1
+	match kind:
+		DiverNet.M_INFO:
+			peers[from_slot] = {"character": int(m[1]), "weapon": int(m[2]), "items": m[3], "level": int(m[4]), "name": str(m[5])}
+			var proxy = sender(from_slot)
+			if proxy:
+				if proxy.character != int(m[1]): proxy.set_character(int(m[1]))
+				proxy.weapon = int(m[2])
+				proxy.items = m[3].duplicate()
+				proxy.level = int(m[4])
+		DiverNet.M_STATE:
+			var proxy = sender(from_slot)
+			if proxy == null: proxy = create_remote_player(from_slot)
+			proxy.apply_state(m[2], m[3], m[4], m[5], m[6], int(m[7]), m[8], m[9], m[10])
+		DiverNet.M_SHOT:
+			spawn_bolt(m[2], m[3], 0, false, m[4], 0, sender(from_slot), true)
+			if sender(from_slot): sender(from_slot).remote_shot(m[2])
+		DiverNet.M_START:
+			if from_host: start_run(int(m[1]), int(m[2]))
+		DiverNet.M_SYNC:
+			if from_host: apply_sync(m)
+		DiverNet.M_FLOOR:
+			if from_host and in_run():
+				depth = int(m[1])
+				party_size = int(m[2])
+				rng.seed = floor_seed(depth)
+				enter_floor()
+		DiverNet.M_END:
+			if from_host and in_run(): finish_run(bool(m[1]))
+		DiverNet.M_SNAP:
+			if not from_host: return
+			scrap = int(m[2])
+			kills = int(m[3])
+			guardian_dead = bool(m[4])
+			run_time = float(m[5])
+			var data: PackedFloat32Array = m[6]
+			for i in range(0, data.size(), 6):
+				var e = enemy_by_id(int(data[i]))
+				if e: e.apply_snapshot(Vector3(data[i + 1], data[i + 2], data[i + 3]), data[i + 4], data[i + 5])
+		DiverNet.M_ATTACK:
+			var e = enemy_by_id(int(m[2]))
+			if from_host and e: e.show_attack(str(m[3]), float(m[4]), m[5])
+		DiverNet.M_RESOLVE:
+			var e = enemy_by_id(int(m[2]))
+			if from_host and e:
+				e.global_position = m[3]
+				e.resolve_attack()
+		DiverNet.M_DAMAGE:
+			var e = enemy_by_id(int(m[2]))
+			if from_host and e: e.show_damage(float(m[3]), bool(m[4]), int(m[5]) != net.slot)
+		DiverNet.M_DIE:
+			var e = enemy_by_id(int(m[2]))
+			if from_host and e: e.remote_die()
+		DiverNet.M_LIGHTNING:
+			if from_host:
+				var p = DiverArt.box(world, (m[2] + m[3]) * 0.5, Vector3(0.06, 0.06, m[2].distance_to(m[3])), Color("a9bdff"), false, 2)
+				p.look_at(m[3])
+				particles.append({"node": p, "velocity": Vector3.ZERO, "life": 0.13})
+		DiverNet.M_PICKUP:
+			if from_host: make_pickup(int(m[2]), m[3], str(m[4]), float(m[5]), str(m[6]), int(m[7]))
+		DiverNet.M_PICKUP_GONE:
+			if not from_host: return
+			for i in range(pickups.size() - 1, -1, -1):
+				if pickups[i].net_id == int(m[2]):
+					if is_instance_valid(pickups[i].node): pickups[i].node.queue_free()
+					pickups.remove_at(i)
+			if int(m[3]) == net.slot and str(m[4]) in ["scrap", "health"]: sound.play(str(m[4]))
+		DiverNet.M_XP:
+			if from_host and in_run(): player.gain_xp(int(m[1]))
+		DiverNet.M_ITEM:
+			if from_host and in_run(): player.add_item(str(m[1]))
+		DiverNet.M_HEAL:
+			if from_host and in_run(): player.heal(float(m[1]))
+		DiverNet.M_RESTORE:
+			if from_host and in_run(): restore_life(float(m[1]))
+		DiverNet.M_CHOICE:
+			if from_host and in_run(): open_relic_choice()
+		DiverNet.M_NOTIFY:
+			if from_host and in_run(): notify(str(m[1]), str(m[2]))
+		DiverNet.M_USED:
+			if from_host and int(m[2]) >= 0 and int(m[2]) < interactables.size(): use_interactable(interactables[int(m[2])])
+		DiverNet.M_CLEARED:
+			if from_host and int(m[2]) < rooms.size() and not rooms[int(m[2])].cleared:
+				rooms[int(m[2])].cleared = true
+				if int(m[2]) == current_room: notify("CHAMBER SECURED", "+5 scrap · caches available")
+		DiverNet.M_HIT:
+			var e = enemy_by_id(int(m[2]))
+			if net.is_host() and e and sender(from_slot): e.take_damage(clampf(float(m[3]), 0, 5000), true, sender(from_slot))
+		DiverNet.M_INTERACT:
+			var index = int(m[2])
+			if net.is_host() and sender(from_slot) and index >= 0 and index < interactables.size(): perform_interact(interactables[index], sender(from_slot))
+		DiverNet.M_FROST:
+			if net.is_host(): frost_burst(m[2], float(m[3]))

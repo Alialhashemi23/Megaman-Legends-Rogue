@@ -9,8 +9,9 @@ This folder preserves the project's intent and implementation context for a fres
 | [AUDIO-UI.md](AUDIO-UI.md) | Editing sound, music, menus, icons or typography |
 | [PLAYTEST-ROADMAP.md](PLAYTEST-ROADMAP.md) | Choosing the next improvement or recording human feedback |
 | [REPOSITORY.md](REPOSITORY.md) | Understanding tracked files, packaging, credits and Git workflow |
+| [NETWORK.md](NETWORK.md) | Changing online co-op, the web build, the lobby server or deployment |
 
-Pass 07, the Legends-inspired motion refinement, is finished. No implementation from the previous conversation is pending. Do not redo completed work, dump whole folders, or repeatedly run every suite just to establish context. Inspect the files needed for the next request and keep the user informed in concise updates.
+Pass 09, online co-op in the browser, is finished (see NETWORK.md and ../ONLINE.md). Pass 07, the Legends-inspired motion refinement, is also finished. No implementation from the previous conversation is pending. Do not redo completed work, dump whole folders, or repeatedly run every suite just to establish context. Inspect the files needed for the next request and keep the user informed in concise updates.
 
 Suggested fresh-instance prompt:
 

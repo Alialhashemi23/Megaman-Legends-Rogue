@@ -29,10 +29,30 @@ var weapon = 0
 var trauma = 0.0
 var lock_blocked = 0.0
 var footstep_time = 0.0
+# Online co-op: remote teammates are proxies driven by their owner's state packets.
+var is_local = true
+var slot = 0
+var display_name = ""
+var downed = false
+var revive = 0.0
+var aiming_now = false
+var move_input = Vector2.ZERO
+var net_pos = Vector3.ZERO
+var net_vel = Vector3.ZERO
+var net_age = 0.0
+var net_flags = 0
+var net_seen = false
+var name_tag: Label3D
+const FLAG_FLOOR = 1
+const FLAG_DASH = 2
+const FLAG_AIM = 4
+const FLAG_DOWN = 8
+const FLAG_CHOOSING = 16
 
 func _ready() -> void:
-	collision_layer = 2
-	collision_mask = 1
+	# Teammate proxies sit on their own layer: robots and local movement ignore them.
+	collision_layer = 2 if is_local else 8
+	collision_mask = 1 if is_local else 0
 	var col = CollisionShape3D.new()
 	var shape = CapsuleShape3D.new()
 	shape.radius = 0.34
@@ -41,6 +61,10 @@ func _ready() -> void:
 	col.position.y = 0.9
 	add_child(col)
 	set_character(character)
+	if not is_local:
+		name_tag = DiverArt.label(self, Vector3(0, 2.35, 0), display_name, DiverNet.SLOT_COLORS[clampi(slot, 0, 4)], 40)
+		name_tag.no_depth_test = true
+		return
 	camera = Camera3D.new()
 	game.add_child(camera)
 	camera.fov = 67
@@ -78,7 +102,12 @@ func fire_delay() -> float:
 	return base / (fire_multiplier * (1.0 + 0.14 * count("spring")))
 
 func _physics_process(dt: float) -> void:
-	if game.mode != "play": return
+	if not game.world_running(): return
+	if not is_local:
+		remote_process(dt)
+		return
+	# Online menus and choices keep the world running; the digger simply stands still.
+	var controls = game.mode == "play" and not downed
 	cooldown -= dt
 	invincible -= dt
 	dash_cooldown -= dt
@@ -95,17 +124,16 @@ func _physics_process(dt: float) -> void:
 			if lock_blocked > 0.75: lock_target = null
 			else: yaw = lerp_angle(yaw, atan2(-direction.x, -direction.z), dt * 8)
 	var input = Vector2(float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A)), float(Input.is_physical_key_pressed(KEY_S)) - float(Input.is_physical_key_pressed(KEY_W))).normalized()
+	if not controls: input = Vector2.ZERO
+	move_input = input
 	var move = Vector3(input.x, 0, input.y).rotated(Vector3.UP, yaw)
-	if Input.is_physical_key_pressed(KEY_SHIFT) and dash_cooldown <= 0:
+	if controls and Input.is_physical_key_pressed(KEY_SHIFT) and dash_cooldown <= 0:
 		dash_direction = move if move.length() > 0 else Vector3(0, 0, -1).rotated(Vector3.UP, yaw)
 		dash_time = 0.19
 		dash_cooldown = maxf(0.65, 1.35 - count("boots") * 0.06)
 		invincible = 0.26
 		game.sound.play("dash")
-		if count("frost") > 0:
-			for enemy in game.enemies:
-				if is_instance_valid(enemy) and not enemy.dead and enemy.position.distance_to(position) < 6:
-					enemy.slow = 2 + count("frost")
+		if count("frost") > 0: game.frost_burst(position, 2 + count("frost"))
 	if dash_time > 0:
 		velocity.x = dash_direction.x * 19
 		velocity.z = dash_direction.z * 19
@@ -115,7 +143,7 @@ func _physics_process(dt: float) -> void:
 	if not is_on_floor(): velocity.y -= 25 * dt
 	else:
 		velocity.y = 0
-		if Input.is_physical_key_pressed(KEY_SPACE):
+		if controls and Input.is_physical_key_pressed(KEY_SPACE):
 			velocity.y = 8
 			game.sound.play("jump")
 	var was_grounded = is_on_floor()
@@ -128,14 +156,18 @@ func _physics_process(dt: float) -> void:
 		hurt(15)
 	art.root.rotation.y = lerp_angle(art.root.rotation.y, yaw, dt * 16)
 	art.root.rotation.z = lerpf(art.root.rotation.z, -input.x * 0.065, dt * 8)
-	var aiming = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or is_instance_valid(lock_target) or cooldown > 0
+	var aiming = controls and (Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or is_instance_valid(lock_target) or cooldown > 0)
+	aiming_now = aiming
 	visual.equip(weapon)
-	visual.animate(dt, input, is_on_floor(), velocity.y, dash_time > 0, aiming, pitch, recoil, speed() / base_speed)
+	if downed:
+		visual.preview(dt, true, false)
+		update_revive(dt)
+	else: visual.animate(dt, input, is_on_floor(), velocity.y, dash_time > 0, aiming, pitch, recoil, speed() / base_speed)
 	if visual.foot_contact and footstep_time <= 0:
 		game.sound.play("step", 1.0, global_position)
 		footstep_time = .08
 	art.root.visible = invincible <= 0 or int(invincible * 25) % 2 == 0
-	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and cooldown <= 0 and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	if controls and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and cooldown <= 0 and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		shoot()
 	update_camera(dt)
 
@@ -204,15 +236,17 @@ func shoot() -> void:
 	if is_instance_valid(lock_target): aim = lock_target.global_position + Vector3.UP * (2.5 if lock_target.kind == 3 else 1.1)
 	var direction = (aim - start).normalized()
 	var amount = damage() * ([1.0, 0.55, 2.4][weapon])
-	game.spawn_bolt(start, direction, amount, false, weapon == 2, 0)
+	game.spawn_bolt(start, direction, amount, false, weapon == 2, 0, self)
 	if count("echo") > 0 and game.rng.randf() < minf(0.8, 0.12 * count("echo")):
-		game.spawn_bolt(start + Vector3.UP * 0.18, direction.rotated(Vector3.UP, 0.025), amount * 0.7, false, false, 0)
+		game.spawn_bolt(start + Vector3.UP * 0.18, direction.rotated(Vector3.UP, 0.025), amount * 0.7, false, false, 0, self)
 	if count("split") > 0:
 		for sign_dir in [-1, 1]:
-			game.spawn_bolt(start, direction.rotated(Vector3.UP, sign_dir * 0.13), amount * minf(0.75, 0.25 + count("split") * 0.12), false, false, 0)
+			game.spawn_bolt(start, direction.rotated(Vector3.UP, sign_dir * 0.13), amount * minf(0.75, 0.25 + count("split") * 0.12), false, false, 0, self)
 
 func hurt(amount: float) -> void:
-	if invincible > 0 or game.mode != "play": return
+	if invincible > 0 or downed or not game.world_running(): return
+	# Online part and level choices don't pause the dig, so choosing is protected.
+	if game.mode == "choice": return
 	amount *= 1.0 / (1 + count("shell") * 0.18)
 	hp = maxf(0, hp - amount)
 	visual.hurt()
@@ -221,9 +255,10 @@ func hurt(amount: float) -> void:
 	add_trauma(0.22)
 	game.sound.play("hurt")
 	game.float_text(global_position + Vector3.UP * 2, "−%d" % int(amount), Color("ff795f"))
-	if hp <= 0: game.finish_run(false)
+	if hp <= 0: game.local_player_down()
 
 func heal(amount: float) -> void:
+	if downed: return
 	hp = minf(max_hp(), hp + amount)
 
 func add_item(id: String) -> void:
@@ -233,6 +268,7 @@ func add_item(id: String) -> void:
 	game.save_meta()
 	game.sound.play("loot")
 	game.notify("%s ×%d" % [game.ITEMS[id].name, count(id)], game.ITEMS[id].desc)
+	game.send_info()
 
 func gain_xp(amount: int) -> void:
 	xp += amount
@@ -242,3 +278,70 @@ func gain_xp(amount: int) -> void:
 		xp_required = 10 + level * 6
 		heal(12)
 		game.queue_level = true
+
+# A downed digger revives after a teammate stands close for a few seconds.
+func update_revive(dt: float) -> void:
+	var helper = ""
+	for other in game.remote_players.values():
+		if is_instance_valid(other) and not other.downed and other.global_position.distance_to(global_position) < 2.4: helper = other.display_name
+	revive = clampf(revive + (dt / 2.5 if helper != "" else -dt * 0.25), 0, 1)
+	if revive >= 1: revive_now(0.35, helper)
+
+func revive_now(fraction: float, helper: String = "") -> void:
+	downed = false
+	revive = 0
+	hp = max_hp() * fraction
+	invincible = 1.5
+	visual.current_clip = ""
+	if helper != "": game.notify("BACK ON YOUR FEET", "%s pulled you up. Restored %d%% Life." % [helper, int(fraction * 100)])
+
+func state_flags() -> int:
+	var flags = 0
+	if is_on_floor(): flags |= FLAG_FLOOR
+	if dash_time > 0: flags |= FLAG_DASH
+	if aiming_now: flags |= FLAG_AIM
+	if downed: flags |= FLAG_DOWN
+	if game.mode == "choice": flags |= FLAG_CHOOSING
+	return flags
+
+func apply_state(pos: Vector3, vel: Vector3, new_yaw: float, new_pitch: float, input: Vector2, flags: int, life: float, life_max: float, revive_amount: float) -> void:
+	if not net_seen or pos.distance_to(global_position) > 6: global_position = pos
+	net_seen = true
+	net_pos = pos
+	net_vel = vel
+	net_age = 0
+	yaw = new_yaw
+	pitch = new_pitch
+	move_input = input
+	net_flags = flags
+	hp = life
+	base_health = life_max - 20 * count("heart")
+	revive = revive_amount
+	var was_down = downed
+	downed = flags & FLAG_DOWN != 0
+	if downed != was_down: visual.current_clip = ""
+
+func remote_process(dt: float) -> void:
+	net_age += dt
+	recoil = move_toward(recoil, 0.0, dt * 8)
+	footstep_time -= dt
+	var target = net_pos + net_vel * minf(net_age, 0.12)
+	global_position = global_position.lerp(target, minf(1, dt * 14))
+	art.root.rotation.y = lerp_angle(art.root.rotation.y, yaw, dt * 16)
+	art.root.rotation.z = lerpf(art.root.rotation.z, -move_input.x * 0.065, dt * 8)
+	visual.equip(weapon)
+	if downed: visual.preview(dt, true, false)
+	else: visual.animate(dt, move_input, net_flags & FLAG_FLOOR != 0, net_vel.y, net_flags & FLAG_DASH != 0, net_flags & FLAG_AIM != 0, pitch, recoil, speed() / base_speed)
+	if visual.foot_contact and footstep_time <= 0 and not downed:
+		game.sound.play("step", 0.95, global_position)
+		footstep_time = .08
+	if is_instance_valid(name_tag):
+		name_tag.text = display_name + ("\nDOWN · stand close to revive" if downed else "\nchoosing a part…" if net_flags & FLAG_CHOOSING else "")
+		name_tag.modulate = Color("ff9565") if downed else DiverNet.SLOT_COLORS[clampi(slot, 0, 4)]
+
+func remote_shot(start: Vector3) -> void:
+	recoil = 1
+	visual.fire()
+	visual.arm_weight = 1.0
+	game.muzzle_flash(start, Color("ffda82"), 0.28 if weapon == 2 else 0.16)
+	game.sound.play(["shot", "needle", "siege"][weapon], 1.0, start)
