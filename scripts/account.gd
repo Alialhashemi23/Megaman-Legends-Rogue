@@ -44,6 +44,9 @@ func platform_id() -> String:
 func restore_session() -> void:
 	if not OS.has_feature("android"): return
 	vault = DiverAndroidVault.new()
+	resume_saved_session()
+
+func resume_saved_session() -> void:
 	token = vault.load_token(base_url())
 	if token != "":
 		state = "restoring"
@@ -152,12 +155,19 @@ func receive_profile(code: int, data: Dictionary, _headers: PackedStringArray) -
 			start_intent = active.get("start", {})
 		state = "signed_in"
 		if not apply_profile(data):
-			if switching and not profile.is_empty(): game.activate_account()
+			if switching and profile.is_empty():
+				# Nothing confirmed yet: stay unconfirmed so digs, purchases and server changes wait.
+				identity = {}
+				outbox = []
+				start_intent = {}
+				state = "restoring"
+				changed.emit()
+			elif switching: game.activate_account()
 			game.mode = "account"
 			return
 		if switching:
 			game.activate_account()
-			game.mode = "account"
+			if game.mode in ["title", "account"]: game.mode = "account"
 		flush()
 	elif code == 401:
 		var restoring = state in ["restoring", "needs_sign_in"]
@@ -175,6 +185,8 @@ func receive_profile(code: int, data: Dictionary, _headers: PackedStringArray) -
 	else:
 		status = "Offline"
 		if code == 403: message.emit("Verify your email in the sign-in page before syncing progress.")
+		# A saved session restored while offline retries on its own once the server is reachable.
+		if state == "restoring" and (code == 0 or code == 429 or code >= 500): retry_wait = 15
 		changed.emit()
 		if identity.is_empty() and game.net.invited_code() != "" and not game.net.active():
 			game.mode = "online"
@@ -398,6 +410,10 @@ func ticket(callback: Callable) -> void:
 
 func sign_in() -> void:
 	if not switch_allowed(): return
+	if vault != null and state == "guest" and FileAccess.file_exists(vault.file_for(base_url())):
+		# A session kept by play_guest() is tried before asking for a new approval.
+		resume_saved_session()
+		if state == "restoring": return
 	if OS.has_feature("web"):
 		JavaScriptBridge.eval("location.assign('/account?return=' + encodeURIComponent(location.pathname + location.search))", true)
 		return
@@ -425,6 +441,22 @@ func cancel_sign_in() -> void:
 	device = {}
 	state = "needs_sign_in" if not identity.is_empty() else "guest"
 	generation += 1
+
+# Choosing Guest while a saved Android session is still unconfirmed (usually offline)
+# keeps the encrypted session for the next launch or Sign In instead of revoking it.
+func play_guest() -> void:
+	if state != "restoring" or vault == null:
+		sign_out()
+		return
+	generation += 1
+	requests = requests.slice(0, 1) if busy else []
+	token = ""
+	retry_wait = 0
+	state = "guest"
+	status = "Offline"
+	game.activate_guest()
+	changed.emit()
+	message.emit("Playing as Guest. Your saved sign-in is kept; choose Sign In to restore it.")
 
 func sign_out() -> void:
 	if not switch_allowed(): return
@@ -494,7 +526,9 @@ func _process(dt: float) -> void:
 	if game.in_run() and DisplayServer.window_is_focused(): foreground_seconds += dt
 	if retry_wait > 0:
 		retry_wait -= dt
-		if retry_wait <= 0: flush()
+		if retry_wait <= 0:
+			if state == "restoring": refresh()
+			else: flush()
 	if signed_in() and server_run != "" and game.in_run():
 		heartbeat_clock += dt
 		if heartbeat_clock >= 120:
