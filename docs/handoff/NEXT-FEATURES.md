@@ -1,4 +1,20 @@
-# Next features: original brief (implemented in pass 16)
+# Next features
+
+## Pending accounts and Android planning — 2026-10-14
+
+The user requested account logins with permanent progress shared between machines, plus a native Retroid Pocket 5 APK with browser/Windows cross-play, shared account progress and startup update checks. These are **planned, not implemented**. Hosting costs and login method remain undecided.
+
+The full scope, hosting/cost options, migration/sync rules, Android work, update flow, delivery order and acceptance checks are in [ACCOUNTS-ANDROID-PLAN.md](ACCOUNTS-ANDROID-PLAN.md). Use it for the next implementation proposal; this pass does not authorize deployment or paid provisioning.
+
+## Pending co-op improvements — group play feedback
+
+1. **Shared minimap clearing.** Share explored/revealed rooms and cleared-room map state across the party, so each player's minimap reflects the team's exploration and clears.
+2. **Cache upgrade notification before selection.** When a teammate opens a cache, show a popup indicating an upgrade choice is available instead of immediately opening the selection screen. Let each player press a button (for example, Select) to open their pending choice when ready. The exact binding is still to be decided.
+3. **Chest icons on the minimap.** Show chests/part caches with a distinct icon on the minimap so players can locate them.
+
+These are recorded requests, not implemented changes. Preserved from the two newer planning commits on `main` when adding the account/Android plan to this feature branch.
+
+## Original brief (implemented in pass 16)
 
 **Status:** implemented on `codex/next-features-volnutt`; see [FEATURE-REPORT.md](../FEATURE-REPORT.md). The brief below is retained for rationale. The current user requested branch review and later merge, so its deployment instructions do not apply to this pass. Difficulty tuning awaits human feedback.
 

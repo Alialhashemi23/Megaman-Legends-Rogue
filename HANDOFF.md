@@ -1,4 +1,10 @@
-# Relic Diver handoff — 2026-10-13 (pass 16: character attacks, Workshop, save codes)
+# Relic Diver handoff — 2026-10-14 (account and Android planning; pass 16 implemented)
+
+## Latest request: accounts and Android — planning only
+
+On `codex/next-features-volnutt`, [docs/handoff/ACCOUNTS-ANDROID-PLAN.md](docs/handoff/ACCOUNTS-ANDROID-PLAN.md) plans account logins and durable permanent progress across browser/Windows/Android, a native Retroid Pocket 5 APK, shared co-op lobbies and startup update checks. Hosting/cost and login choices are open; the user asked whether managed hosting costs money, and the plan covers a free pilot versus paid service and self-hosting tradeoffs. No services provisioned, gameplay changed or builds regenerated. This is not an implementation or deployment pass.
+
+The feature branch had the same gameplay as `main`, which also contained two newer planning commits. Their pending map sharing, deferred cache selection and chest-icon requests are preserved in NEXT-FEATURES.md. That file and docs/handoff/README.md link the new plan. Account saves and Android remain unimplemented; existing local saves/save codes and shipped bundles are unchanged.
 
 ## Current feature branch
 

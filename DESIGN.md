@@ -54,6 +54,12 @@ This is a playable prototype with a complete run loop, not a finished game. Auth
 
 The next priorities should follow human playtesting: movement feel, camera visibility, target readability, useful drops, exploration density, guardian fairness and sound balance. Preserve the direction above when changing implementation. See docs/handoff/PLAYTEST-ROADMAP.md for a practical review order.
 
+## Planned account progress and Android support (2026-10-14)
+
+The user wants account logins so permanent records, unlocks, Zenny and Workshop purchases follow the player across machines, plus a native Android APK for Retroid Pocket 5 with browser/Windows cross-play, shared account progress and startup update checks. Preserve the run-reset rules and Legends presentation on every platform. This requests persistent gameplay progress, not advertising analytics.
+
+These features are planned, not implemented. Hosting, costs, login method and offline/concurrent-device policy remain to be selected. Permanent account progress is separate from active-dig checkpoints; this request does not change the existing choice to omit solo mid-run saving. Scope, proposed defaults and acceptance checks are in [docs/handoff/ACCOUNTS-ANDROID-PLAN.md](docs/handoff/ACCOUNTS-ANDROID-PLAN.md). No deployment, paid service, store submission or release publication is part of the planning pass.
+
 ## Repository and distribution intent
 
 The user initially requested local-only work, then explicitly authorized committing this project and its handoff documents to https://github.com/Alialhashemi23/Megaman-Legends-Rogue. That authorization covers this repository. The user then requested browser play with online co-op on their own domain, published from their machines through a Cloudflare Tunnel; the project ships the server and deployment files, and the user runs the deployment. It still does not request public releases, monetization or uploading personal saves; keep the site non-commercial. Preserve attribution and the distinction between original project work and Capcom assets.
