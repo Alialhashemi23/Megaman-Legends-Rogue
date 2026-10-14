@@ -5,6 +5,7 @@ This folder holds the project's intent and implementation context for a new sess
 | File | Read when |
 |---|---|
 | [ROADMAP.md](ROADMAP.md) | Working on the next features: co-op map/cache polish, Android, accounts, sync, owner dashboard. Decisions, phase order, requirements and acceptance |
+| [PHASE4-BRIEF.md](PHASE4-BRIEF.md) | Starting roadmap phase 4 (game account sync): code hooks, local backend, acceptance |
 | [TECHNICAL.md](TECHNICAL.md) | Changing game systems, tuning numbers, running checks, exporting or setting up another PC |
 | [ANDROID.md](ANDROID.md) | Building, installing or testing the Android APK; toolchain, emulator, what is and isn't verified |
 | [NETWORK.md](NETWORK.md) | Changing online co-op, the web build, the lobby server or deployment |
