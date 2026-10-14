@@ -1,6 +1,6 @@
 # Running accounts (operator guide)
 
-How to turn on player accounts for the self-hosted server, back them up, and move to another machine. The API contract is in [ACCOUNT-API.md](ACCOUNT-API.md). Accounts are **off** until you do this: `docker compose up -d` on its own still runs the guest-only game exactly as before.
+How to turn on player accounts for the self-hosted server, back them up, and move to another machine. The API contract is in [ACCOUNT-API.md](ACCOUNT-API.md). Accounts are **off** until configured. With no accounts add-on selected, `docker compose up -d` runs the guest-only game. The live Windows deployment's ignored `.env` now selects both Compose files through `COMPOSE_FILE`, keeping accounts enabled for default Compose commands.
 
 ## What gets added
 
@@ -9,7 +9,7 @@ How to turn on player accounts for the self-hosted server, back them up, and mov
 | `postgres` (17.11) | Account database, in the `relic-db` named volume. No port is published |
 | `migrate` | Applies schema changes and exits; the game server waits for it |
 | `relic-diver` | Same game server, now with `/account`, `/api/auth` and `/api/v1` |
-| `backup` | Encrypted dump at start-up and daily; keeps 7 daily + 4 weekly |
+| `backup` | Encrypted dump after migrations finish and daily; keeps 7 daily + 4 weekly |
 | `mailpit` (only with `--profile dev-mail`) | A fake inbox at http://localhost:8025 for testing |
 
 ## First-time setup

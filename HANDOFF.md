@@ -6,11 +6,11 @@ Current state of the project for a new session. Updated 2026-10-14. Game directi
 
 - **Roadmap phase 1 (co-op map sharing, waiting part picks, cache icons)** is merged and deployed (CHANGELOG 17).
 - **Roadmap phase 2 (Android)** is merged: the APK builds with `tools/package-android.ps1` and runs on the emulator; the Retroid is untested. See [docs/handoff/ANDROID.md](docs/handoff/ANDROID.md).
-- **Roadmap phase 4 (game account sync)** is implemented on `feature/account-sync` (`084d6a6`), pushed and deployed to the local Docker server on 2026-10-14. The public pack hash and WebSocket handshake were verified. Accounts remain off: the live database, auth secrets and mail are not configured. See [docs/handoff/ACCOUNT-SYNC.md](docs/handoff/ACCOUNT-SYNC.md).
+- **Roadmap phase 4 (game account sync)** is implemented on `feature/account-sync` (`084d6a6`), pushed and deployed to the local Docker server on 2026-10-14. Accounts are now enabled with PostgreSQL, verified Resend SMTP and encrypted daily backups, explicitly authorized by the user. Public account routes and an isolated backup restore passed. See [docs/handoff/ACCOUNT-SYNC.md](docs/handoff/ACCOUNT-SYNC.md).
 - **Roadmap phase 3 (accounts backend)** is merged into `main` and **off unless configured**: Better Auth + PostgreSQL, the `/api/v1` progress API, device-code sign-in and lobby tickets. Contract [docs/ACCOUNT-API.md](docs/ACCOUNT-API.md); running it [docs/ACCOUNTS-OPS.md](docs/ACCOUNTS-OPS.md). Phase 4 integrates the client without changing v1.
 - **Shipped (through pass 16):** a complete three-descent roguelike loop; four playable diggers (Mega, Roll, Tron, Servbot) with signature attacks; Zenny and per-digger Workshop skill trees; versioned local progress with save codes; browser play and online co-op for up to four with host migration, reconnects and checkpoints; controller support, Options and rebinding; bigger varied ruins and a to-scale map. Details: [docs/FEATURE-REPORT.md](docs/FEATURE-REPORT.md).
 - **Compatibility numbers:** game protocol `NET_VERSION` 7 (`scripts/net.gd`), `CHECKPOINT_VERSION` 3 (`scripts/game.gd`), profile `VERSION` 2 (`scripts/progression.gd`). All co-op players must run the same protocol.
-- **Next:** configure the live accounts backend and review/merge phase 4, then Android accounts/updates (phase 5) and owner dashboard (phase 6). Future deployments still need authorization.
+- **Next:** owner sign-up/email confirmation, keep recovery secrets in an off-machine password manager and confirm OneDrive backup syncing, then review/merge phase 4. Android accounts/updates (phase 5) and owner dashboard (phase 6) follow. Future deployments still need authorization.
 - **Still needed from humans:** a real playtest of balance (difficulty is the first-pass tuning from CHANGELOG entry 14, the Workshop numbers are provisional, co-op party scaling is a first guess) and a browser start-to-finish run of the newest content.
 
 ## User intent and constraints
@@ -33,7 +33,7 @@ A non-profit Mega Man Legends fan roguelike: colorful ancient machinery, mysteri
 
 ## Live deployment
 
-https://megaman.galosengen.dev is served from this PC through a Cloudflare Tunnel by `docker compose` (containers `relic-diver` and `cloudflared`; the token is in the untracked `.env`). The tunnel routes to `http://relic-diver:8080`; the desktop build's default server is `wss://megaman.galosengen.dev/ws`. A move to the user's Ubuntu laptop and later a VPS is planned as part of the roadmap.
+https://megaman.galosengen.dev is served from this PC through a Cloudflare Tunnel by `docker compose`. Accounts add `postgres`, a completed `migrate` job and `backup` to `relic-diver` and `cloudflared`; secrets are in the untracked `.env`. Its `COMPOSE_FILE` includes both Compose files so default commands retain accounts. Encrypted backups go to `C:/Users/Temp/OneDrive/Documents/RelicDiver-Account-Backups`; off-machine sync and a separate recovery-secret copy still need human confirmation. The tunnel routes to `http://relic-diver:8080`; the desktop build's default server is `wss://megaman.galosengen.dev/ws`. A move to the user's Ubuntu laptop and later a VPS is planned as part of the roadmap.
 
 To ship a gameplay change (only when the user asks to deploy, because a restart drops online lobbies):
 

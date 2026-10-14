@@ -4,9 +4,30 @@ Implemented on `feature/account-sync` (`084d6a6`), pushed and deployed with the
 user's authorization on 2026-10-14. Godot exports and Docker builds ran locally
 on the Windows PC. Public health, exact pack SHA256, isolation headers and the
 WebSocket hello passed at https://megaman.galosengen.dev. Cloudflare only tunnels
-traffic to the local server. The live database, auth secrets and mail are not
-configured, so accounts remain off. The v1 server contract is unchanged.
+traffic to the local server. Accounts are enabled locally as of 2026-10-14 with
+the user's explicit approval: PostgreSQL 17.11, generated auth secrets, verified
+`mail.galosengen.dev` and a separate sending-only Resend SMTP key. The v1 server
+contract is unchanged.
 Browser and Windows are in scope; Android sign-in remains phase 5.
+
+## Live account operations
+
+The ignored `.env` selects both Compose files through `COMPOSE_FILE`; ordinary
+Compose updates preserve account services. Never commit it or print credentials.
+Open/click tracking is disabled for account emails. Local/public health, account
+page and session routes passed; unauthenticated profiles correctly return 401.
+SMTP authentication passed without sending email. Actual inbox delivery and the
+owner's sign-up/confirmation still need the owner to exercise the live flow.
+
+Daily encrypted backups keep 7 daily and 4 weekly copies in
+`C:/Users/Temp/OneDrive/Documents/RelicDiver-Account-Backups`. Backup startup now
+waits for migrations. A fresh post-migration backup passed checksum/decryption
+and restored into a disposable database on an isolated Docker network; all 11
+public tables matched, then test resources were removed. Production data was
+not changed by the rehearsal. Confirm OneDrive syncing and separately retain
+`BACKUP_PASSPHRASE` and `BETTER_AUTH_SECRET` in an off-machine password manager.
+The original management key supplied in chat is not used by the game; the owner
+can revoke it independently of the separate SMTP key.
 
 ## Ownership and storage
 
