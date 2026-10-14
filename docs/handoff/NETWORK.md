@@ -4,6 +4,8 @@ Pass 09 added browser play and online co-op for up to four diggers. The user req
 
 ## Pass 16 additions
 
+**Ready-to-assign follow-up (2026-10-14):** the user selected self-hosted Node + PostgreSQL + Better Auth, email/password/open registration, online account progress, a read-only admin dashboard and Android startup checks with browser downloads. See [IMPLEMENTATION-DECISIONS.md](IMPLEMENTATION-DECISIONS.md), [WORKER-BRIEFS.md](WORKER-BRIEFS.md) and [ACCOUNTS-ANDROID-PLAN.md](ACCOUNTS-ANDROID-PLAN.md). None is implemented. The relay remains memory-only, and `hello.id` is still a client-supplied reconnect identity rather than authentication. Future account membership uses validated one-use lobby tickets and server-derived identity. Do not describe planned database/auth features as current behavior.
+
 `NET_VERSION` 6 adds bomb shots: M_SHOT now carries `[depth, position, direction_or_launch_velocity, heavy, projectile_kind]` (0 bolt, 1 bomb). Cosmetic bombs use the same gravity as the shooter. Builds now mirror purchased skills, Pulse shot count and Roll repair cooldown. Remote character hitboxes match the selected rig; Roll nearby doubles revive speed on the downed player's client. CHECKPOINT_VERSION 3 prevents restoring incompatible prior combat state.
 
 ## Topology

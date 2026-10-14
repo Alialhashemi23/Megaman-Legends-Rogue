@@ -54,6 +54,12 @@ This is a playable prototype with a complete run loop, not a finished game. Auth
 
 The next priorities should follow human playtesting: movement feel, camera visibility, target readability, useful drops, exploration density, guardian fairness and sound balance. Preserve the direction above when changing implementation. See docs/handoff/PLAYTEST-ROADMAP.md for a practical review order.
 
+## Planned account progress, admin and Android support (2026-10-14)
+
+The user wants account logins so permanent records, unlocks, Zenny and Workshop purchases follow the player across machines, a read-only owner dashboard for user/login/game statistics, and a native Android APK for Retroid Pocket 5 with browser/Windows cross-play, shared account progress and startup update checks. Preserve run-reset rules and Legends presentation on every platform. Collect limited operational/game metadata, not advertising analytics or device fingerprints.
+
+These features are planned, not implemented. Confirmed choices: self-hosted Node + PostgreSQL + Better Auth on Ubuntu initially, email/password with open registration, online account run starts/purchases and retry after disconnect, separate offline guests, read-only admin powers and browser-download APK updates. Permanent progress remains separate from active-dig checkpoints; solo mid-run saving stays omitted. [IMPLEMENTATION-DECISIONS.md](docs/handoff/IMPLEMENTATION-DECISIONS.md) defines requirements/defaults and [WORKER-BRIEFS.md](docs/handoff/WORKER-BRIEFS.md) defines work packages; [ACCOUNTS-ANDROID-PLAN.md](docs/handoff/ACCOUNTS-ANDROID-PLAN.md) retains rationale. The user selected `main` as merge destination. No deployment, paid service, store submission or release publication is part of the planning pass.
+
 ## Repository and distribution intent
 
 The user initially requested local-only work, then explicitly authorized committing this project and its handoff documents to https://github.com/Alialhashemi23/Megaman-Legends-Rogue. That authorization covers this repository. The user then requested browser play with online co-op on their own domain, published from their machines through a Cloudflare Tunnel; the project ships the server and deployment files, and the user runs the deployment. It still does not request public releases, monetization or uploading personal saves; keep the site non-commercial. Preserve attribution and the distinction between original project work and Capcom assets.

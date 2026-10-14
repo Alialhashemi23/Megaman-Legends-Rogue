@@ -1,8 +1,16 @@
-# Relic Diver handoff — 2026-10-13 (pass 16: character attacks, Workshop, save codes)
+# Relic Diver handoff — 2026-10-14 (implementation choices finalized; pass 16 implemented)
 
-## Current feature branch
+## Latest request: finalize choices and merge the planning branch into main
 
-Implemented the agreed NEXT-FEATURES brief on `codex/next-features-volnutt`, based on main `9c4d309`. The user requested commits and a pushed feature branch for later merging. Do not deploy the live site during this work. Full overview and validation: `docs/FEATURE-REPORT.md`.
+The user answered the implementation questionnaire: **self-hosted existing Node + PostgreSQL + Better Auth**, **email/password**, **open registration**, **online account starts/purchases with interrupted-save retry**, **read-only owner admin dashboard**, **startup APK check + browser download**, and merge into existing **`main`**, not a new `master`. Initial host is their planned Ubuntu laptop (11th-gen i7, 16 GB RAM, 512 GB SSD), later a VPS. Owner deployment and no paid provisioning remain in effect.
+
+Read [IMPLEMENTATION-DECISIONS.md](docs/handoff/IMPLEMENTATION-DECISIONS.md) for the authoritative choices/defaults, [WORKER-BRIEFS.md](docs/handoff/WORKER-BRIEFS.md) for assignable backend/auth, game-sync, admin, Android and co-op packages, and [ACCOUNTS-ANDROID-PLAN.md](docs/handoff/ACCOUNTS-ANDROID-PLAN.md) for rationale. No blocking product questions remain; SMTP, owner account/MFA, backup destination, signing key and real hardware are later launch inputs. No workers were launched in this planning pass.
+
+The feature branch's gameplay already matches `main`; only documents differ. The two newer `main` planning commits (map sharing, deferred cache selection and chest icons) remain included in NEXT-FEATURES.md. This pass changes documents only; account saves/admin/Android and those co-op requests remain unimplemented. Existing personal saves and shipped gameplay bundles are unchanged. Validation covers local links, conflict/whitespace checks and a documentation-only merge diff, not rerunning the gameplay suites.
+
+## Implemented gameplay baseline (pass 16; historical feature branch)
+
+Implemented the agreed NEXT-FEATURES brief on `codex/next-features-volnutt`, based on main `9c4d309`; those gameplay commits are already ancestors of `main`. The 2026-10-14 request merges the planning additions into `main` so workers can start there. Do not deploy the live site during this work. Full gameplay overview and prior validation: `docs/FEATURE-REPORT.md`.
 
 - One signature attack per digger: Mega Pulse, Roll Needle plus 2× revive rate, Tron Siege splash, Servbot ballistic bombs, 65 Life, +18% speed, 1.05 m capsule and 0.85 m camera pivot.
 - `scripts/progression.gd`: Zenny, 5 nodes × 4 diggers, table-driven costs, prerequisite checks, profile v2 migration, checksummed save codes. Existing earned part unlocks survive raised 40/100/220 gates. Moderate permanent stat bonuses are now part of DESIGN pillar 5.

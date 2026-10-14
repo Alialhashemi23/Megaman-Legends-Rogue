@@ -1,22 +1,28 @@
 # Next features
 
+## Ready-to-assign accounts, admin and Android work — 2026-10-14
+
+The user requested account logins with permanent progress shared between machines, a read-only owner admin dashboard with user/login/game statistics, and a native Retroid Pocket 5 APK with browser/Windows cross-play, shared progress and startup updates. These are **planned, not implemented**. The user selected self-hosted Node + PostgreSQL + Better Auth, email/password, open registration, online account run starts/purchases with interrupted-save retry, and browser-download APK updates.
+
+Read [IMPLEMENTATION-DECISIONS.md](IMPLEMENTATION-DECISIONS.md) for confirmed choices and engineering defaults, [WORKER-BRIEFS.md](WORKER-BRIEFS.md) for assignable work packages and dependencies, and [ACCOUNTS-ANDROID-PLAN.md](ACCOUNTS-ANDROID-PLAN.md) for scope/rationale. No further product questionnaire is needed before workers start. Credentials, signing keys and hardware are launch inputs; this planning pass does not deploy or provision paid services.
+
 ## Pending co-op improvements — group play feedback
 
 1. **Shared minimap clearing.** Share explored/revealed rooms and cleared-room map state across the party, so each player's minimap reflects the team's exploration and clears.
-2. **Cache upgrade notification before selection.** When a teammate opens a cache, show a popup indicating an upgrade choice is available instead of immediately opening the selection screen. Let each player press a button (for example, Select) to open their pending choice when ready. The exact binding is still to be decided.
+2. **Cache upgrade notification before selection.** When a teammate opens a cache, show a popup indicating an upgrade choice is available instead of immediately opening the selection screen. Each player opens their pending choice when ready. Engineering default: a new rebindable **Pending upgrades** action on **C / RB**, preserving **Tab / View** for Buster parts; see IMPLEMENTATION-DECISIONS.md.
 3. **Chest icons on the minimap.** Show chests/part caches with a distinct icon on the minimap so players can locate them.
 
-These are recorded requests, not implemented changes.
+These are recorded requests, not implemented changes. Preserved from the two newer planning commits on `main` when adding the account/Android plan to this feature branch.
 
 ## Original brief (implemented in pass 16)
 
-**Status:** implemented on `codex/next-features-volnutt`; see [FEATURE-REPORT.md](../FEATURE-REPORT.md). The brief below is retained for rationale. The current user requested branch review and later merge, so its deployment instructions do not apply to this pass. Difficulty tuning awaits human feedback.
+**Status:** pass-16 gameplay is implemented and already present on `main`; see [FEATURE-REPORT.md](../FEATURE-REPORT.md). The brief below is historical rationale, not an unstarted task list. Current decisions and worker briefs above take precedence; the old deployment and blanket test instructions below do not apply to the documentation-only planning merge. Difficulty tuning awaits human feedback.
 
-Written 2026-10-13 at the end of pass 12. The user agreed to everything here ("the asks I all agree to") and asked for it to be handed to another agent to build while they play. Nothing below is started. Read `HANDOFF.md` first for the state of the project, then only the subsystem handoffs you need.
+Originally written 2026-10-13 at the end of pass 12, before implementation. The user agreed to the brief ("the asks I all agree to"); pass 16 subsequently completed it. Read `HANDOFF.md` first for current state, then only the subsystem handoffs needed for the assigned new work.
 
 Build the features in the order given: the skill trees depend on what each character can do, and saving depends on what the skill trees store.
 
-## Ground rules
+## Historical ground rules (superseded where inconsistent with current instructions)
 
 - Repository: `D:\code repos\Megaman-Legends-Rogue` on the user's Windows PC, branch `main` (`online-coop` points at the same commit). Commit and push when a feature is complete and verified.
 - The game is live at https://megaman.galosengen.dev, served from this PC by Docker. The user may be playing while you work. Redeploying restarts the server and drops online lobbies, so deploy once per finished feature, not per edit, and tell the user to refresh.

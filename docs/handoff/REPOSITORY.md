@@ -2,6 +2,8 @@
 
 Authorized remote: https://github.com/Alialhashemi23/Megaman-Legends-Rogue (origin, main). The user explicitly requested committing the existing game, design and handoffs here, superseding the earlier no-repository preference. This is not authorization to deploy a hosted game or publish elsewhere.
 
+On 2026-10-14 the user explicitly selected `main` (the existing default, not a new `master`) for merging `codex/next-features-volnutt` after finalizing implementation choices. Pass-16 gameplay already exists on `main`; this merge adds planning/worker documents only, so no package regeneration is needed. [IMPLEMENTATION-DECISIONS.md](IMPLEMENTATION-DECISIONS.md) and [WORKER-BRIEFS.md](WORKER-BRIEFS.md) are the starting points for assigned implementation branches. Future database/auth backups, activity records, session credentials and Android signing keys must remain outside Git and distributed packages.
+
 ## What belongs in Git
 
 Godot project configuration, scripts, tests, runtime assets, editable artwork, original model sources/archives and converter, original audio composition/MIDI sources, required bank/renderer sources and licenses, screenshots authored locally, documentation and a compressed Windows playable bundle. Keep credits and asset license exceptions with the project.
