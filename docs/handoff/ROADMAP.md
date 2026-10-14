@@ -9,8 +9,8 @@ The single source of truth for the next features. It replaces the earlier NEXT-F
 | 1 | [Co-op map and cache polish](#phase-1--co-op-map-and-cache-polish) | Done on `feature/coop-map-sharing` (protocol 7); awaiting merge and a group playtest | — |
 | 2 | [Android development APK (guest + cross-play)](#phase-2--android-development-apk) | Build, saves, update-in-place, online connect and reconnect verified on the emulator; Retroid hardware and credits page outstanding. See [ANDROID.md](ANDROID.md) | — |
 | 3 | [Backend: auth, profile API, deployment](#phase-3--backend-auth-profile-api-and-deployment) | Done (server only, off by default). Contract: [ACCOUNT-API.md](../ACCOUNT-API.md); operations: [ACCOUNTS-OPS.md](../ACCOUNTS-OPS.md). Admin MFA and the phase 6 event hooks are outstanding | — |
-| 4 | [Game account sync (browser, Windows)](#phase-4--game-account-sync) | Implemented on `feature/account-sync` (`084d6a6`), pushed and deployed to the local server; awaiting merge. Live accounts backend still unconfigured. Storage/checks: [ACCOUNT-SYNC.md](ACCOUNT-SYNC.md) | 3 |
-| 5 | [Android accounts and startup updates](#phase-5--android-accounts-and-startup-updates) | Not started | 2, 3, 4 |
+| 4 | [Game account sync (browser, Windows)](#phase-4--game-account-sync) | Implemented on `feature/account-sync` (`084d6a6`), pushed and deployed with live accounts configured; owner registered/verified. Awaiting playtest and merge. Storage/checks: [ACCOUNT-SYNC.md](ACCOUNT-SYNC.md) | 3 |
+| 5 | [Android accounts and startup updates](#phase-5--android-accounts-and-startup-updates) | Implemented on `feature/android-accounts` with phase 4 dependency. Emulator Keystore/restart/upgrade, client update and relay checks pass; test-signed APK 3 local only. Retroid and installer failure cases remain; awaiting review/merge | 2, 3, 4 |
 | 6 | [Read-only owner dashboard](#phase-6--read-only-owner-dashboard) | Not started | 3 (+ activity signals from 4/5) |
 | — | [Launch](#launch-owner-supplied-inputs) | Owner-run | Inputs below |
 
@@ -43,7 +43,7 @@ No paid service without the owner's approval. There is no planned hosting subscr
 
 - **Preserve** the Legends look, run-reset rules, personal saves, Windows portable saves and the browser recovery mirror. Settings (controls, graphics, audio) stay device-local.
 - **Don't rewrite the combat simulation** to add accounts. Add new modules rather than growing the monoliths. Shared hotspots: `scripts/game.gd`, `hud.gd`, `net.gd`, `settings.gd`, `server/server.js`, `docker-compose.yml`, `export_presets.cfg`.
-- **Version numbers are independent:** game protocol `NET_VERSION` (`scripts/net.gd`, now 6), `CHECKPOINT_VERSION` (`scripts/game.gd`, now 3), profile `VERSION` (`scripts/progression.gd`, now 2), the `/api/v1` contract and Android `versionCode`. Bump only what a change affects. Incompatible clients get an update instruction before joining.
+- **Version numbers are independent:** game protocol `NET_VERSION` (`scripts/net.gd`, now 7), `CHECKPOINT_VERSION` (`scripts/game.gd`, now 3), profile `VERSION` (`scripts/progression.gd`, now 2), the `/api/v1` contract and Android `versionCode`. Bump only what a change affects. Incompatible clients get an update instruction before joining.
 - **Trust model stays friends co-op.** Authentication, validation, rate limits and deduplication stop impersonation and accidental duplicates; they don't prove a reported run was earned honestly. No competitive leaderboards or server-authoritative combat in this work.
 - **Never commit or package** `.env`, tunnel tokens, auth secrets, sessions, databases/dumps, personal profiles, keystores or signing passwords.
 - **Tests use disposable accounts, isolated profile paths and a local mail sink.** Don't claim hardware, deployment or live-email checks that didn't happen.

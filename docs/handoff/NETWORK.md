@@ -16,6 +16,7 @@ Version history: `NET_VERSION` 3 is the bigger-ruins floor generator (older buil
 
 Text frames are JSON, handled in `server/lobby.js`, `server/server.js` and `scripts/net.gd`.
 - **Client → server:** `hello{name,id,v,ticket?}`, `list`, `create{name,public,password}`, `join{code,password}`, `resume{code,name,public,password}`, `leave`, `name`, `kick{slot}`, `lock{locked}`, `status{state,depth}`, `ping`.
+- **Phase 5 Android compatibility:** hello adds optional `platform:"android"` and integer `androidVersionCode`. When operator-staged Android metadata exists, the relay rejects those clients below its minimum build or with another game protocol (`update_required` plus disconnect). Missing metadata leaves existing behavior intact. Older clients did not report platform, so cannot be reliably classified; these are compatibility hints, not attestation. Download routes and opt-in hosting: [../ANDROID-UPDATES.md](../ANDROID-UPDATES.md). No phase 5 deployment has been performed.
 - **Server → client:** `welcome`, `lobbies`, `joined{code,slot,hostSlot,takeover,checkpoint,recreated,password}`, `lobby{lobby}`, `host{slot}`, `entered{slot,name,id}`, `left{slot}`, `kicked`, `replaced`, `error{code}`, `pong`.
 
 Rules:

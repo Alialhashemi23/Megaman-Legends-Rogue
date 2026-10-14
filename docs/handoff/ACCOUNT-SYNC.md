@@ -8,7 +8,12 @@ traffic to the local server. Accounts are enabled locally as of 2026-10-14 with
 the user's explicit approval: PostgreSQL 17.11, generated auth secrets, verified
 `mail.galosengen.dev` and a separate sending-only Resend SMTP key. The v1 server
 contract is unchanged.
-Browser and Windows are in scope; Android sign-in remains phase 5.
+This handoff covers browser and Windows. Android device-flow sign-in, encrypted
+session persistence and lifecycle integration are implemented in phase 5 on
+`feature/android-accounts`; see [ANDROID.md](ANDROID.md) for checks and open
+hardware acceptance. Windows remains memory-only. The owner registered and
+confirmed their live email; their game account/profile and session were verified
+in the database without inspecting credentials.
 
 ## Live account operations
 

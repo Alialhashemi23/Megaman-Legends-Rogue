@@ -82,6 +82,7 @@ var meta = DiverProgression.fresh()
 var profile_source = "guest"
 var guest_meta: Dictionary = {}
 var account: DiverAccount
+var android_updates: DiverAndroidUpdates
 var account_starting = false
 var zenny_earned = 0
 var run_recorded = false
@@ -152,6 +153,9 @@ func _ready() -> void:
 	account.cache_root = DiverPaths.pick("res://save/accounts", "user://accounts")
 	account.message.connect(func(text): notify("ACCOUNT", text))
 	add_child(account)
+	android_updates = DiverAndroidUpdates.new()
+	android_updates.game = self
+	add_child(android_updates)
 	setup_environment()
 	var canvas = CanvasLayer.new()
 	add_child(canvas)
@@ -205,6 +209,7 @@ func _ready() -> void:
 		saved_dig = load_checkpoint()
 		if not saved_dig.is_empty(): print("ONLINE: saved dig found run=%s online=%s" % [saved_dig.run_id, saved_dig.online])
 		if OS.has_feature("web") and DisplayServer.get_name() != "headless": account.refresh()
+		elif OS.has_feature("android"): account.restore_session()
 		elif net.invited_code() != "":
 			# Invite links open straight into the lobby (and rejoin a saved dig there).
 			if saved_dig.get("online", false) and str(saved_dig.lobby_code) == net.invited_code(): continue_saved_dig()
@@ -269,6 +274,10 @@ func show_title() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 func start_run(seed_value: int = 0, party: int = 1, id: String = "") -> void:
+	if account.state == "restoring" or (account.state == "needs_sign_in" and account.identity.is_empty()):
+		mode = "account"
+		notify("ACCOUNT", "Confirm your saved session online, or choose Play as Guest.")
+		return
 	if profile_source == "account" and account.server_run == "":
 		if account_starting: return
 		account_starting = true

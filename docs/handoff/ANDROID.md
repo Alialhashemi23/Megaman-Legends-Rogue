@@ -1,6 +1,6 @@
 # Android handoff
 
-Native Godot export for the Retroid Pocket 5 (Android 13, Snapdragon 865, 5.5" 1080p). Roadmap phase 2; accounts and the update check come in phase 5. App id `dev.galosengen.relicdiver`, ARM64, landscape, Compatibility renderer, no WebView.
+Native Godot export for the Retroid Pocket 5 (Android 13, Snapdragon 865, 5.5" 1080p). Phases 2 and 5; app id `dev.galosengen.relicdiver`, ARM64, landscape, Compatibility renderer, no WebView. Phase 5 is on `feature/android-accounts` with phase 4 as an unmerged dependency; no main merge or live deployment was performed.
 
 ## Status
 
@@ -17,7 +17,21 @@ Built and verified on the Android emulator. **Not yet verified on the Retroid** 
 
 Screenshots: `screenshots/android-emulator-*.png`.
 
-## Toolchain
+## Phase 5 implementation (2026-10-14)
+
+- Android uses `relic-android` device-code login, bearer API calls and account lobby tickets. Run starts identify the platform as `android`. Windows stays memory-only; Android encrypts the bearer with AES-256-GCM and a non-exportable Android Keystore key via Godot's built-in Java bridge. Ciphertext is isolated per server origin with origin-bound authenticated data. No plaintext persistence fallback; unavailable storage keeps only the current process session and reports that sign-in is needed after restart. Sign-out removes ciphertext.
+- Startup restores the token but loads authoritative cloud progress before play/spending. Expired or unreadable saved sessions ask for sign-in or an explicit Guest choice. Pause persists the outbox and run checkpoint; resume refreshes the profile outside a dig/lobby. Device-code expiry uses wall time, including time in the login browser.
+- A five-second, size-limited boot metadata check offers controller-accessible Update available / Download update / Later. Minimum build or protocol mismatch gates co-op, while Guest solo remains available. Only an explicit choice outside a dig/lobby opens the same-origin HTTPS download page. Metadata failure doesn't block Guest solo. APK bytes are not read/verified by the client; Android checks install signatures.
+- Credits / Licenses is accessible from the title and paginates the full project, Godot, Capcom asset, audio and font notices packaged under `assets/notices/`.
+- APK versionCode **3**, versionName **0.18.0**, debug/test-signed ARM64 and x86_64 builds created locally. Protocol 7, checkpoint 3 and profile 2 unchanged. Production signing key remains an owner input. [ANDROID-UPDATES.md](../ANDROID-UPDATES.md) explains local staging and opt-in hosting; no APK or update metadata was published live.
+
+Checks: `tests/android_checks.gd` (44), account (34), UI (47), Node Android-update/relay tests (10). `tools/test-android-vault.ps1` creates a unique disposable app and validates Keystore encryption/decryption, no plaintext on disk, origin separation, tamper rejection, sign-out, process restart and higher-version in-place upgrade. Full emulator game startup at build 3 passed without script errors. The native probe passed 9 checks on restart and upgrade. No real account credentials were used in those probes.
+
+Still required on real hardware: end-to-end device approval with browser switching, account cache/outbox recovery and cross-device earned progress; full Retroid/browser/Windows co-op; wrong signing key/no space/cancelled download/sleep during download; update preserving actual game progress/settings/account access. No claims of Retroid validation, live Android downloads or production signing.
+
+Additional emulator checks passed: Android rejected a wrong-key update of the disposable probe (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`); upgrading the full game APK from code 2 to 3 preserved the existing Guest archive's SHA-256 exactly. Local release staging rejected changed APK bytes under an already staged code. No-space, cancellation and sleep-during-download installer cases were not exercised.
+
+## Toolchain details
 
 Versions follow Godot 4.7's Android export guide; recheck it when the engine version changes. Everything lives outside the repo in `D:\Android` (override with `RELIC_ANDROID_TOOLCHAIN`):
 
@@ -64,5 +78,5 @@ On the Retroid, enable developer options and USB debugging, or copy the APK over
 - **The emulator is not the Retroid.** The emulator's software GPU (`swiftshader_indirect`) fails to link some shaders (261 fragment uniform vectors); that is an emulator limit and does not happen with a real GPU (`-gpu host`). Real Adreno 650 limits are much higher, but only the device can confirm performance.
 - **Needs the Retroid:** controller mappings and the pad prompts, text entry (name, lobby code, server, save codes), 60 FPS and thermals over a full run, readable text at 5.5", docked display, sleep and process death, a full co-op dig with a browser and Windows player (late join, host migration both ways).
 - **Controller prompts:** menus show keyboard prompts until a controller button is pressed once; nothing detects a controller at startup.
-- **Not built yet:** an in-game credits/licence page (needed before any distributed build, since the APK carries Capcom's character assets and the licence notices must travel with it), secure token storage and the update check (phase 5).
+- **Implemented in phase 5:** in-game credits/licence page, Keystore-backed session storage and startup update checking. Hardware/installer acceptance remains open as above.
 - The title screen still has a **Quit** button, which is harmless on Android.

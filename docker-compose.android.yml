@@ -1,0 +1,9 @@
+# Optional, owner-approved Android publication. Stage with
+# tools/prepare-android-release.ps1 and back up the signing key first.
+# Add this file explicitly to the base + accounts Compose files when deploying.
+services:
+  relic-diver:
+    environment:
+      ANDROID_RELEASE_DIR: /app/android-releases
+    volumes:
+      - ${ANDROID_RELEASE_HOST_DIR:?set the staged Android release directory}:/app/android-releases:ro

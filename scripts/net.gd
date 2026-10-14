@@ -22,6 +22,7 @@ const ERRORS = {
 	"full": "That lobby is full (4 diggers).",
 	"server_full": "The server is busy. Try again soon.",
 	"version": "That lobby runs a different version of the game. Refresh the page to update.",
+	"update_required": "Update Android from the game's /downloads/android/ page before joining online. Guest solo remains available.",
 	"locked": "That lobby is locked by its host.",
 	"password": "Wrong lobby password.",
 	"banned": "You were removed from that lobby.",
@@ -117,6 +118,9 @@ func set_page_lobby(code: String) -> void:
 
 func connect_server() -> void:
 	if socket != null: return
+	if OS.has_feature("android") and game.android_updates.blocks_online():
+		error_text = "Update Android from " + game.account.base_url() + "/downloads/android/ before joining online. Guest solo remains available."
+		return
 	socket = WebSocketPeer.new()
 	socket.inbound_buffer_size = 1 << 21
 	socket.outbound_buffer_size = 1 << 21
@@ -256,6 +260,9 @@ func _process(dt: float) -> void:
 				status = "online"
 				connected_once = true
 				var hello = {"t": "hello", "name": player_name, "id": guest_id, "v": NET_VERSION}
+				if OS.has_feature("android"):
+					hello.platform = "android"
+					hello.androidVersionCode = game.android_updates.installed_code
 				if ticket != "": hello.ticket = ticket
 				socket.send_text(JSON.stringify(hello))
 				socket.send_text(JSON.stringify({"t": "list"}))
@@ -364,6 +371,11 @@ func handle_command(message) -> void:
 				game.notify("ACCOUNT", "Lobby sign-in unavailable. Connected as a guest.")
 				return
 			error_text = ERRORS.get(code, "Server error: " + code)
+			if code == "update_required":
+				if active(): give_up(error_text)
+				else: disconnect_server()
+				game.notify("UPDATE ANDROID", error_text)
+				return
 			if status == "reconnecting" or (active() and code in ["banned", "version", "full", "locked"]):
 				give_up(error_text)
 			elif code in ["not_found", "full", "locked", "password", "banned", "version"]:

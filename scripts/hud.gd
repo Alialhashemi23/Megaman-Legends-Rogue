@@ -56,7 +56,9 @@ var copied_time = 0.0
 const CONFIRM = ["leave_online", "leave_dig", "abandon", "kick", "discard", "start_new", "give_up", "reset_controls", "takeover", "clear_session"]
 # Options page rows: sound, display, then controls.
 const OPTIONS = ["master", "music", "effects", "ambience", "mute", "fullscreen", "camera", "fov", "mouse", "look", "invert", "vibration", "controls", "map_zoom", "back"]
-const MENU_MODES = ["title", "pause", "options", "controls", "choice", "inventory", "archive", "end", "online", "lobby", "workshop", "save_codes", "account"]
+const MENU_MODES = ["title", "pause", "options", "controls", "choice", "inventory", "archive", "end", "online", "lobby", "workshop", "save_codes", "account", "android_update", "credits"]
+var credits_lines: PackedStringArray = []
+var credits_page = 0
 var options_return = "title"
 var workshop_return = "title"
 var workshop_character = 0
@@ -147,7 +149,7 @@ func commit_name() -> void:
 func commit_server() -> void:
     var value = server_edit.text.strip_edges()
     if value == "" or value == game.net.server_url: return
-    if game.profile_source == "account" or game.account.state == "signing_in":
+    if game.profile_source == "account" or game.account.state in ["signing_in", "restoring"]:
         game.net.error_text = "Sign out of the account before changing servers."
         server_edit.text = game.net.server_url
         return
@@ -319,6 +321,8 @@ func confirm() -> void:
 # Esc / B: step back out of the current menu. Returns true when handled.
 func back() -> bool:
     match game.mode:
+        "android_update": game.android_updates.later()
+        "credits": activate("title")
         "account":
             if game.account.state == "signing_in": game.account.cancel_sign_in()
             activate("title")
@@ -370,6 +374,21 @@ func activate(action: String, value: int = 0) -> void:
         return
     confirming = ""
     match action:
+        "android_download": game.android_updates.download()
+        "android_later": game.android_updates.later()
+        "credits":
+            credits_lines.clear()
+            for source in FileAccess.get_file_as_string("res://assets/notices/credits.txt").split("\n"):
+                var line = ""
+                for word in source.split(" "):
+                    if font.get_string_size(line + " " + word, HORIZONTAL_ALIGNMENT_LEFT, -1, 23).x > 1220 and line != "":
+                        credits_lines.append(line)
+                        line = word
+                    else: line += (" " if line != "" else "") + word
+                credits_lines.append(line)
+            credits_page = 0
+            game.mode = "credits"
+        "credits_page": credits_page = clampi(credits_page + value, 0, maxi(0, (credits_lines.size() - 1) / 13))
         "account":
             if not game.account.switch_allowed(): return
             game.mode = "account"
@@ -543,6 +562,8 @@ func _draw() -> void:
         "workshop": draw_workshop()
         "save_codes": draw_save_codes()
         "account": draw_account()
+        "android_update": draw_android_update()
+        "credits": draw_credits()
         _: draw_hud()
 
 func backdrop() -> void:
@@ -661,6 +682,7 @@ func draw_title() -> void:
         text_at(Vector2(1140, y + 23), controls[i][1], 23)
 
     button(Vector2(1020, 154), Vector2(372, 50), "Sign In / Play as Guest" if game.profile_source == "guest" else str(game.account.identity.get("name", "Digger")) + " / Account", "account")
+    small_button(Vector2(1020, 94), Vector2(372, 42), "Credits / Licenses", "credits")
 
 func draw_hud() -> void:
     var p = game.player
@@ -1416,15 +1438,20 @@ func draw_save_codes() -> void:
 
 func draw_account() -> void:
     backdrop()
-    page_title("DIGGER ACCOUNT", "Permanent progress across browser and Windows. Guest progress stays on this device.")
+    page_title("DIGGER ACCOUNT", "Permanent progress across browser, Windows and Android. Guest progress stays on this device.")
     var a = game.account
     window(Vector2(64, 282), Vector2(1312, 430))
     if a.state == "signing_in":
         text_at(Vector2(96, 335), "SIGN IN ON YOUR BROWSER", 30, CYAN, true)
         text_at(Vector2(96, 430), str(a.device.get("user_code", "Requesting code…")), 64, YELLOW, true)
-        paragraph(Vector2(96, 496), "Approve this device in your browser. Code expires in %d seconds. Windows sessions stay in memory; sign in again after closing the game." % maxi(0, int(a.device_remaining)), 1180, 27, WHITE, 3)
+        paragraph(Vector2(96, 496), ("Approve this device in your browser. Code expires in %d seconds. " % maxi(0, int(a.device_remaining))) + ("Android remembers your session using secure storage." if OS.has_feature("android") else "Windows sessions stay in memory; sign in again after closing the game."), 1180, 27, WHITE, 3)
         button(Vector2(96, 620), Vector2(560, 58), "Open sign-in page", "device_open")
         button(Vector2(688, 620), Vector2(560, 58), "Cancel", "device_cancel")
+    elif a.state == "restoring":
+        text_at(Vector2(96, 342), "RESTORING YOUR ACCOUNT", 30, CYAN, true)
+        paragraph(Vector2(96, 412), "Waiting for the server to confirm your saved session. Retry when connected, or explicitly choose Guest to play offline.", 1180, 30, WHITE, 4)
+        button(Vector2(96, 620), Vector2(560, 58), "Retry sync", "account_retry")
+        button(Vector2(688, 620), Vector2(560, 58), "Play as Guest", "guest")
     elif game.profile_source == "account":
         text_at(Vector2(96, 335), str(a.identity.get("name", "Digger")) + " / " + a.status, 30, CYAN, true)
         var synced = "Never" if a.last_sync == 0 else Time.get_datetime_string_from_unix_time(int(a.last_sync), true) + " UTC"
@@ -1451,3 +1478,27 @@ func draw_account() -> void:
     if game.profile_source == "account": button(Vector2(716, 736), Vector2(660, 56), "Play as Guest / keep cloud outbox", "guest")
     if game.profile_source == "account" and a.outbox.is_empty(): button(Vector2(716, 810), Vector2(660, 48), confirm_label("clear_session", 0, "Sign Out + clear this account's local cache"), "clear_session")
     paragraph(Vector2(64, 880), game.message_detail if game.message_time > 0 else "No automatic merges. Leave a dig or lobby before changing accounts.", 1312, 22, YELLOW, 1)
+
+func draw_android_update() -> void:
+    backdrop()
+    var update = game.android_updates
+    var release = update.metadata
+    page_title("UPDATE AVAILABLE", "Update for online play" if update.blocks_online() else "A new Android build is ready. Your saves stay on this device.")
+    window(Vector2(64, 282), Vector2(1312, 430))
+    text_at(Vector2(96, 340), "Relic Diver %s / %.1f MB" % [release.get("versionName", ""), float(release.get("bytes", 0)) / 1048576.0], 32, CYAN, true)
+    paragraph(Vector2(96, 402), str(release.get("notes", "")), 1180, 27, WHITE, 5)
+    paragraph(Vector2(96, 592), "Opens the download page in your browser. Install over this app; keep your saves. Android checks the signing key. No automatic download or installation.", 1180, 25, MUTED, 3)
+    button(Vector2(64, 746), Vector2(620, 62), "Download update", "android_download", 0, true)
+    button(Vector2(716, 746), Vector2(660, 62), "Continue solo / update later" if update.blocks_online() else "Later", "android_later")
+
+func draw_credits() -> void:
+    backdrop()
+    page_title("CREDITS / LICENSES", "Non-profit fan game. Original Mega Man Legends characters and assets belong to Capcom.")
+    window(Vector2(64, 282), Vector2(1312, 430))
+    for i in 13:
+        var index = credits_page * 13 + i
+        if index < credits_lines.size(): text_at(Vector2(96, 320 + i * 29), credits_lines[index], 23, WHITE, false, 1220)
+    button(Vector2(64, 746), Vector2(360, 62), "Previous page", "credits_page", -1)
+    button(Vector2(456, 746), Vector2(360, 62), "Next page", "credits_page", 1)
+    button(Vector2(848, 746), Vector2(528, 62), "Return to Title", "title")
+    text_at(Vector2(64, 865), "Page %d / %d" % [credits_page + 1, maxi(1, ceili(credits_lines.size() / 13.0))], 23, CYAN)

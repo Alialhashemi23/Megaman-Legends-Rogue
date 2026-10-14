@@ -9,6 +9,7 @@ This is a non-profit fan project, not affiliated with Capcom. See [Credits and l
 - **Browser:** https://megaman.galosengen.dev (desktop Chrome, Edge, Firefox or Safari).
 - **Windows, from this folder:** double-click **Play.cmd**. On a fresh clone it extracts the tracked `build/RelicDiver-Windows.zip` and prepares the pinned Godot runtime first. No installation, account, network connection or extra downloads are needed for solo play.
 - **Portable:** extract `build/RelicDiver-Windows.zip` and run **RelicDiver.exe**, keeping `RelicDiver.pck` and the notices beside it. The executable is the full Godot runtime, so it is larger than a normal release export.
+- **Android development build:** `tools/package-android.ps1` builds a test-signed ARM64 APK with account sign-in and secure sessions. Emulator-checked; Retroid testing and public downloads are pending. See [Android updates](docs/ANDROID-UPDATES.md). Credits / Licenses is available from the title.
 - **Edit:** **Edit.cmd** opens the project in the bundled editor. The entry point is `project.godot`; gameplay lives in `scripts/`.
 
 ## Diggers

@@ -1,6 +1,13 @@
 # Local build history
 
-## 20 — Game account sync (local, not deployed)
+## 21 — Android accounts and startup updates (local, not deployed)
+
+- Android device-code sign-in, origin-isolated Keystore-encrypted sessions, startup recovery, suspension-safe outbox/checkpoints and wall-clock device-code expiry. No persistent plaintext tokens.
+- Startup update metadata with integer version codes, optional/required online update choices and explicit system-browser downloads; immutable local APK staging with checksums/signing fingerprints and opt-in server routes. Nothing published live.
+- Controller-accessible Credits / Licenses with full engine, asset, audio and font notices. Android test APK code 3, version 0.18.0; game protocol remains 7.
+- Client Android 44, account 34 and UI 47 checks; server update/relay 10 tests; native emulator Keystore encryption/tamper/sign-out/process restart/in-place upgrade passed. Retroid cross-play and installer failure cases remain unverified.
+
+## 20 — Game account sync (deployed with authorization)
 
 - Browser cookie sign-in and Windows device-code sign-in, with cobalt account menus and controller navigation. Windows credentials stay in memory; no plaintext token files.
 - Separate Guest/account profiles and durable account outboxes. Results retry without duplicate rewards, pending Zenny cannot be spent, purchases use server revisions, and guest adoption requires preview/confirmation into an empty account.

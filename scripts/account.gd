@@ -1,8 +1,8 @@
 extends Node
 class_name DiverAccount
 
-# Account data never shares the guest archive. Native credentials deliberately
-# remain memory-only; no token is serialized by this module.
+# Account data never shares the guest archive. Windows tokens are memory-only;
+# Android uses Keystore-backed encryption through a separate vault.
 signal changed
 signal message(text: String)
 var game: Node
@@ -34,6 +34,42 @@ var requests: Array = []
 var busy = false
 var generation = 0
 var http: HTTPRequest
+var vault: DiverAndroidVault
+var backgrounded = false
+var device_deadline = 0.0
+
+func platform_id() -> String:
+	return "android" if OS.has_feature("android") else ("web" if OS.has_feature("web") else "windows")
+
+func restore_session() -> void:
+	if not OS.has_feature("android"): return
+	vault = DiverAndroidVault.new()
+	token = vault.load_token(base_url())
+	if token != "":
+		state = "restoring"
+		status = "Saving"
+		refresh()
+	elif FileAccess.file_exists(vault.file_for(base_url())):
+		state = "needs_sign_in"
+		status = "Sign-in needed"
+		game.mode = "account"
+
+func persist_pending() -> bool:
+	if identity.is_empty(): return true
+	if not write_file("outbox.json", outbox):
+		message.emit("Could not store pending progress. Free device storage and retry.")
+		return false
+	return true
+
+func _notification(what: int) -> void:
+	if game == null: return
+	if what == NOTIFICATION_APPLICATION_PAUSED:
+		backgrounded = true
+		persist_pending()
+		if game.in_run(): game.save_checkpoint()
+	elif what == NOTIFICATION_APPLICATION_RESUMED:
+		backgrounded = false
+		if not game.in_run() and not game.net.active() and state in ["signed_in", "restoring"]: refresh()
 
 func _ready() -> void:
 	http = HTTPRequest.new()
@@ -124,10 +160,14 @@ func receive_profile(code: int, data: Dictionary, _headers: PackedStringArray) -
 			game.mode = "account"
 		flush()
 	elif code == 401:
-		if not identity.is_empty(): state = "needs_sign_in"
+		var restoring = state in ["restoring", "needs_sign_in"]
+		if vault != null: vault.erase(base_url())
+		token = ""
+		if restoring or not identity.is_empty(): state = "needs_sign_in"
 		else: state = "guest"
 		status = "Sign-in needed" if state == "needs_sign_in" else "Offline"
 		changed.emit()
+		if restoring: game.mode = "account"
 		if game.net.invited_code() != "" and not game.net.active():
 			# Accounts-enabled invite: choose sign-in before entering a lobby,
 			# because identity changes are forbidden once the lobby is active.
@@ -290,7 +330,7 @@ func begin_run(callback: Callable, takeover: bool = false) -> void:
 		message.emit("Sign in again, or leave the lobby and choose Play as Guest.")
 		return
 	if start_intent.is_empty() or bool(start_intent.takeover) != takeover:
-		start_intent = {"op_id": uuid(), "platform": "web" if OS.has_feature("web") else "windows", "game_version": DiverNet.NET_VERSION, "takeover": takeover}
+		start_intent = {"op_id": uuid(), "platform": platform_id(), "game_version": DiverNet.NET_VERSION, "takeover": takeover}
 	if not write_file("active.json", {"start": start_intent}):
 		game.account_starting = false
 		message.emit("Could not store account dig. Free device storage before starting.")
@@ -358,20 +398,18 @@ func ticket(callback: Callable) -> void:
 
 func sign_in() -> void:
 	if not switch_allowed(): return
-	if OS.has_feature("android"):
-		message.emit("Android account sign-in arrives in the next phase. Guest play is available.")
-		return
 	if OS.has_feature("web"):
 		JavaScriptBridge.eval("location.assign('/account?return=' + encodeURIComponent(location.pathname + location.search))", true)
 		return
 	state = "signing_in"
-	request("/api/auth/device/code", {"client_id": "relic-windows"}, func(code, data, _headers):
+	request("/api/auth/device/code", {"client_id": "relic-" + platform_id()}, func(code, data, _headers):
 		if code != 200:
 			state = "needs_sign_in" if not identity.is_empty() else "guest"
 			message.emit("Sign-in is unavailable. You can still play as Guest.")
 			return
 		device = data
 		device_remaining = float(data.expires_in)
+		device_deadline = Time.get_unix_time_from_system() + device_remaining
 		device_interval = float(data.interval)
 		device_wait = device_interval
 		open_device_page()
@@ -379,6 +417,7 @@ func sign_in() -> void:
 
 func open_device_page() -> void:
 	if device.has("verification_uri_complete"):
+		if not persist_pending(): return
 		var url = str(device.verification_uri_complete)
 		OS.shell_open(base_url() + url if url.begins_with("/") else url)
 
@@ -389,6 +428,9 @@ func cancel_sign_in() -> void:
 
 func sign_out() -> void:
 	if not switch_allowed(): return
+	if vault != null and not vault.erase(base_url()):
+		message.emit("Could not remove the saved session. Free device storage and retry sign-out.")
+		return
 	generation += 1
 	requests = requests.slice(0, 1) if busy else []
 	requests.append({"path": "/api/auth/sign-out", "url": base_url() + "/api/auth/sign-out", "body": {}, "callback": func(code, _data, _headers):
@@ -448,6 +490,7 @@ func confirm_migration() -> void:
 
 func _process(dt: float) -> void:
 	if game == null: return
+	if backgrounded: return
 	if game.in_run() and DisplayServer.window_is_focused(): foreground_seconds += dt
 	if retry_wait > 0:
 		retry_wait -= dt
@@ -461,6 +504,7 @@ func _process(dt: float) -> void:
 			)
 	if state != "signing_in" or device.is_empty(): return
 	device_remaining -= dt
+	if device_deadline > 0: device_remaining = minf(device_remaining, device_deadline - Time.get_unix_time_from_system())
 	device_wait -= dt
 	if device_remaining <= 0:
 		cancel_sign_in()
@@ -470,9 +514,14 @@ func _process(dt: float) -> void:
 	for r in requests:
 		if r.path == "/api/auth/device/token": return
 	device_wait = device_interval
-	request("/api/auth/device/token", {"grant_type": "urn:ietf:params:oauth:grant-type:device_code", "device_code": device.device_code, "client_id": "relic-windows"}, func(code, data, _headers):
+	request("/api/auth/device/token", {"grant_type": "urn:ietf:params:oauth:grant-type:device_code", "device_code": device.device_code, "client_id": "relic-" + platform_id()}, func(code, data, _headers):
 		if code == 200:
 			token = str(data.access_token)
+			if OS.has_feature("android"):
+				if vault == null: vault = DiverAndroidVault.new()
+				if not vault.save_token(base_url(), token):
+					vault.erase(base_url())
+					message.emit("Secure session storage unavailable. Sign in again after restarting.")
 			device = {}
 			refresh()
 		elif data.get("error") == "slow_down":

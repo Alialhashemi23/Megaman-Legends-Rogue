@@ -19,6 +19,7 @@ import { promisify } from "node:util";
 import { WebSocketServer } from "ws";
 import { LobbyRegistry, CHECKPOINT_TARGET, cleanCode, cleanText, routePacket } from "./lobby.js";
 import { createAccounts } from "./accounts/api.js";
+import { androidReleases } from "./android-updates.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PROTOCOL_VERSION = 2;
@@ -38,7 +39,8 @@ const MIME = {
 };
 const COMPRESSIBLE = new Set([".html", ".js", ".wasm", ".pck", ".json", ".svg", ".txt", ".css", ".md", ".ttf"]);
 
-export function createServer({ port = 8080, webRoot = path.join(here, "..", "build", "web"), maxLobbies = 200, log = console.log, runGraceMs, idleGraceMs, accounts = null } = {}) {
+export function createServer({ port = 8080, webRoot = path.join(here, "..", "build", "web"), maxLobbies = 200, log = console.log, runGraceMs, idleGraceMs, accounts = null, androidReleaseDir = process.env.ANDROID_RELEASE_DIR } = {}) {
+  const android = androidReleases(androidReleaseDir);
   const registry = new LobbyRegistry({ maxLobbies, runGraceMs, idleGraceMs });
   const compressed = new Map();
   const root = path.resolve(webRoot);
@@ -136,6 +138,7 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, "http://localhost");
+    if (android.handle(req, res, url)) return;
     if (accounts && accounts.handle(req, res, url)) return;
     if (req.method !== "GET" && req.method !== "HEAD") {
       res.writeHead(405, { Allow: "GET, HEAD" });
@@ -213,6 +216,13 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
   function handleCommand(client, message) {
     switch (message.t) {
       case "hello": {
+        const release = android.current();
+        if (message.platform === 'android' && release && (!Number.isInteger(message.androidVersionCode) || message.androidVersionCode < release.minimumOnlineVersionCode || message.v !== release.gameProtocol)) {
+          client.updateBlocked = true;
+          send(client, { t:'error', code:'update_required' });
+          client.ws.close(1008, 'Android update required');
+          return;
+        }
         client.name = cleanText(message.name, 16) || "Digger";
         // Guests pick their own id; "acct:" ids are reserved for verified accounts.
         const guestId = cleanText(message.id, 40);
@@ -292,6 +302,7 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
     const client = { id: nextId++, ws, name: "Digger", playerId: "", accountId: null, waiting: null, version: 0, lobby: null, slot: 0, tokens: 480, stamp: Date.now() };
     client.playerId = `anon-${client.id}`;
     ws.on("message", (data, isBinary) => {
+      if (client.updateBlocked) return;
       // Token bucket: generous for 60 Hz batched game traffic, closes floods.
       const now = Date.now();
       client.tokens = Math.min(480, client.tokens + ((now - client.stamp) / 1000) * 240);

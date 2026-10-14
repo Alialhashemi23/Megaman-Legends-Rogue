@@ -36,6 +36,8 @@ Thumbs.db
 !/tools/package-web.ps1
 !/tools/package-web.sh
 !/tools/package-android.ps1
+!/tools/prepare-android-release.ps1
+!/tools/test-android-vault.ps1
 !/tools/requirements.txt
 /tools/audio/*
 !/tools/audio/compose.py

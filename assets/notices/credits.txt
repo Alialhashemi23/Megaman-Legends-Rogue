@@ -1,0 +1,400 @@
+MIT License
+
+Copyright (c) 2026 Relic Diver contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+This notice covers the original project source, original environment art, original equipment icons, original animation-authoring code, original musical composition sources, and locally synthesized effects and ambience. The supplied Mega Man Volnutt, Roll Caskett, Tron Bonne and Servbot meshes, skins, textures, derived portraits and adapted character GLBs are Capcom game assets and are excluded from this MIT grant. Mega Man Volnutt, Roll Caskett, Tron Bonne, Servbot and Mega Man Legends belong to Capcom. The Models Resource submissions credit Xinus23; see assets/characters/CREDITS.md and the portable build's CHARACTER-CREDITS.md for provenance and modifications. This notice grants no rights to those underlying assets or designs.
+
+Music recordings use GeneralUser GS samples by S. Christian Collins under the upstream license in assets/audio/GeneralUser-LICENSE.txt (also in the portable build's audio-licenses folder); this MIT notice does not relicense those samples. The offline FluidSynth tool in tools/audio retains its own upstream license and is not bundled in the playable content pack. The bundled fonts retain their SIL Open Font Licenses, provided in assets/fonts and the portable build's font-licenses folder. The bundled Godot executable is provided under Godot's license and its third-party notices, available in the editor under Help → About Godot → License and at https://godotengine.org/license/.
+
+
+====================
+
+Godot Engine is licensed under the MIT License.
+
+Copyright (c) 2014-present Godot Engine contributors.
+Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Godot includes third-party libraries. Their notices can be inspected in the bundled editor: Help > About Godot > License.
+https://godotengine.org/license/
+https://github.com/godotengine/godot/blob/4.7.1-stable/COPYRIGHT.txt
+
+
+====================
+
+# Character models and rig integration
+
+The original Mega Man Volnutt and Roll Caskett meshes, texture atlases and
+skeletons are Capcom game assets from Mega Man Legends (PlayStation).
+The user supplied the downloaded archives from The Models Resource. Both pages
+credit Xinus23 as the submitter, dated March 21, 2020:
+
+- Mega Man Volnutt: https://models.spriters-resource.com/playstation/megamanlegends/asset/317687/
+- Roll Caskett: https://models.spriters-resource.com/playstation/megamanlegends/asset/317688/
+
+The source archives are retained unchanged in `tools/model-sources/volnutt.zip`
+and `roll.zip`, with extracted COLLADA, OBJ and PNG sources alongside them.
+Roll's more detailed `Roll_(Cutscene)` model is used. Her overworld model is
+preserved as an alternative source. The archives contain skin weights and rigs,
+but no animation clips or separate reuse license. Their availability on an
+archive site does not make the Capcom assets part of this project's MIT license.
+
+## Tron Bonne and Servbot (added later)
+
+The Tron Bonne and Servbot meshes, textures and skeletons are likewise Capcom
+game assets from Mega Man Legends (PlayStation). The user supplied both
+archives, named "PlayStation - Mega Man Legends - Non-Playable Characters -
+Tron Bonne" and "... - Servbot" in the style of The Models Resource; their
+page links and submitter were not recorded. The archives are retained unchanged
+in `tools/model-sources/tron.zip` and `servbot.zip`, with the extracted files
+alongside. Tron's `Tron_Bonne_(Cutscene)` model is used (17 joints: the same
+rig as Mega and Roll with one fewer face joint). The Servbot has 7 joints, one
+per limb. The same terms apply: no animation clips, no reuse license, and not
+part of this project's MIT license.
+
+The converter gives both the same twelve locally authored clips. Tron's left
+hand is replaced by the attached buster like the others. The Servbot has no
+hand geometry to remove; its smaller buster sits on its single arm joint, its
+whole arm aims, and its run adds a side-to-side waddle. The Servbot stands
+1.08 m tall and Tron 1.86 m. All four use the same animation pipeline; pass 16 gives each a signature attack and individual skill tree.
+
+## Local adaptation
+
+`tools/model-sources/build_characters.py` converts the supplied COLLADA skins to
+standard glTF 2.0, packed into `volnutt.glb` and `roll.glb`. It preserves the
+original texture pixels, UV mapping and rigid PS1 skin weights, converts the
+coordinate system to face Godot's -Z direction, scales the characters to 1.95 m
+and 1.88 m, and places the soles at the character origin. Both rigs retain all
+18 original joints, renamed to readable limb names. Original files are not
+modified. Source and texture SHA-256 hashes are in `conversion-report.json`.
+
+The left glove triangles are omitted in the playable GLB variants so that fists
+do not protrude through the attached buster barrels. Everything else retains
+the original geometry. An original local cannon attaches to the left forearm;
+Roll receives a red version of the same tool. The runtime muzzle follows the
+actual posed bone. Weapon core color follows Pulse, Needle or Siege selection.
+The original unmodified glove geometry remains in the supplied source archives.
+
+Twelve new skeletal clips were authored locally for both rigs: idle, run,
+backpedal, left/right strafe, jump, fall, dash, hurt, fire, victory and defeat.
+They are embedded in each GLB and editable through Godot's imported animations.
+These are new animation poses, not extracted original-game animations.
+Locomotion has no root motion; the existing CharacterBody3D controls collision,
+jumps and dash distance. `scripts/character.gd` advances clips manually, blends
+transitions, then layers buster aim and recoil over the arm without restarting
+the running clip. Disabling immutable-track removal on import keeps releasing
+aim from leaving a stale bone rotation.
+
+The motion refinement replaces mirrored leg swings with compact contact,
+push-off and recovery poses, subtle torso counter-motion and rolling boots.
+Body height is fitted to each model's skinned boot soles. Direction changes
+retain stride phase, footstep sounds follow animation contacts, and the aiming
+layer compensates for torso rotation. The goal is the original Legends feel;
+these remain newly authored clips rather than recovered original animations.
+
+## Integration
+
+The title screen offers Mega and Roll; press C to switch or use the mouse and
+menu navigation. Both use the same combat statistics, buster options, loot,
+unlock pool and run progression. Character selection carries through descents.
+The current character's name and a portrait rendered directly from the imported
+mesh appear in the HUD and pause menu. `tests/character_portraits.gd` regenerates
+the portraits; `character_gallery.gd` renders a six-pose gallery.
+
+`tests/character_checks.gd` checks selection, original binds, normalized weights,
+animation poses, aim direction, firing while running, returning to a relaxed
+arm, projectile hits for both characters, and character retention on descent.
+The procedural-model build is recoverable in `backups/v5/`; the first imported
+character pass is preserved in `backups/v6/`.
+
+All project changes, source assets, generated files and playable builds remain
+local. No repository or publishing action was performed.
+
+## Loading artwork and icon (pass 16)
+
+The web loader and project/browser icons reuse `assets/ui/volnutt_portrait.png`, rendered from the supplied Volnutt model. These derived portraits and icon copies remain Capcom assets, excluded from the MIT grant. No new third-party imagery was downloaded.
+
+
+====================
+
+# Relic Diver audio
+
+The music is newly composed for this local prototype. No Mega Man songs, MIDI
+transcriptions, extracted game sound banks, or game sound effects are used.
+
+## Engine decision
+
+Playback uses Godot's native audio engine. Music, Effects, Ambience and Menu
+buses feed Master; a master limiter catches peaks, and the Effects bus adds a
+small room reverb. Two music players crossfade over approximately 1.2 seconds.
+Enemy effects use 3D distance and stereo positioning, while player feedback,
+attack warnings and menus remain clearly audible. Voices and repeated events
+are capped. Audio variation uses its own random generator, independent of loot
+and dungeon generation.
+
+FMOD and Wwise would add a separate authoring application, integration and
+runtime dependency. Godot covers this game's current needs: streamed music,
+crossfades, positional effects, buses and volume controls. FluidSynth is an
+offline instrument renderer only; it is not loaded by the game.
+
+## Instrument source
+
+GeneralUser GS 2.0.3, by S. Christian Collins, provides the sampled instruments.
+Its restrained General MIDI palette fits the intended late-1990s adventure
+sound: electric piano, vibraphone, marimba, clean guitar, bass, soft pads and
+acoustic/electronic percussion. This is a creative choice, not a claim that
+Legends used this bank. Its license explicitly permits private and commercial
+music creation; the complete upstream terms and sample-origin notes are saved
+unchanged in `GeneralUser-LICENSE.txt`.
+
+- Author: https://schristiancollins.com/generaluser.php
+- Author's source: https://github.com/mrbumpy409/GeneralUser-GS
+- Offline renderer: https://github.com/FluidSynth/fluidsynth/releases/tag/v2.5.1
+- Godot audio: https://docs.godotengine.org/en/stable/tutorials/audio/audio_buses.html
+
+The unmodified SoundFont, renderer, documentation, composition source, editable
+MIDI scores, and SHA-256 manifest are kept in `tools/audio/`, excluded from the
+playable content pack. Existing online sound libraries were unnecessary for
+this pass: all effects and ambience were synthesized locally with deterministic
+noise, pitch envelopes, inharmonic resonances and layered transients.
+
+## Cues
+
+| File | Title | Use | Length |
+|---|---|---|---|
+| `music/title.ogg` | Beyond the Breakwater | Title / collection | 60.0 s |
+| `music/tidal.ogg` | Footsteps in the Tidal Archive | Descent 1 | 73.8 s |
+| `music/garden.ogg` | Engines in Bloom | Descent 2 | 68.6 s |
+| `music/core.ogg` | Below the Sun | Descent 3 | 61.9 s |
+| `music/guardian.ogg` | Keepers of the Old World | Active guardian in the current room | 55.7 s |
+| `music/clear.ogg` | Back to the Surface | Successful extraction, once | 7.3 s |
+| `music/lost.ogg` | A Light Left Below | Defeat, once | 9.0 s |
+
+The five main cues loop. They are rendered through a warm-up lap to retain
+release/reverb tails at the loop boundary. Pausing, inspecting parts and choosing
+upgrades retain the current cue and lower its level. Defeating or leaving a
+guardian restores that descent's track. Music is 32 kHz stereo Ogg Vorbis;
+short effects are mono 16-bit WAV. There are 29 effect files, including three
+variations each for the pulse buster, impacts and footsteps, and a quiet stereo
+ruin ambience loop. The music and effects occupy about 4.9 MB before packaging.
+
+## Editing and playback
+
+`tools/audio/compose.py` contains the note phrases, harmonies, arrangement,
+instrument choices, MIDI writer, offline rendering and effect synthesis. Run it
+with the bundled Python to regenerate the audio. `tools/audio/scores/*.mid` can
+also be edited in a MIDI sequencer. `tools/audio/soundtrack-preview.ogg` is a
+65-second medley of the five main themes; `in-game-mix.wav` is a captured runtime
+mix used to check playback and clipping.
+
+Pause → Sound Settings controls Master, Music, Effects (including menus), and
+Ambience. Up/down selects a row; left/right changes it by 5%; Enter or a click
+raises it by 10%, wrapping from 100% to Off. M toggles mute globally. Levels are
+saved in `save/audio.json`, separately from run records. The source and portable
+build each retain their own local settings. There are no network calls in the
+game's audio system.
+
+
+====================
+
+Copyright 2017 The Barlow Project Authors (https://github.com/jpt/barlow)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded, 
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+
+====================
+
+Copyright (c) 2011-2012, Jovanny Lemonad (jovanny.ru), with Reserved Font Name "Russo"
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded, 
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
