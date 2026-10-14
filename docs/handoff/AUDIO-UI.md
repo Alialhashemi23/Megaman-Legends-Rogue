@@ -1,5 +1,9 @@
 # Audio and UI handoff
 
+## Pass 16 UI additions
+
+Workshop and Save Codes are menu modes with mouse, keyboard and controller navigation. Five prerequisite-gated purchases per digger; results lead to the Workshop, which returns to another solo dig or the online lobby. Import previews records/wallet and requires an explicit replacement action. Text fields must stay visible while on their page: hiding and re-showing them on every draw drops keyboard focus and breaks paste. Web progress also has a revisioned, checksummed localStorage recovery mirror for refreshes during IndexedDB sync. Options includes map_zoom, saved in settings.json.
+
 ## Sound direction and implementation
 
 Use original melodic music and mechanical sounds that fit a late-1990s adventure. No original Mega Man music or game sound files were extracted. The current seven cues cover title, three descents, guardian, extraction and defeat. There are 29 effects plus ruin ambience.

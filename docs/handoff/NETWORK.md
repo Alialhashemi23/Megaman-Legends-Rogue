@@ -2,13 +2,17 @@
 
 Pass 09 added browser play and online co-op for up to four diggers. The user requested lobbies, invite links and a lobby browser on their own domain, hosted themselves through a Cloudflare Tunnel. Pass 10 made runs survive mishaps (the user's priority before any further work) and added co-op communication and lobby controls. The user-facing guide is [../ONLINE.md](../ONLINE.md).
 
+## Pass 16 additions
+
+`NET_VERSION` 6 adds bomb shots: M_SHOT now carries `[depth, position, direction_or_launch_velocity, heavy, projectile_kind]` (0 bolt, 1 bomb). Cosmetic bombs use the same gravity as the shooter. Builds now mirror purchased skills, Pulse shot count and Roll repair cooldown. Remote character hitboxes match the selected rig; Roll nearby doubles revive speed on the downed player's client. CHECKPOINT_VERSION 3 prevents restoring incompatible prior combat state.
+
 ## Topology
 
 - **Relay server** (`server/`, Node 20+, one dependency `ws`). It serves the exported web build with cross-origin isolation headers (the threaded Godot build needs `SharedArrayBuffer`) and pre-compressed brotli/gzip bodies. It upgrades `/ws` to the lobby protocol. Lobbies and the latest host checkpoint per lobby live in memory.
 - **Host-authoritative game.** The lobby's host slot (`hostSlot`, *not* always slot 1) simulates robots, pickups, scrap, rooms, interactables and the run outcome. Guests simulate their own digger and cosmetic copies of everything else.
 - All traffic goes through the relay over WebSocket (TCP, ordered). Peer-to-peer was rejected to avoid NAT/TURN problems.
 
-## Lobby protocol (server protocol 2, game `NET_VERSION` 4)
+## Lobby protocol (server protocol 2, game `NET_VERSION` 6)
 
 `NET_VERSION` 3 (pass 12) marks the new floor generator and 4 the difficulty pass (robot counts and timings): older builds would build different ruins from the same seed, so they can't share a lobby. `CHECKPOINT_VERSION` went to 2 for the same reason.
 

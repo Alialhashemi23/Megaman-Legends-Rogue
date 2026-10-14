@@ -1,4 +1,6 @@
-# Upcoming features: brief for the next instance
+# Next features: original brief (implemented in pass 16)
+
+**Status:** implemented on `codex/next-features-volnutt`; see [FEATURE-REPORT.md](../FEATURE-REPORT.md). The brief below is retained for rationale. The current user requested branch review and later merge, so its deployment instructions do not apply to this pass. Difficulty tuning awaits human feedback.
 
 Written 2026-10-13 at the end of pass 12. The user agreed to everything here ("the asks I all agree to") and asked for it to be handed to another agent to build while they play. Nothing below is started. Read `HANDOFF.md` first for the state of the project, then only the subsystem handoffs you need.
 

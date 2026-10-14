@@ -6,7 +6,7 @@ Working game title: **Relic Diver — The Tidal Archive**. Repository name: Mega
 
 Explore a mysterious underground machine world as Mega. Turn a modest buster into an unusual build by finding parts that stack and interact. Search branching ruins, read robot attacks, survive a guardian, and decide whether to keep exploring before descending. The appeal is curiosity, readable action and growing combinations, grounded in the colorful PS1 adventure style of Legends.
 
-The user's explicit choices are third-person free aim with optional lock-on; unlock new items and weapons between runs while power resets; colorful ancient machinery and mysterious robots; helmet-off Mega with brown hair and blue armor; low-poly models with painted textures. Roll is a second playable main character. Both currently share mechanics.
+The user's explicit choices are third-person free aim with optional lock-on; unlock new items and weapons between runs while power resets; colorful ancient machinery and mysterious robots; helmet-off Mega with brown hair and blue armor; low-poly models with painted textures. Roll is a second playable main character. Mega, Roll, Tron and Servbot have signature attacks and individual skill trees.
 
 ## Design pillars
 
@@ -14,11 +14,11 @@ The user's explicit choices are third-person free aim with optional lock-on; unl
 2. **Dungeon exploration.** Branches, doors, cover, salvage and discoveries should make a chamber worth investigating. There is no time-based difficulty escalation. Descending increases difficulty; exploration can happen at the player's pace.
 3. **Buster-first action.** Responsive movement, clear aim and lock-on, readable enemy preparation, and satisfying hit feedback. Movement animations should feel quick, compact and springy like Legends, with restrained sway and a firm firing arm.
 4. **Parts that build on each other.** Risk of Rain is the reference for stackable themed drops and combinations. Parts should change decisions and create recognizable builds; it is not a request to copy that game's timer, exact items or presentation.
-5. **Fresh runs, broader options.** Run statistics and fitted parts reset. Persistent progression expands the item and weapon pool rather than giving permanent starting damage or health.
+5. **Fresh runs, broader options.** Run statistics and fitted parts reset. Persistent progression expands each digger's options through Zenny skill trees: signature circuits, early part-pool research, and modest bonuses (+8% base Life, +4% movement speed, +5% attack speed). Run levels, upgrades and fitted parts reset. All permanent numbers live in scripts/progression.gd; balance remains subject to playtesting.
 
 ## Current run loop
 
-Select Mega or Roll and an unlocked buster → enter a seeded ruin → collect a starter part → explore connected chambers → fight machines and salvage scrap/XP → open caches and choose upgrades → defeat the guardian → explore further or use the lift → repeat across three descents → extract, or record the run on defeat.
+Select Mega, Roll, Tron or Servbot with their signature attack → enter a seeded ruin → collect a starter part → explore connected chambers → fight machines and salvage scrap/XP → open caches and choose upgrades → defeat the guardian → explore further or use the lift → repeat across three descents → extract, or record the run on defeat → earn Zenny → develop a digger in the Workshop.
 
 Caches offer choices; healing wells create a competing use for scrap. Experience grants a paused upgrade choice. Parts stack, and combinations can trigger burn, chains, extra shots, splitting bolts, healing and defensive effects. Lifts preserve the current build and restore some Life. Details and current numbers are in README.md and scripts/game.gd; treat those as tunable prototype values.
 

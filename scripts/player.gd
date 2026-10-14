@@ -104,17 +104,17 @@ func count(id: String) -> int:
 
 func max_hp() -> float:
 	var starting_life = 65.0 if character == 3 else 100.0
-	return base_health - 100.0 + starting_life * (1.08 if "frame" in skills else 1.0) + 20 * count("heart")
+	return base_health - 100.0 + starting_life * (DiverProgression.BONUS.frame if "frame" in skills else 1.0) + 20 * count("heart")
 
 func damage() -> float:
 	return base_damage * (1.0 + 0.16 * count("lens"))
 
 func speed() -> float:
-	return base_speed * (1.18 if character == 3 else 1.0) * (1.04 if "mobility" in skills else 1.0) * (1.0 + 0.09 * count("boots"))
+	return base_speed * (1.18 if character == 3 else 1.0) * (DiverProgression.BONUS.mobility if "mobility" in skills else 1.0) * (1.0 + 0.09 * count("boots"))
 
 func fire_delay() -> float:
 	var base = [0.25, 0.13, 0.65, 0.75][weapon]
-	return base / (fire_multiplier * (1.05 if "mastery" in skills else 1.0) * (1.0 + 0.14 * count("spring")))
+	return base / (fire_multiplier * (DiverProgression.BONUS.mastery if "mastery" in skills else 1.0) * (1.0 + 0.14 * count("spring")))
 
 func _physics_process(dt: float) -> void:
 	if not game.world_running(): return
@@ -155,8 +155,8 @@ func _physics_process(dt: float) -> void:
 		invincible = 0.26
 		game.sound.play("dash")
 		if character == 1 and "ability" in skills and repair_cooldown <= 0:
-			heal(8)
-			repair_cooldown = 8.0
+			heal(DiverProgression.BONUS.repair_life)
+			repair_cooldown = DiverProgression.BONUS.repair_delay
 			game.burst(global_position + Vector3.UP, Color("9cde70"), 6)
 		if count("frost") > 0: game.frost_burst(position, 2 + count("frost"))
 	if dash_time > 0:
@@ -273,7 +273,7 @@ func shoot() -> void:
 		direction = (target - start) / flight + Vector3.UP * 10.0 * flight
 	var amount = damage() * ([1.0, 0.55, 2.4, 2.0][weapon])
 	shot_count += 1
-	if character == 0 and "ability" in skills and shot_count % 5 == 0: amount *= 1.6
+	if character == 0 and "ability" in skills and shot_count % int(DiverProgression.BONUS.pulse_interval) == 0: amount *= DiverProgression.BONUS.pulse_power
 	game.spawn_bolt(start, direction, amount, false, weapon >= 2, 1 if weapon == 3 else 0, self)
 	game.build_changed()
 	if count("echo") > 0 and game.rng.randf() < minf(0.8, 0.12 * count("echo")):
@@ -360,7 +360,7 @@ func apply_state(pos: Vector3, vel: Vector3, new_yaw: float, new_pitch: float, i
 	move_input = input
 	net_flags = flags
 	hp = life
-	base_health = life_max - 20 * count("heart") - (65.0 if character == 3 else 100.0) * (1.08 if "frame" in skills else 1.0) + 100.0
+	base_health = life_max - 20 * count("heart") - (65.0 if character == 3 else 100.0) * (DiverProgression.BONUS.frame if "frame" in skills else 1.0) + 100.0
 	revive = revive_amount
 	var was_down = downed
 	downed = flags & FLAG_DOWN != 0

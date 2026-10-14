@@ -907,26 +907,38 @@ func finish_run(won: bool) -> void:
 	if net.is_host(): net.report_status("lobby", depth)
 
 func load_meta() -> void:
-	if not FileAccess.file_exists(save_path): return
-	var f = FileAccess.open(save_path, FileAccess.READ)
-	if f == null: return
-	var data = JSON.parse_string(f.get_as_text())
-	var validated = DiverProgression.validate(data)
-	if not validated.is_empty(): meta = validated
+	if FileAccess.file_exists(save_path):
+		var f = FileAccess.open(save_path, FileAccess.READ)
+		if f != null:
+			var validated = DiverProgression.validate(JSON.parse_string(f.get_as_text()))
+			if not validated.is_empty(): meta = validated
+	# A synchronous browser mirror covers refreshes during an IndexedDB commit.
+	if OS.has_feature("web"):
+		var code = JavaScriptBridge.eval("(() => { try { return localStorage.getItem('relicDiverProgressV2') || ''; } catch(e) { return ''; } })()", true)
+		if code is String and code != "":
+			var recovery = DiverProgression.decode(code)
+			if not recovery.is_empty() and int(recovery.revision) >= int(meta.revision): meta = recovery
 
 func save_meta() -> bool:
 	if smoke_test: return true
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(save_path.get_base_dir()))
 	var f = FileAccess.open(save_path + ".tmp", FileAccess.WRITE)
 	if f == null: return false
+	var previous_revision = int(meta.revision)
+	meta.revision = mini(100000000, previous_revision + 1)
 	f.store_string(JSON.stringify(meta, "\t"))
 	f.flush()
 	var error = f.get_error()
 	f.close()
-	if error != OK: return false
+	if error != OK:
+		meta.revision = previous_revision
+		return false
 	var renamed = DirAccess.rename_absolute(ProjectSettings.globalize_path(save_path + ".tmp"), ProjectSettings.globalize_path(save_path)) == OK
 	# FileAccess closed the temporary path; also sync the subsequent rename on web.
-	if renamed and OS.has_feature("web"): JavaScriptBridge.force_fs_sync()
+	if renamed and OS.has_feature("web"):
+		JavaScriptBridge.eval("try { localStorage.setItem('relicDiverProgressV2', %s); } catch(e) {}" % JSON.stringify(DiverProgression.encode(meta)), true)
+		JavaScriptBridge.force_fs_sync()
+	if not renamed: meta.revision = previous_revision
 	return renamed
 
 func item_unlocked(id: String) -> bool:
@@ -1254,7 +1266,7 @@ func apply_build(b: Dictionary) -> void:
 	p.weapon = DiverPlayer.SIGNATURES[p.character]
 	p.skills = clean_skills(b.get("skills", []))
 	p.shot_count = maxi(0, int(b.get("shot_count", 0)))
-	p.repair_cooldown = clampf(float(b.get("repair_cooldown", 0)), 0, 8)
+	p.repair_cooldown = clampf(float(b.get("repair_cooldown", 0)), 0, DiverProgression.BONUS.repair_delay)
 	p.items = (b.get("items", {}) as Dictionary).duplicate() if b.get("items") is Dictionary else {}
 	p.level = int(b.get("level", 1))
 	p.xp = int(b.get("xp", 0))

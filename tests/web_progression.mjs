@@ -51,6 +51,7 @@ try {
   await click(1200, 795); // Back to Workshop.
   await click(1250, 390); // Reinforced Frame, 100 Zenny.
   await click(220, 854); // Save Codes.
+  await page.evaluate(() => navigator.clipboard.writeText('WAITING FOR EXPORT'));
   await click(200, 795); // Export + clipboard.
   const readExport = async () => {
     const value = await page.evaluate(() => navigator.clipboard.readText());
@@ -58,6 +59,9 @@ try {
   };
   let result = await readExport();
   if (result.zenny !== 400 || !result.trees['0'].includes('frame')) throw new Error(`Purchase/import failed: ${JSON.stringify(result)}`);
+  const recoveryCode = await page.evaluate(() => localStorage.getItem('relicDiverProgressV2'));
+  const recovery = JSON.parse(Buffer.from(recoveryCode.split('.')[1], 'base64').toString());
+  if (recovery.zenny !== 400 || recovery.revision < 1) throw new Error('Synchronous recovery copy was not written');
   // Wait for the real IndexedDB commit, rather than guessing a disk-sync delay.
   await page.waitForFunction(async () => {
     for (const info of await indexedDB.databases()) {
@@ -84,17 +88,36 @@ try {
     }
     return false;
   }, null, { timeout: 60000 });
-  await page.reload();
+  // Simulate an interrupted primary write in this isolated browser profile.
+  // The validated synchronous mirror must recover the purchase on reload.
+  await page.evaluate(async () => {
+    for (const info of await indexedDB.databases()) {
+      await new Promise(resolve => {
+        const request = indexedDB.open(info.name);
+        request.onsuccess = () => {
+          const db = request.result;
+          const tx = db.transaction('FILE_DATA', 'readwrite');
+          const store = tx.objectStore('FILE_DATA');
+          const keys = store.getAllKeys();
+          keys.onsuccess = () => keys.result.filter(key => String(key).endsWith('/archive.json')).forEach(key => store.delete(key));
+          tx.oncomplete = () => { db.close(); resolve(); };
+        };
+      });
+    }
+  });
+  const navigation = await page.reload();
+  if (navigation.status() !== 200) throw new Error(`Reload returned HTTP ${navigation.status()}`);
   await page.locator('#loader').waitFor({ state: 'hidden', timeout: 120000 });
   await page.waitForTimeout(3000);
   await click(300, 874);
   await screenshot('saved-purchase');
   await click(220, 854);
+  await page.evaluate(() => navigator.clipboard.writeText('WAITING FOR EXPORT'));
   await click(200, 795);
   result = await readExport();
   if (result.zenny !== 400 || !result.trees['0'].includes('frame')) throw new Error(`Purchase did not survive IndexedDB reload: ${JSON.stringify(result)}`);
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log('WEB_PROGRESSION_PASS: loading art, favicon, import preview, purchase, export and IndexedDB reload');
+  console.log('WEB_PROGRESSION_PASS: loading art, favicon, import preview, purchase, export, IndexedDB commit and interrupted-write recovery on reload');
 } catch (error) {
   await screenshot('failure').catch(() => {});
   console.error(error);

@@ -3,6 +3,7 @@ class_name DiverProgression
 
 # One tuning table for every permanent purchase. Keys are scoped per digger.
 const VERSION = 2
+const BONUS = {"frame": 1.08, "mobility": 1.04, "mastery": 1.05, "pulse_interval": 5, "pulse_power": 1.6, "repair_life": 8.0, "repair_delay": 8.0, "splash_radius": 4.5}
 const NODES = [
 	{"id": "frame", "name": "Reinforced Frame", "cost": 100, "requires": "", "desc": "+8% base Life. Parts still reset each dig."},
 	{"id": "mobility", "name": "Lightweight Joints", "cost": 140, "requires": "frame", "desc": "+4% running speed."},
@@ -15,7 +16,7 @@ const ABILITIES = ["Every fifth Pulse shot deals 60% more damage.", "Dashing rep
 const OLD_GATES = {"ember": 10, "coil": 10, "prism": 25, "echo": 25, "split": 50, "frost": 50, "clover": 50}
 
 static func fresh() -> Dictionary:
-	return {"version": VERSION, "kills": 0, "runs": 0, "wins": 0, "deepest": 0, "discovered": {}, "best_time": 0.0, "zenny": 0, "trees": {}, "legacy_unlocks": []}
+	return {"version": VERSION, "revision": 0, "kills": 0, "runs": 0, "wins": 0, "deepest": 0, "discovered": {}, "best_time": 0.0, "zenny": 0, "trees": {}, "legacy_unlocks": []}
 
 static func node(id: String) -> Dictionary:
 	for entry in NODES:
@@ -40,7 +41,7 @@ static func validate(data: Variant) -> Dictionary:
 	var result = fresh()
 	var version = data.get("version", 1)
 	if not number(version) or version < 1 or version > VERSION: return {}
-	for key in ["kills", "runs", "wins", "deepest", "zenny"]:
+	for key in ["revision", "kills", "runs", "wins", "deepest", "zenny"]:
 		var value = data.get(key, 0)
 		if not number(value) or value < 0 or value > 100000000 or value != floor(value): return {}
 		result[key] = int(value)

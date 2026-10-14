@@ -1,4 +1,18 @@
-# Relic Diver handoff — 2026-10-13 (pass 12: live deployment, bigger varied ruins, to-scale map)
+# Relic Diver handoff — 2026-10-13 (pass 16: character attacks, Workshop, save codes)
+
+## Current feature branch
+
+Implemented the agreed NEXT-FEATURES brief on `codex/next-features-volnutt`, based on main `9c4d309`. The user requested commits and a pushed feature branch for later merging. Do not deploy the live site during this work. Full overview and validation: `docs/FEATURE-REPORT.md`.
+
+- One signature attack per digger: Mega Pulse, Roll Needle plus 2× revive rate, Tron Siege splash, Servbot ballistic bombs, 65 Life, +18% speed, 1.05 m capsule and 0.85 m camera pivot.
+- `scripts/progression.gd`: Zenny, 5 nodes × 4 diggers, table-driven costs, prerequisite checks, profile v2 migration, checksummed save codes. Existing earned part unlocks survive raised 40/100/220 gates. Moderate permanent stat bonuses are now part of DESIGN pillar 5.
+- Workshop from title/results, save-code preview/confirmation and atomic profile writes, plus a revisioned synchronous browser recovery mirror. Imports blocked during runs, online lobbies and pending saved digs. All combat-relevant purchased skills, Pulse shot count and Roll repair timer are part of builds/checkpoints.
+- Options offers fitted or scrolling/zoomed maps. Loader/project icon/favicon reuse the supplied model-rendered Volnutt portrait; both package scripts ship the web image files.
+- NET_VERSION 6, CHECKPOINT_VERSION 3. Older active checkpoints are incompatible; persistent profiles migrate. Everyone in co-op must update together.
+- Tests: new `tests/progression_checks.gd`, `tests/web_progression.mjs`; screenshot generator `tests/next_features_preview.gd`. Test profiles isolated under save/. No user profiles or secrets committed.
+- Difficulty timing remains the pass-12 tuning pending human feedback; no feedback was provided to justify another blind change.
+
+Earlier pass notes below are historical and may describe superseded behavior.
 
 ## User intent and constraints
 
@@ -38,7 +52,7 @@ Done on the user's Windows PC (`D:\code repos\Megaman-Legends-Rogue`, branch `on
 - **Tron Bonne and Servbot:** the user supplied both model archives (`tools/model-sources/tron.zip`, `servbot.zip`). `build_characters.py` takes a per-rig joint-name map; `DiverCharacter` has `COUNT`, `IDS` and per-character buster colours and scale, and handles the Servbot's single-joint arm. All four share mechanics. The user's planned next steps, not started and with design decisions still open: per-character attacks, a currency and per-character skill trees bought after a run, and deciding how that progress is saved. The Servbot still uses the full-size collision capsule and camera height. `NET_VERSION` is now 5.
 - **Verified:** character 6605/0 with four diggers; combat 7765/0 after the difficulty pass (earlier 7723/0), character 3868/0, UI 47/0, audio 66/0, options 39/0, run persistence 24/0; smoke, combat, movement and persistence modes; `tests/net_test.sh` passes on Windows through Git Bash. Scratch probes (not kept) generated 120 floors with no unreachable rooms or bad spawns, climbed the jump puzzle with real input, and confirmed a robot follows a digger up a ramp. Not yet checked: a human playtest of the new rooms' balance and feel, and `tests/web_e2e.mjs`.
 
-## Next work: agreed with the user, not started
+## Historical brief: implemented in pass 16
 
 **The full brief, with code locations, open questions and defaults, is in `docs/handoff/NEXT-FEATURES.md`. Read that before starting.** Summary:
 

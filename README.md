@@ -2,6 +2,20 @@
 
 A local, third-person 3D dungeon roguelike fan prototype made in Godot 4.7.1. Its inspiration is Mega Man Legends and the growing item combinations of action roguelikes. Play as helmet-off Mega Man Volnutt or Roll Caskett using the original PS1 models and textures supplied from The Models Resource. Both have skeletal animation and a left-arm buster. Supporting environment art, music compositions, sound effects and ambience were authored locally.
 
+## Signature attacks, the Workshop and backups
+
+Choose one of four diggers: Mega fires the Pulse Buster; Roll fires the rapid Needle and revives teammates twice as fast; Tron fires heavy Siege splash shots; Servbot throws arcing bombs, runs 18% faster, and has 65 base Life with a smaller hitbox and lower camera.
+
+Open **Workshop / Zenny & Skill Trees** from the title or results. Each character has five permanent nodes: Reinforced Frame (+8% base Life), Lightweight Joints (+4% speed), Salvage Research (early access to a themed part), Signature Circuit (character ability), and Master Mechanic (+5% attack speed). Frame opens the mobility and research branches; research opens the signature circuit; mastery needs both branches. Costs are 100 / 140 / 180 / 260 / 400 Zenny. Purchases take effect next dig.
+
+Zenny is recorded once at the end of a dig: **25 × depth reached + 60 × guardians defeated + floor(leftover scrap / 5)**. Parts, run upgrades and levels reset. New-profile part gates are 40 / 100 / 220 machines; saves from earlier builds retain every already-earned unlock. Signature weapons are available immediately with their digger.
+
+**Workshop → Save Codes / Backup** exports a code with records, discoveries, Zenny and all four trees. Copy the entire field if clipboard access is blocked. To restore, paste the code, check the preview and explicitly replace local progress. Damaged codes leave progress untouched. Leave online and resolve any saved dig before importing. Browser progress saves to IndexedDB with a validated synchronous local recovery copy; the code is a manual backup for another browser/device or cleared site data. Controls and active run checkpoints are separate.
+
+**Options → Ruins map** switches between the whole-floor survey and a scrolling 80 m local view. The web loader and favicon now use the supplied model's Volnutt portrait. Game protocol 6 and checkpoint format 3 require all co-op players to update together; old-format active digs cannot resume. Persistent progress migrates.
+
+See [the implementation and validation report](docs/FEATURE-REPORT.md) for screenshots and checks.
+
 ## Design and handoffs
 
 The intended experience is documented in [DESIGN.md](DESIGN.md). Start a new coding session with [HANDOFF.md](HANDOFF.md), then read only the relevant [subsystem handoff](docs/handoff/README.md). These cover technical setup, art/animation, audio/UI, playtest priorities and repository packaging.
@@ -30,7 +44,7 @@ Run, backpedal and strafe transitions preserve the current step. Footstep sounds
 
 ## Tron Bonne and Servbot (pass 15)
 
-Tron Bonne and a Servbot are playable alongside Mega and Roll, built from the user's supplied Legends models. **C** (or **Y** on a controller) cycles through all four on the title screen. They share the same statistics, busters, parts and progression for now. See `assets/characters/CREDITS.md`.
+Tron Bonne and a Servbot are playable alongside Mega and Roll, built from the user's supplied Legends models. **C** (or **Y** on a controller) cycles through all four on the title screen. They now have their own signature attacks and skill trees (see the current feature overview above). See `assets/characters/CREDITS.md`.
 
 ## Character pass 06
 
@@ -144,16 +158,16 @@ There is no countdown or time-based difficulty escalation. Explore at your own p
 
 ## Persistent progression
 
-Every run starts at level one with base stats and no relics. Lifetime machine kills unlock new drops and weapon choices for subsequent runs. Merely unlocking an item does not add it to your starting inventory.
+Every run starts at level one with character statistics, purchased circuits and no relics. Lifetime machine kills unlock new drops and weapon choices for subsequent runs. Merely unlocking an item does not add it to your starting inventory.
 
 | Total kills across completed / ended runs | Unlock |
 |---|---|
-| 0 | Six base relics and Pulse Buster |
-| 10 | Ember Engine, Storm Coil, Needle Buster |
-| 25 | Oracle Prism, Echo Circuit |
-| 50 | Forked Antenna, Winter Flywheel, Salvager's Charm, Siege Buster |
+| 0 | Six base relics and all four signature attacks |
+| 40 | Ember Engine, Storm Coil |
+| 100 | Oracle Prism, Echo Circuit |
+| 220 | Forked Antenna, Winter Flywheel, Salvager's Charm |
 
-Discoveries save when a relic is installed. Kill totals, wins, and run records save on death, extraction, or **End Run & Record Discoveries** in the pause menu. Closing the window during a run does not record that run's kills. There is no mid-run resume yet.
+Discoveries save when a relic is installed. Kill totals, wins, and run records save on death, extraction, or **End Run & Record Discoveries** in the pause menu. Closing the window during a run does not record that run's kills. Online digs keep rejoin checkpoints; solo digs do not save mid-run.
 
 The source launcher saves in `save/archive.json`. The portable executable saves in `build/save/archive.json`. These are independent profiles; copy the JSON between them if you switch versions. The file is plain JSON and can be backed up. Saves remain on your computer.
 

@@ -1,5 +1,15 @@
 # Local build history
 
+## 16 — Signature attacks, Zenny, Workshop and portable progress
+
+- Four signature attacks: Pulse Mega, rapid/support Roll, heavy/splash Tron, ballistic-bomb Servbot. Servbot gains its own small collision capsule, lower camera, faster movement and 65 base Life.
+- Zenny rewards and five purchased skill nodes per digger, including unique signature circuits and part-pool research. New part gates: 40/100/220; existing earned unlocks migrate.
+- Versioned, atomic progress saves plus validated, checksummed save-code export/import with a replacement preview. Purchases persist immediately and survive browser reloads.
+- Whole-floor or zoomed/scrolling map option. Actual model-rendered Volnutt portrait replaces the loader illustration and Godot favicon, with explicit exported browser icons.
+- Fixed browser text-field focus during redraw; online starts/rejoins wait for a real click before pointer lock.
+- Game protocol 6 / checkpoint format 3: update all co-op clients together; older active dig checkpoints are incompatible. No live deployment in this branch.
+
+
 ## 15 — Tron Bonne and Servbot
 
 - Two more playable diggers from the user's supplied Mega Man Legends models: **Tron Bonne** and a **Servbot**. Pick them on the title screen (C or Y cycles through all four) or in an online lobby.

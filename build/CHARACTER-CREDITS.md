@@ -32,7 +32,7 @@ The converter gives both the same twelve locally authored clips. Tron's left
 hand is replaced by the attached buster like the others. The Servbot has no
 hand geometry to remove; its smaller buster sits on its single arm joint, its
 whole arm aims, and its run adds a side-to-side waddle. The Servbot stands
-1.08 m tall and Tron 1.86 m. All four diggers share the same mechanics for now.
+1.08 m tall and Tron 1.86 m. All four use the same animation pipeline; pass 16 gives each a signature attack and individual skill tree.
 
 ## Local adaptation
 
@@ -85,3 +85,7 @@ character pass is preserved in `backups/v6/`.
 
 All project changes, source assets, generated files and playable builds remain
 local. No repository or publishing action was performed.
+
+## Loading artwork and icon (pass 16)
+
+The web loader and project/browser icons reuse `assets/ui/volnutt_portrait.png`, rendered from the supplied Volnutt model. These derived portraits and icon copies remain Capcom assets, excluded from the MIT grant. No new third-party imagery was downloaded.
