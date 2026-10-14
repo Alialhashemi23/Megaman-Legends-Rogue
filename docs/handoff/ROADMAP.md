@@ -8,10 +8,10 @@ The single source of truth for the next features. It replaces the earlier NEXT-F
 |---|---|---|---|
 | 1 | [Co-op map and cache polish](#phase-1--co-op-map-and-cache-polish) | Merged and deployed (protocol 7); group playtest remains | — |
 | 2 | [Android development APK (guest + cross-play)](#phase-2--android-development-apk) | Merged; emulator build/saves/upgrade/connect/reconnect verified. Credits added in phase 5; Retroid hardware checks remain. See [ANDROID.md](ANDROID.md) | — |
-| 3 | [Backend: auth, profile API, deployment](#phase-3--backend-auth-profile-api-and-deployment) | Done (server only, off by default). Contract: [ACCOUNT-API.md](../ACCOUNT-API.md); operations: [ACCOUNTS-OPS.md](../ACCOUNTS-OPS.md). Admin MFA and the phase 6 event hooks are outstanding | — |
+| 3 | [Backend: auth, profile API, deployment](#phase-3--backend-auth-profile-api-and-deployment) | Done (server only, off by default). Contract: [ACCOUNT-API.md](../ACCOUNT-API.md); operations: [ACCOUNTS-OPS.md](../ACCOUNTS-OPS.md). Admin MFA and event hooks added by phase 6 | — |
 | 4 | [Game account sync (browser, Windows)](#phase-4--game-account-sync) | Implemented on `feature/account-sync` (`084d6a6`), pushed and deployed with live accounts configured; owner registered/verified. Merged into `main` through `dec0ddc`; playtest remains. Storage/checks: [ACCOUNT-SYNC.md](ACCOUNT-SYNC.md) | 3 |
 | 5 | [Android accounts and startup updates](#phase-5--android-accounts-and-startup-updates) | Implemented on `feature/android-accounts` with phase 4 dependency. Emulator Keystore/restart/upgrade, client update and relay checks pass; test-signed APK 3 local only. Merged into `main` through `dec0ddc`; Retroid and installer failure cases remain | 2, 3, 4 |
-| 6 | [Read-only owner dashboard](#phase-6--read-only-owner-dashboard) | Not started | 3 (+ activity signals from 4/5) |
+| 6 | [Read-only owner dashboard](#phase-6--read-only-owner-dashboard) | Implemented on `feature/owner-dashboard` (not merged/deployed): admin authenticator, events/activity/rollups/retention, `/admin`, game play-time reports. Server 41/41 (6 dashboard), account client 37/0. See [OWNER-DASHBOARD.md](OWNER-DASHBOARD.md) | 3 (+ activity signals from 4/5) |
 | — | [Launch](#launch-owner-supplied-inputs) | Owner-run | Inputs below |
 
 Update this table when a phase lands, with the merge commit and the tests actually run.

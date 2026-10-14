@@ -48,7 +48,8 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}tr.pick{cursor:poin
 .grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
 .note{margin:12px 0 0;padding:10px 12px;border-radius:4px;background:var(--ink);border-left:4px solid var(--yellow)}.note.bad{border-color:var(--red);color:var(--cream)}
 .code{width:12ch;font:700 24px/1 ui-monospace,monospace;letter-spacing:.15em}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:0}dt{color:var(--muted)}dd{margin:0}
+.block{margin-top:14px}.grid2 .block{margin-top:0}.detail-title{margin-top:22px;padding-top:14px;border-top:2px solid #2a4c8c}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:0}dt{color:var(--muted)}dd{margin:0;overflow-wrap:anywhere;min-width:0}
 `;
 
 const JS = `
@@ -153,9 +154,11 @@ function sums(days, prefix) {
   for (const d of days) for (const [k, v] of Object.entries(d.metrics)) if (k.startsWith(prefix)) out[k.slice(prefix.length)] = (out[k.slice(prefix.length)] || 0) + v;
   return out;
 }
-function table(title, head, rows, empty) {
-  if (!rows.length) return '<div><h3>' + esc(title) + '</h3><p class="muted">' + esc(empty || "Nothing recorded in this range.") + '</p></div>';
-  return '<div><h3>' + esc(title) + '</h3><table><thead><tr>' + head.map((h, i) => '<th' + (i ? ' class="n"' : '') + '>' + esc(h) + '</th>').join("") + '</tr></thead><tbody>' + rows.map((r) => '<tr>' + r.map((c, i) => '<td' + (i ? ' class="n"' : '') + '>' + esc(c) + '</td>').join("") + '</tr>').join("") + '</tbody></table></div>';
+// numeric: column indexes to right-align (default: every column after the first).
+function table(title, head, rows, empty, numeric = head.map((_, i) => i).slice(1)) {
+  if (!rows.length) return '<div class="block"><h3>' + esc(title) + '</h3><p class="muted">' + esc(empty || "Nothing recorded in this range.") + '</p></div>';
+  const cls = (i) => numeric.includes(i) ? ' class="n"' : '';
+  return '<div class="block"><h3>' + esc(title) + '</h3><table><thead><tr>' + head.map((h, i) => '<th' + cls(i) + '>' + esc(h) + '</th>').join("") + '</tr></thead><tbody>' + rows.map((r) => '<tr>' + r.map((c, i) => '<td' + cls(i) + '>' + esc(c) + '</td>').join("") + '</tr>').join("") + '</tbody></table></div>';
 }
 
 const state = { from: null, to: null, preset: 30, q: "", page: 1 };
@@ -246,13 +249,13 @@ async function loadUser(id) {
     return;
   }
   const u = r.data, p = u.profile, s = u.sync;
-  box.innerHTML = '<h2 tabindex="-1" id="who">' + esc(u.name) + '</h2><div class="grid2"><div><h3>Account</h3><dl>' +
+  box.innerHTML = '<h2 tabindex="-1" id="who" class="detail-title">' + esc(u.name) + '</h2><div class="grid2"><div><h3>Account</h3><dl>' +
     '<dt>Account id</dt><dd>' + esc(u.id) + '</dd><dt>Email</dt><dd>' + esc(u.email) + '</dd><dt>Verified</dt><dd>' + (u.verified ? "Yes" : "No") + '</dd><dt>Role</dt><dd>' + esc(u.role) + '</dd><dt>Authenticator</dt><dd>' + (u.two_factor ? "On" : "Off") + '</dd>' +
     '<dt>Registered</dt><dd>' + when(u.registered_at) + '</dd><dt>Last sign-in</dt><dd>' + when(u.last_login_at) + '</dd><dt>Active sessions</dt><dd>' + num(u.active_sessions) + '</dd><dt>Last active day</dt><dd>' + esc(u.last_active_at || "—") + '</dd></dl></div>' +
     '<div><h3>Progress</h3><dl><dt>Digs</dt><dd>' + num(p.runs) + '</dd><dt>Wins</dt><dd>' + num(p.wins) + '</dd><dt>Machines</dt><dd>' + num(p.kills) + '</dd><dt>Zenny</dt><dd>' + num(p.zenny) + '</dd><dt>Circuits bought</dt><dd>' + num(p.circuits) + '</dd><dt>Parts discovered</dt><dd>' + num(p.discovered) + '</dd><dt>Revision</dt><dd>' + num(p.revision) + '</dd><dt>Last change</dt><dd>' + when(p.updated_at) + '</dd>' + (p.adopted_at ? '<dt>Guest adopted</dt><dd>' + when(p.adopted_at) + '</dd>' : "") + '</dl></div>' +
     '<div><h3>Sync health (30 days)</h3><dl><dt>Refused/failed calls</dt><dd>' + num(s.errors_30d) + '</dd><dt>Safe retries</dt><dd>' + num(s.replays_30d) + '</dd><dt>Last problem</dt><dd>' + when(s.last_error_at) + '</dd><dt>Last saved operation</dt><dd>' + when(s.last_operation_at) + '</dd></dl></div></div>' +
-    table("Recent digs", ["Started", "Platform", "Version", "Status"], u.runs.map((x) => [when(x.started_at), x.platform, "v" + x.game_version, x.status]), "No account digs yet.") +
-    table("Activity (last 30 active days)", ["UTC day", "Play time", "Platforms"], u.activity.map((a) => [a.day, Math.round(a.seconds / 60) + " min", a.platforms.join(", ") || "—"]), "No activity recorded in the last 90 days.");
+    table("Recent digs", ["Started", "Platform", "Version", "Status"], u.runs.map((x) => [when(x.started_at), x.platform, "v" + x.game_version, x.status]), "No account digs yet.", []) +
+    table("Activity (last 30 active days)", ["UTC day", "Play time", "Platforms"], u.activity.map((a) => [a.day, Math.round(a.seconds / 60) + " min", a.platforms.join(", ") || "—"]), "No activity recorded in the last 90 days.", [1]);
   document.getElementById("who").focus();
 }
 

@@ -175,6 +175,21 @@ func run() -> void:
 	await settle()
 	account.clear_local_session()
 	verify(game.profile_source == "account" and not account.outbox.is_empty(), "Local cleanup preserves unsynced operations")
+	# Dashboard play time: reported best effort outside the outbox, whole seconds only.
+	var outbox_before = account.outbox.size()
+	account.foreground_seconds = 130.4
+	account._process(0)
+	await settle()
+	var reports = sent.filter(func(s): return s.path == "/api/v1/activity")
+	verify(reports.size() == 1 and reports[0].body.seconds == 130 and reports[0].body.platform == account.platform_id() and account.foreground_seconds < 1, "Play time reports whole foreground seconds once")
+	verify(account.outbox.size() == outbox_before, "Play-time reports never enter the progress outbox")
+	account.state = "needs_sign_in"
+	account.foreground_seconds = 50
+	account._process(0)
+	await settle()
+	verify(sent.filter(func(s): return s.path == "/api/v1/activity").size() == 1, "No play-time report without a confirmed sign-in")
+	account.state = "signed_in"
+	account.foreground_seconds = 0
 	print("ACCOUNT_CHECKS: %d checks, %d failures" % [checks, failures])
 	game.queue_free()
 	await process_frame

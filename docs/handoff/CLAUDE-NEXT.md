@@ -34,6 +34,15 @@ phase 4 is already implemented and merged.
   `f071e7a47f2ab34c5211892d14662d13a5fac0c0558d352520f66a164dad8638`.
 - Protocol **7**, checkpoint **3**, profile **2**, API **v1** unchanged.
 
+## Phase 6 — 2026-10-14 (branch `feature/owner-dashboard`)
+
+Owner authorized starting phase 6. Implemented and tested; see
+`docs/handoff/OWNER-DASHBOARD.md`. Not merged, not deployed; web/Windows/APK
+artifacts not refreshed (game now sends play-time reports). Separate branch
+`fix/phase45-readiness` holds the Android restore/update fixes and Retroid
+checklist; it is also unmerged pending artifact refresh. Deploying phase 6
+needs the owner's go-ahead, a backup, the `migrate` job and owner MFA setup.
+
 ## Latest user decision
 
 Keep phase 5's **browser-based APK download flow** for the first Retroid test.
