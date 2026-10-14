@@ -57,6 +57,12 @@ func run() -> void:
 	game.mode = "title"
 	update.download()
 	verify(opened == [release.downloadUrl], "Explicit download opens system-browser URL once")
+	update.dismissed = false
+	update.opener = func(_url): return ERR_CANT_OPEN
+	game.mode = "android_update"
+	update.download()
+	verify(game.mode == "android_update" and not update.dismissed, "A browser that fails to open keeps the update prompt")
+	update.opener = func(url): opened.append(url)
 	update.metadata = {}
 	verify(not update.available() and not update.blocks_online(), "Metadata outage permits guest solo and server decides online")
 	game.account.state = "restoring"
@@ -66,6 +72,24 @@ func run() -> void:
 	verify(game.account.state == "needs_sign_in", "Expired restored session asks for sign-in rather than becoming Guest")
 	game.start_run()
 	verify(game.mode == "account" and not game.in_run(), "Expired saved session requires explicit Guest choice")
+	game.account.state = "restoring"
+	game.account.retry_wait = 0
+	game.account.receive_profile(0, {}, PackedStringArray())
+	verify(game.account.state == "restoring" and game.account.retry_wait > 0, "Offline restore retries without becoming Guest")
+	game.account.receive_profile(200, {"account": {"id": "acc_android_invalid_profile"}, "profile": {"zenny": "x"}, "revision": 1}, PackedStringArray())
+	verify(game.account.state == "restoring" and game.account.identity.is_empty() and game.profile_source == "guest", "Invalid restored profile stays unconfirmed instead of half signed in")
+	game.account.transport = func(_path, _body, _method): return {"code": 0}
+	game.account.vault = DiverAndroidVault.new()
+	game.account.vault.directory = "user://android-checks/kept-vault"
+	var kept = game.account.vault.file_for(game.account.base_url())
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(kept.get_base_dir()))
+	FileAccess.open(kept, FileAccess.WRITE).store_string("{}")
+	game.hud.activate("guest")
+	verify(game.account.state == "guest" and game.account.retry_wait == 0 and FileAccess.file_exists(kept), "Guest while restoring keeps the saved session")
+	game.account.sign_out()
+	verify(not FileAccess.file_exists(kept), "Sign Out still removes the saved session")
+	game.account.vault = null
+	game.account.transport = Callable()
 	var vault = DiverAndroidVault.new()
 	vault.directory = "user://android-checks/vault"
 	verify(not vault.save_token(base, "disposable-test-token"), "Non-Android vault refuses plaintext fallback")

@@ -69,9 +69,12 @@ func later() -> void:
 func download() -> void:
 	if not available() or not game.account.switch_allowed(): return
 	if not game.account.persist_pending(): return
+	var error = opener.call(metadata.downloadUrl) if opener.is_valid() else OS.shell_open(metadata.downloadUrl)
+	if error is int and error != OK:
+		# Keep the prompt so the player can retry; nothing was downloaded or installed.
+		game.notify("UPDATE", "Could not open a browser. Visit " + metadata.downloadUrl + " to download.")
+		return
 	dismissed = true
-	if opener.is_valid(): opener.call(metadata.downloadUrl)
-	else: OS.shell_open(metadata.downloadUrl)
 	game.show_title()
 
 func _process(_dt: float) -> void:

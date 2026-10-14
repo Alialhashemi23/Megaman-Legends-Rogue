@@ -394,8 +394,11 @@ func activate(action: String, value: int = 0) -> void:
             game.mode = "account"
         "sign_in": game.account.sign_in()
         "account_retry": game.account.retry()
-        "sign_out", "guest":
+        "sign_out":
             game.account.sign_out()
+            game.show_title()
+        "guest":
+            game.account.play_guest()
             game.show_title()
         "device_open": game.account.open_device_page()
         "device_cancel": game.account.cancel_sign_in()

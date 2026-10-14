@@ -27,6 +27,16 @@ Screenshots: `screenshots/android-emulator-*.png`.
 
 Checks: `tests/android_checks.gd` (44), account (34), UI (47), Node Android-update/relay tests (10). `tools/test-android-vault.ps1` creates a unique disposable app and validates Keystore encryption/decryption, no plaintext on disk, origin separation, tamper rejection, sign-out, process restart and higher-version in-place upgrade. Full emulator game startup at build 3 passed without script errors. The native probe passed 9 checks on restart and upgrade. No real account credentials were used in those probes.
 
+**Readiness fixes (branch `fix/phase45-readiness`, 2026-10-14, not merged/built):**
+- Choosing Play as Guest while a saved session is still restoring (typically an offline boot) used to sign out, erasing the Keystore session and revoking it. It now keeps the encrypted session; Account → Sign In retries it before asking for a new code. Explicit Sign Out still erases it.
+- Offline/5xx/429 restores retry every 15 seconds instead of waiting for Retry or an app resume.
+- An invalid server profile during sign-in/restore stays `restoring` (digs, purchases and server changes blocked) instead of `signed_in` with no profile while Guest progress showed.
+- A restored profile only jumps to the Account page from the title/account screens, not from Options or the Workshop.
+- If the browser cannot be opened for an update, the prompt stays with the URL instead of being dismissed.
+- Android checks 44 → 49 (all pass); account 34 and UI 47 unchanged and passing. Web ZIP, Windows pack/ZIP and an APK build 4 still need refreshing from this source; that packaging run was not performed in the review session.
+
+Owner hardware checklist: [RETROID-CHECKLIST.md](RETROID-CHECKLIST.md).
+
 Still required on real hardware: end-to-end device approval with browser switching, account cache/outbox recovery and cross-device earned progress; full Retroid/browser/Windows co-op; wrong signing key/no space/cancelled download/sleep during download; update preserving actual game progress/settings/account access. No claims of Retroid validation, live Android downloads or production signing.
 
 Additional emulator checks passed: Android rejected a wrong-key update of the disposable probe (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`); upgrading the full game APK from code 2 to 3 preserved the existing Guest archive's SHA-256 exactly. Local release staging rejected changed APK bytes under an already staged code. No-space, cancellation and sleep-during-download installer cases were not exercised.

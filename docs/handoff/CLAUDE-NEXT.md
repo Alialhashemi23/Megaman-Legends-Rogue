@@ -34,6 +34,22 @@ phase 4 is already implemented and merged.
   `f071e7a47f2ab34c5211892d14662d13a5fac0c0558d352520f66a164dad8638`.
 - Protocol **7**, checkpoint **3**, profile **2**, API **v1** unchanged.
 
+## Readiness review — 2026-10-14 (branch `fix/phase45-readiness`)
+
+Focused review of restore failure states, outbox, background/return, server
+switching and update cancellation. Fixes in `scripts/account.gd`,
+`scripts/android_updates.gd`, `scripts/hud.gd`, tests in
+`tests/android_checks.gd` (49/0); account 34/0 and UI 47/0 rerun. Details in
+`ANDROID.md`. Reviewed and judged sound: outbox ordering/idempotent retry,
+pause persistence, device-code wall-clock expiry, server-change guard while an
+account is active, update metadata validation.
+
+**Not done:** web ZIP / Windows pack / portable ZIP refresh and APK build 4
+(`version/code` 4, name `0.18.1`; keep the current build-3 APK as the "old"
+install for the Retroid upgrade test). The packaging command was blocked by the
+session's permission policy; run it only with the owner's go-ahead, then merge.
+Owner checklist: `docs/handoff/RETROID-CHECKLIST.md`.
+
 ## Latest user decision
 
 Keep phase 5's **browser-based APK download flow** for the first Retroid test.
