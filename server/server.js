@@ -4,6 +4,8 @@
 //   WEB_ROOT   exported Godot web build (default ../build/web)
 //   MAX_LOBBIES  concurrent lobby cap (default 200)
 //   RUN_GRACE_MINUTES  how long an empty lobby with a dig in progress waits for its diggers (default 15)
+//   DATABASE_URL, BETTER_AUTH_SECRET, PUBLIC_ORIGIN, MAIL_URL, MAIL_FROM
+//              turn on accounts (docs/ACCOUNT-API.md); without them the server is guest-only
 //
 // Serves the game with the cross-origin isolation headers Godot's threaded web
 // build needs, and upgrades /ws to the lobby protocol described in lobby.js.
@@ -16,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { WebSocketServer } from "ws";
 import { LobbyRegistry, CHECKPOINT_TARGET, cleanCode, cleanText, routePacket } from "./lobby.js";
+import { createAccounts } from "./accounts/api.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PROTOCOL_VERSION = 2;
@@ -35,7 +38,7 @@ const MIME = {
 };
 const COMPRESSIBLE = new Set([".html", ".js", ".wasm", ".pck", ".json", ".svg", ".txt", ".css", ".md", ".ttf"]);
 
-export function createServer({ port = 8080, webRoot = path.join(here, "..", "build", "web"), maxLobbies = 200, log = console.log, runGraceMs, idleGraceMs } = {}) {
+export function createServer({ port = 8080, webRoot = path.join(here, "..", "build", "web"), maxLobbies = 200, log = console.log, runGraceMs, idleGraceMs, accounts = null } = {}) {
   const registry = new LobbyRegistry({ maxLobbies, runGraceMs, idleGraceMs });
   const compressed = new Map();
   const root = path.resolve(webRoot);
@@ -133,6 +136,7 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, "http://localhost");
+    if (accounts && accounts.handle(req, res, url)) return;
     if (req.method !== "GET" && req.method !== "HEAD") {
       res.writeHead(405, { Allow: "GET, HEAD" });
       return res.end();
@@ -208,11 +212,28 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
 
   function handleCommand(client, message) {
     switch (message.t) {
-      case "hello":
+      case "hello": {
         client.name = cleanText(message.name, 16) || "Digger";
-        client.playerId = cleanText(message.id, 40) || `anon-${client.id}`;
+        // Guests pick their own id; "acct:" ids are reserved for verified accounts.
+        const guestId = cleanText(message.id, 40);
+        client.playerId = guestId && !guestId.startsWith("acct:") ? guestId : `anon-${client.id}`;
+        client.accountId = null;
         client.version = Number.isInteger(message.v) ? message.v : 0;
-        return send(client, { t: "welcome", id: client.id, v: PROTOCOL_VERSION });
+        if (message.ticket === undefined || !accounts) return send(client, { t: "welcome", id: client.id, v: PROTOCOL_VERSION });
+        // Commands that arrive while the ticket is checked wait their turn.
+        client.waiting = [];
+        accounts.redeemTicket(message.ticket).catch(() => null).then((accountId) => {
+          if (accountId) {
+            client.accountId = accountId;
+            client.playerId = `acct:${accountId}`;
+          } else send(client, { t: "error", code: "bad_ticket" });
+          send(client, { t: "welcome", id: client.id, v: PROTOCOL_VERSION, account: Boolean(accountId) });
+          const queued = client.waiting;
+          client.waiting = null;
+          for (const next of queued) handleCommand(client, next);
+        });
+        return;
+      }
       case "name":
         client.name = cleanText(message.name, 16) || client.name;
         if (client.lobby) broadcastLobby(client.lobby);
@@ -268,7 +289,7 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
   }
 
   wss.on("connection", (ws) => {
-    const client = { id: nextId++, ws, name: "Digger", playerId: "", version: 0, lobby: null, slot: 0, tokens: 480, stamp: Date.now() };
+    const client = { id: nextId++, ws, name: "Digger", playerId: "", accountId: null, waiting: null, version: 0, lobby: null, slot: 0, tokens: 480, stamp: Date.now() };
     client.playerId = `anon-${client.id}`;
     ws.on("message", (data, isBinary) => {
       // Token bucket: generous for 60 Hz batched game traffic, closes floods.
@@ -277,6 +298,7 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
       client.stamp = now;
       if (--client.tokens < 0) return ws.close(1008, "rate limit");
       if (isBinary) {
+        if (client.waiting) return;
         const routed = routePacket(client, Buffer.isBuffer(data) ? data : Buffer.concat(data));
         if (!routed) return;
         for (const member of routed.recipients) if (member.ws.readyState === member.ws.OPEN) member.ws.send(routed.out, { binary: true });
@@ -289,7 +311,12 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
       } catch {
         return send(client, { t: "error", code: "bad_json" });
       }
-      if (message && typeof message.t === "string") handleCommand(client, message);
+      if (!message || typeof message.t !== "string") return;
+      if (client.waiting) {
+        if (client.waiting.length < 32) client.waiting.push(message);
+        return;
+      }
+      handleCommand(client, message);
     });
     ws.on("close", () => leave(client));
     ws.on("error", () => {});
@@ -324,13 +351,24 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
     },
     close() {
       for (const ws of wss.clients) ws.terminate();
-      return new Promise((resolve) => server.close(() => resolve()));
+      return new Promise((resolve) => server.close(() => resolve())).then(() => accounts?.close());
     },
   };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  let accounts = null;
+  if (process.env.DATABASE_URL) {
+    try {
+      accounts = await createAccounts({ databaseUrl: process.env.DATABASE_URL, secret: process.env.BETTER_AUTH_SECRET, origin: process.env.PUBLIC_ORIGIN, mailUrl: process.env.MAIL_URL, mailFrom: process.env.MAIL_FROM });
+      console.log(`Accounts enabled for ${process.env.PUBLIC_ORIGIN}${process.env.MAIL_URL ? "" : " (no MAIL_URL: sign-up is off)"}`);
+    } catch (error) {
+      console.error(`Accounts could not start: ${error.message}`);
+      process.exit(1);
+    }
+  }
   const app = createServer({
+    accounts,
     port: Number(process.env.PORT) || 8080,
     webRoot: process.env.WEB_ROOT || path.join(here, "..", "build", "web"),
     maxLobbies: Number(process.env.MAX_LOBBIES) || 200,
