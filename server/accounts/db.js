@@ -60,6 +60,49 @@ export const MIGRATIONS = [
       create index lobby_ticket_expiry on lobby_ticket (expires_at);
     `,
   },
+  {
+    // Owner dashboard (phase 6): events, activity days, daily aggregates and
+    // the sessions that passed an authenticator check. See analytics.js.
+    id: "002_owner_dashboard",
+    sql: `
+      create table analytics_event (
+        id text primary key,
+        at timestamptz not null,
+        kind text not null,
+        outcome text,
+        method text,
+        user_id text references "user"(id) on delete cascade,
+        account_id text references game_account(id) on delete cascade,
+        platform text,
+        game_version integer,
+        data jsonb not null default '{}'
+      );
+      create index analytics_event_at on analytics_event (at);
+      create index analytics_event_kind_at on analytics_event (kind, at);
+      create index analytics_event_account on analytics_event (account_id, at);
+      create index analytics_event_user on analytics_event (user_id, at);
+      create table activity_day (
+        account_id text not null references game_account(id) on delete cascade,
+        day date not null,
+        seconds integer not null default 0,
+        platforms text[] not null default '{}',
+        last_at timestamptz not null,
+        primary key (account_id, day)
+      );
+      create index activity_day_day on activity_day (day);
+      create table daily_stat (
+        day date not null,
+        metric text not null,
+        value bigint not null,
+        primary key (day, metric)
+      );
+      create table daily_stat_day (day date primary key);
+      create table admin_mfa_session (
+        session_id text primary key references "session"(id) on delete cascade,
+        verified_at timestamptz not null
+      );
+    `,
+  },
 ];
 
 // Auth tables first (game tables reference "user"), then ours in order.

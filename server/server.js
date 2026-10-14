@@ -163,6 +163,15 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: 512 * 1024, perMessageDeflate: false });
   let nextId = 1;
+  const clients = new Set();
+  // Owner dashboard: connections now, accounts counted once however many tabs they have.
+  accounts?.setLive?.(() => {
+    const ids = new Set();
+    let guests = 0;
+    for (const c of clients) c.accountId ? ids.add(c.accountId) : guests++;
+    const active = [...registry.lobbies.values()].filter((lobby) => lobby.members.size > 0).length;
+    return { connections: clients.size, lobbies: active, waiting_lobbies: registry.lobbies.size - active, accounts: ids.size, guest_connections: guests };
+  });
 
   server.on("upgrade", (req, socket, head) => {
     const url = new URL(req.url, "http://localhost");
@@ -301,6 +310,7 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
   wss.on("connection", (ws) => {
     const client = { id: nextId++, ws, name: "Digger", playerId: "", accountId: null, waiting: null, version: 0, lobby: null, slot: 0, tokens: 480, stamp: Date.now() };
     client.playerId = `anon-${client.id}`;
+    clients.add(client);
     ws.on("message", (data, isBinary) => {
       if (client.updateBlocked) return;
       // Token bucket: generous for 60 Hz batched game traffic, closes floods.
@@ -329,7 +339,7 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
       }
       handleCommand(client, message);
     });
-    ws.on("close", () => leave(client));
+    ws.on("close", () => { clients.delete(client); leave(client); });
     ws.on("error", () => {});
   });
 

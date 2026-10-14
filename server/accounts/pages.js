@@ -37,6 +37,7 @@ button.secondary{background:transparent}button:focus{outline:3px solid var(--yel
 .row{display:flex;gap:10px}.row button{flex:1}.links{display:flex;flex-wrap:wrap;gap:14px;margin-top:16px}.links a{color:#7ad6ef}
 .note{margin:14px 0 0;padding:10px 12px;border-radius:4px;background:var(--ink);border-left:4px solid var(--yellow)}.note.bad{border-color:var(--red)}
 .code{font:700 34px/1 ui-monospace,monospace;letter-spacing:.12em;color:var(--yellow);text-align:center;margin:8px 0}
+.code.secret{font-size:19px;letter-spacing:.06em;word-break:break-all}.muted{color:var(--muted)}ul.backup{columns:2;font:600 16px/1.6 ui-monospace,monospace;color:var(--yellow)}
 `;
 
 const JS = `
@@ -71,9 +72,56 @@ function signInView(after) {
     e.preventDefault(); busy(f, true);
     const r = await api("/sign-in/email", { email: f.e.value, password: f.p.value, callbackURL: location.pathname + location.search });
     busy(f, false);
+    if (r.ok && r.data?.twoFactorRedirect) return twoFactorView(after);
     if (r.ok) return after();
     if (r.data?.code === "EMAIL_NOT_VERIFIED") return note("Confirm your email first. We've sent the link again; check your inbox.", true);
     note(message(r.data, "Sign-in failed."), true);
+  };
+}
+
+// Accounts with an authenticator app finish signing in with a code (or a backup code).
+function twoFactorView(after) {
+  subtitle.textContent = "One more step";
+  render(\`<h2>Authenticator code</h2><form id="f"><label for="c">6-digit code from your authenticator app</label><input id="c" inputmode="numeric" autocomplete="one-time-code" required maxlength="11"><button>Continue</button></form>
+  <div class="links"><a href="#" id="backup">Use a backup code</a></div>\`);
+  let backup = false;
+  const f = document.getElementById("f");
+  document.getElementById("backup").onclick = (e) => { e.preventDefault(); backup = true; view.querySelector("label").textContent = "Backup code"; f.c.removeAttribute("inputmode"); f.c.focus(); };
+  f.onsubmit = async (e) => {
+    e.preventDefault(); busy(f, true);
+    const code = backup ? f.c.value.trim() : f.c.value.replace(/\\D/g, "");
+    const r = await api(backup ? "/two-factor/verify-backup-code" : "/two-factor/verify-totp", { code });
+    busy(f, false);
+    if (r.ok) return after();
+    note(r.status === 401 && r.data?.code === "INVALID_TWO_FACTOR_COOKIE" ? "That sign-in expired. Sign in again." : "That code didn't work. Wait for a fresh code and try again.", true);
+  };
+}
+
+// Owner-only setup: the dashboard requires an authenticator app.
+function authenticatorSetup(user) {
+  render(\`<h2>Set up an authenticator</h2><p>The owner dashboard needs codes from an authenticator app (for example Google Authenticator, Microsoft Authenticator or a password manager). Confirm your password to start.</p>
+  <form id="f"><label for="p">Password</label><input id="p" type="password" autocomplete="current-password" required minlength="10"><button>Continue</button></form><div class="links"><a href="#" id="cancel">Not now</a></div>\`);
+  document.getElementById("cancel").onclick = (e) => { e.preventDefault(); home(); };
+  const f = document.getElementById("f");
+  f.onsubmit = async (e) => {
+    e.preventDefault(); busy(f, true);
+    const r = await api("/two-factor/enable", { password: f.p.value });
+    busy(f, false);
+    if (!r.ok || !r.data?.totpURI) return note(message(r.data, "Couldn't start setup. Check your password."), true);
+    const secret = new URL(r.data.totpURI).searchParams.get("secret") || "";
+    render(\`<h2>Add Relic Diver to your app</h2><p>In your authenticator app, add an account by entering this setup key (time-based):</p><p class="code secret">\${esc(secret.replace(/(.{4})/g, "$1 ").trim())}</p>
+    <p><a href="\${esc(r.data.totpURI)}">Open in an authenticator app on this device</a></p>
+    <p>Save these backup codes somewhere safe, such as your password manager. Each works once if you lose the app:</p><ul class="backup">\${r.data.backupCodes.map((c) => "<li>" + esc(c) + "</li>").join("")}</ul>
+    <form id="v"><label for="c">Enter the 6-digit code the app now shows</label><input id="c" inputmode="numeric" autocomplete="one-time-code" required maxlength="8"><button>Turn on</button></form>\`, "#c");
+    const v = document.getElementById("v");
+    v.onsubmit = async (e2) => {
+      e2.preventDefault(); busy(v, true);
+      const done = await api("/two-factor/verify-totp", { code: v.c.value.replace(/\\D/g, "") });
+      busy(v, false);
+      if (!done.ok) return note("That code didn't match. Check the setup key and the time on your device, then try a fresh code.", true);
+      await home();
+      note("Authenticator is on. You'll enter a code each time you sign in on the web.");
+    };
   };
 }
 
@@ -127,9 +175,12 @@ async function home() {
   const s = await api("/get-session");
   if (!s.ok || !s.data?.user) return signInView(home);
   subtitle.textContent = "Your account";
-  render(\`<h2>Signed in</h2><p>Digger <b>\${esc(s.data.user.name)}</b><br><span style="color:var(--muted)">\${esc(s.data.user.email)}</span></p>
-  <div class="row"><button id="play">Back to the game</button><button class="secondary" id="out">Sign out</button></div>\`);
+  const owner = s.data.user.role === "admin";
+  render(\`<h2>Signed in</h2><p>Digger <b>\${esc(s.data.user.name)}</b><br><span class="muted">\${esc(s.data.user.email)}</span></p>
+  <div class="row"><button id="play">Back to the game</button><button class="secondary" id="out">Sign out</button></div>
+  \${owner ? (s.data.user.twoFactorEnabled ? '<div class="links"><a href="/admin">Owner dashboard</a></div>' : '<button class="secondary" id="mfa">Set up authenticator for the owner dashboard</button>') : ""}\`);
   document.getElementById("play").onclick = () => location.assign(back);
+  if (owner && !s.data.user.twoFactorEnabled) document.getElementById("mfa").onclick = () => authenticatorSetup(s.data.user);
   document.getElementById("out").onclick = async () => { await api("/sign-out", {}); signInView(home); note("Signed out."); };
 }
 
