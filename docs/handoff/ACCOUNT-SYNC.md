@@ -1,6 +1,6 @@
 # Game account sync (phase 4)
 
-Implemented on `feature/account-sync` (`084d6a6`), pushed and deployed with the
+Implemented on `feature/account-sync` (`084d6a6`), merged into `main` through `dec0ddc`, and deployed with the
 user's authorization on 2026-10-14. Godot exports and Docker builds ran locally
 on the Windows PC. Public health, exact pack SHA256, isolation headers and the
 WebSocket hello passed at https://megaman.galosengen.dev. Cloudflare only tunnels
@@ -10,7 +10,7 @@ the user's explicit approval: PostgreSQL 17.11, generated auth secrets, verified
 contract is unchanged.
 This handoff covers browser and Windows. Android device-flow sign-in, encrypted
 session persistence and lifecycle integration are implemented in phase 5 on
-`feature/android-accounts`; see [ANDROID.md](ANDROID.md) for checks and open
+`feature/android-accounts` and merged into `main` through `dec0ddc`; see [ANDROID.md](ANDROID.md) for checks and open
 hardware acceptance. Windows remains memory-only. The owner registered and
 confirmed their live email; their game account/profile and session were verified
 in the database without inspecting credentials.

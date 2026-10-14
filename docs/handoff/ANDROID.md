@@ -1,6 +1,6 @@
 # Android handoff
 
-Native Godot export for the Retroid Pocket 5 (Android 13, Snapdragon 865, 5.5" 1080p). Phases 2 and 5; app id `dev.galosengen.relicdiver`, ARM64, landscape, Compatibility renderer, no WebView. Phase 5 is on `feature/android-accounts` with phase 4 as an unmerged dependency; no main merge or live deployment was performed.
+Native Godot export for the Retroid Pocket 5 (Android 13, Snapdragon 865, 5.5" 1080p). Phases 2 and 5; app id `dev.galosengen.relicdiver`, ARM64, landscape, Compatibility renderer, no WebView. Phase 5 and its phase 4 dependency are merged into `main` through `dec0ddc` with the owner's approval. Phase 5 has not been deployed live.
 
 ## Status
 
