@@ -1,5 +1,7 @@
 # Hosting Relic Diver online
 
+> **This project's deployment:** `https://megaman.galosengen.dev`, hosted from the user's PC through a Cloudflare Tunnel (domain `galosengen.dev` on Cloudflare). The Windows build connects there by default (`relic_diver/online/default_server` in project.godot).
+
 Relic Diver runs in the browser and supports online co-op for up to four diggers. One small server does everything: it serves the game files and runs the lobby service that connects players. Publish that server on your domain with a **Cloudflare Tunnel**. It needs no port forwarding, exposes no home IP address and handles HTTPS certificates for you.
 
 ```
@@ -55,7 +57,7 @@ Open `https://your-domain/`. The first visit downloads about 13 MB (the server c
 - Friends can join a dig already underway. They arrive at the current descent with a fresh build.
 - In the dig, click once to capture the mouse for aiming. Browsers only allow mouse capture after a click.
 
-The Windows build can join the same lobbies: **Play Online → Dig Server**, enter `wss://your-domain/ws`.
+The Windows build can join the same lobbies. It defaults to `wss://megaman.galosengen.dev/ws`; to use another server, change **Play Online → Dig Server**.
 
 ## How co-op plays
 

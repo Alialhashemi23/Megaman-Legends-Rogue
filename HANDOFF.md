@@ -21,6 +21,10 @@ Workspace: `C:\Users\Temp\Documents\Codex\2026-10-13\hey-i-want-to-build-a`
 - PowerShell. Set APPDATA and LOCALAPPDATA to workspace `tools/runtime` for tool/test runs.
 - Python: `C:\Users\Temp\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe`; NumPy installed. FFmpeg/ffprobe in PATH.
 
+## Deployment
+
+The user hosts locally (a home PC) for now, at **https://megaman.galosengen.dev** (`galosengen.dev` is on Cloudflare) through a Cloudflare Tunnel. The tunnel route points `megaman.galosengen.dev` at `http://relic-diver:8080` (Docker) or `http://localhost:8080` (Host-Online.cmd). The desktop build's default server is `wss://megaman.galosengen.dev/ws`. Host-Online.cmd restarts the server if it stops. A VPS may come later; the setup is identical there.
+
 ## Latest completed work: controller, Options, Leave Dig (pass 11)
 
 The user asked for a way to leave a run, controller support and a basic options menu, and said solo mid-run saving isn't needed (runs are short).
