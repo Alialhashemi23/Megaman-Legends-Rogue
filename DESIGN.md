@@ -54,11 +54,11 @@ This is a playable prototype with a complete run loop, not a finished game. Auth
 
 The next priorities should follow human playtesting: movement feel, camera visibility, target readability, useful drops, exploration density, guardian fairness and sound balance. Preserve the direction above when changing implementation. See docs/handoff/PLAYTEST-ROADMAP.md for a practical review order.
 
-## Planned account progress and Android support (2026-10-14)
+## Planned account progress, admin and Android support (2026-10-14)
 
-The user wants account logins so permanent records, unlocks, Zenny and Workshop purchases follow the player across machines, plus a native Android APK for Retroid Pocket 5 with browser/Windows cross-play, shared account progress and startup update checks. Preserve the run-reset rules and Legends presentation on every platform. This requests persistent gameplay progress, not advertising analytics.
+The user wants account logins so permanent records, unlocks, Zenny and Workshop purchases follow the player across machines, a read-only owner dashboard for user/login/game statistics, and a native Android APK for Retroid Pocket 5 with browser/Windows cross-play, shared account progress and startup update checks. Preserve run-reset rules and Legends presentation on every platform. Collect limited operational/game metadata, not advertising analytics or device fingerprints.
 
-These features are planned, not implemented. Hosting, costs, login method and offline/concurrent-device policy remain to be selected. Permanent account progress is separate from active-dig checkpoints; this request does not change the existing choice to omit solo mid-run saving. Scope, proposed defaults and acceptance checks are in [docs/handoff/ACCOUNTS-ANDROID-PLAN.md](docs/handoff/ACCOUNTS-ANDROID-PLAN.md). No deployment, paid service, store submission or release publication is part of the planning pass.
+These features are planned, not implemented. Confirmed choices: self-hosted Node + PostgreSQL + Better Auth on Ubuntu initially, email/password with open registration, online account run starts/purchases and retry after disconnect, separate offline guests, read-only admin powers and browser-download APK updates. Permanent progress remains separate from active-dig checkpoints; solo mid-run saving stays omitted. [IMPLEMENTATION-DECISIONS.md](docs/handoff/IMPLEMENTATION-DECISIONS.md) defines requirements/defaults and [WORKER-BRIEFS.md](docs/handoff/WORKER-BRIEFS.md) defines work packages; [ACCOUNTS-ANDROID-PLAN.md](docs/handoff/ACCOUNTS-ANDROID-PLAN.md) retains rationale. The user selected `main` as merge destination. No deployment, paid service, store submission or release publication is part of the planning pass.
 
 ## Repository and distribution intent
 

@@ -1,14 +1,15 @@
 # Plan: accounts, shared progress and Android
 
-Prepared 2026-10-14 for `codex/next-features-volnutt`. **Planning only; none of these features is implemented.** This extends [NEXT-FEATURES.md](NEXT-FEATURES.md). Preserve its pending co-op map/cache requests and the completed pass-16 work.
+Prepared 2026-10-14 on `codex/next-features-volnutt` for merge into `main`. **Planning only; none of these features is implemented.** This extends [NEXT-FEATURES.md](NEXT-FEATURES.md). Preserve its pending co-op map/cache requests and the completed pass-16 work. The user answered all blocking product choices: [IMPLEMENTATION-DECISIONS.md](IMPLEMENTATION-DECISIONS.md) is authoritative, and [WORKER-BRIEFS.md](WORKER-BRIEFS.md) contains assignable work packages.
 
 ## Requested outcome
 
 - Players log in and recover permanent progress on another computer, browser or Android handheld without transferring files or save codes.
 - A native Android APK runs on the user's Retroid Pocket 5, uses the same account/progress and joins browser/Windows co-op lobbies.
 - The APK checks for updates at startup and offers a straightforward update flow.
+- The owner has an admin account and a private read-only dashboard for user/login statistics, platform/version metadata, gameplay summaries and sync health.
 
-These are two separate features with shared dependencies: accounts can ship on browser/Windows first; Android can be prototyped independently, then integrated with accounts. This request authorizes planning, not implementation, spending, deployment, store submission or release publication.
+Accounts can ship on browser/Windows first; the admin dashboard depends on account/event instrumentation; Android can be prototyped independently, then integrated with accounts. This pass finalizes requirements and merges the planning branch. Workers implement when assigned; this pass does not provision services, spend money, deploy, submit to stores or publish releases.
 
 ## What exists today
 
@@ -26,39 +27,39 @@ Primary integration points: `scripts/progression.gd`, progress load/save and `fi
 
 ## 1. Accounts and permanent progress
 
-### Hosting and costs: decision still open
+### Selected hosting and costs
 
-The user asked whether separate hosting costs money; no hosting or login choice has been selected. Distinguish **independent of the player's device** from **independent of the owner's PC**.
+**Selected:** the existing Node server + PostgreSQL + Better Auth, deployed with Docker Compose on the owner's planned Ubuntu laptop (11th-gen i7, 16 GB RAM, 512 GB SSD), then portable to a VPS. Keep the existing domain and Cloudflare Tunnel. Accounts are independent of players' devices, while availability initially depends on the owner's server.
 
 | Option | Tradeoff |
 |---|---|
 | Existing PC + persistent database volume | No new hosting subscription, but electricity/domain/backup costs remain. Saves can follow players, yet service availability and data protection still depend on this PC. A tunnel does not back up data. |
-| Managed auth + database + independently hosted profile API | Recommended if saves should be independent of the owner's PC. The API can use provider functions rather than a second always-on server. Co-op relay may remain at home; multiplayer still depends on it. |
+| Managed auth + database + independently hosted profile API | Alternative, not selected. Removes the profile service's home-PC dependency; co-op relay may remain at home. |
 | VPS hosting API/database/relay | Removes the home-PC availability dependency for all services, but adds a paid server and owner-operated security, maintenance and backups. |
 
-As a concrete option, [Supabase pricing](https://supabase.com/pricing) checked 2026-10-14 lists a $0 plan with 500 MB database and 50,000 monthly active users, pausing after one inactive week and without automatic backups. Pro starts at US$25/month with daily backups. These are provider allowances, not an estimate of the entire system's cost. API execution, email delivery, off-host backups and APK download bandwidth need separate budgeting; verify quotas at implementation time. Keep APKs out of the progress database and do not assume free-tier reliability or permanent pricing.
+Supabase Cloud and self-hosted Supabase were evaluated but not selected. Their hosted free-tier account/storage quotas do not apply to the chosen self-hosted stack. There is no planned backend hosting subscription initially; electricity, existing domain, email delivery, off-host backups and eventual VPS/download bandwidth may cost money. Keep APKs out of the progress database. Owner approval remains required before adding paid services.
 
-The implementation proposal should identify a free pilot option, backup arrangement, and explicit paid upgrade threshold before any service is provisioned. Do not select or purchase a provider as part of this document change.
+Workers ship portable deployment files, backup/restore checks and monitoring; the owner provides launch credentials and performs deployment. No measured user/concurrency capacity is claimed from hardware or prior storage examples alone.
 
 ### Account experience
 
-Proposed default: keep **Play as Guest** and add **Sign In**, account name, **Synced / Saving / Offline / Sign-in needed**, last successful sync time, retry and sign-out. Guest play remains local; only signed-in play promises shared progress. Track the gameplay data needed to restore progress, not advertising analytics or device fingerprints.
+Keep **Play as Guest** and add **Sign In**, account name, **Synced / Saving / Offline / Sign-in needed**, last successful sync time, retry and sign-out. Guest play remains local; only signed-in play promises shared progress. Include the limited operational/game analytics defined in IMPLEMENTATION-DECISIONS.md, not advertising analytics or device fingerprints.
 
-Use a maintained authentication service. Email code/link is an initial recommendation, not an accepted choice; social login is another option. Email login requires real delivery configuration and abuse limits. Avoid building password storage, reset and recovery from scratch.
+**Selected:** open email/password registration using Better Auth, with verification, forgot/reset password, delivery configuration and abuse limits. Social login and email-code/magic-link login are deferred. Do not build password storage or recovery cryptography from scratch. Read-only admin privileges are assigned to the owner's verified account id by an operator command; ordinary registration cannot grant them.
 
-For browser login, use a top-level redirect and restore the pending invite after return; test with the game's COOP/COEP headers. Native clients use a system-browser authorization flow with PKCE and a validated return route. A short-lived device-code/QR flow is a useful handheld alternative if the selected provider supports it. Never embed a client secret or service-role database key in Godot, JavaScript or the APK. Provide account recovery and session revocation through the provider.
+For browser login, use same-origin account pages and restore the pending invite after return; test with the game's COOP/COEP headers. Windows/Android use Better Auth's first-party device-code flow with explicit approval in the system browser and bearer session validation by the backend. QR display is optional. No PKCE/app-link/loopback callback is required for this v1 device flow. Never embed a client secret or database service key in Godot, JavaScript or the APK. Implement recovery, session expiration and logout through the library.
 
 Browser sessions should use secure HttpOnly cookies through an auth boundary where practical, with CSRF protection; do not put auth tokens in the existing progress mirror. Native long-lived credentials require platform secure storage (Android Keystore-backed storage and an appropriate Windows credential mechanism). Logout/account switching must separate caches and queued operations by account and offer local session cleanup without erasing guest saves.
 
 ### Data and sync contract
 
-Use a persistent relational database (managed PostgreSQL is a candidate), schema migrations, and a server-side profile API. Proposed records:
+Use self-hosted PostgreSQL, schema migrations, and a server-side profile API. Required records:
 
 - Account subject mapped to an opaque game account id and display name; keep email with the auth provider where possible.
 - Versioned progress: records, discovered parts, earned/legacy unlocks, Zenny and purchased tree nodes. Settings such as controller mapping, graphics and audio stay device-local initially.
 - Server revision, migration marker, and an operation ledger keyed by account and operation id, including completed run receipts and purchases. Keep credentials and lobby passwords out of profile exports.
 
-The API derives the owner from the verified session, validates the profile/operation schema and authorizes every read/write. Client requests cannot choose another account owner or directly overwrite wallet balances. Candidate operations are `GET profile`, `POST run-result`, `POST purchase`, and `POST migrate-guest`; endpoint names remain implementation choices.
+The API derives the owner from the verified session, validates the profile/operation schema and authorizes every read/write. Client requests cannot choose another account owner or directly overwrite wallet balances. Worker A publishes the concrete `/api/v1` contract and fixtures listed in WORKER-BRIEFS.md before dependent integration starts.
 
 1. Login loads the server profile before allowing account spending or starting a new account run. Never upload the local cache over a newer server profile.
 2. Purchases are database transactions that check prerequisites, balance and expected server revision, deduct once and return the new profile. On conflict, reload and ask the player to retry the purchase; do not merge Zenny or use device timestamps to pick a winner.
@@ -79,7 +80,7 @@ Permanent account progress and active co-op checkpoints remain separate. This fe
 
 ### Operations and acceptance
 
-Persist databases across container/image replacement. For self-hosting, add a named volume and an off-PC backup destination; for managed hosting, verify retention and export access. Perform an isolated restore test. Exclude databases, dumps, auth secrets, sessions and personal profiles from Git and build archives. Keep auth failures/token-bearing URLs out of logs and minimize operational log retention; provide profile export/deletion and document backup expiry.
+Persist databases across container/image replacement, with a named volume and encrypted off-PC backups. Perform an isolated restore test including auth identities and admin role. Exclude databases, dumps, auth secrets, sessions and personal profiles from Git and build archives. Record sanitized auth outcome events for the admin statistics, never passwords/tokens/reset URLs. Retention, profile export/deletion and backup expiry are defined in IMPLEMENTATION-DECISIONS.md.
 
 Acceptance: browser -> second browser -> Windows sees the same confirmed progress; purchase/result retries cannot duplicate or lose Zenny; stale/offline clients cannot overwrite newer data; account A cannot read/write B; logout and guest migration cannot mix profiles; token expiry and service outages preserve pending results; database restart/container rebuild and backup restore preserve test accounts. Use disposable accounts and isolated profiles.
 
@@ -108,8 +109,8 @@ Acceptance: real Retroid + browser + Windows share a dig; each can host and surv
 ### Startup update flow
 
 1. On boot, request small HTTPS update metadata with a short timeout. Include latest Android `versionCode`, display version, game protocol, minimum supported online build, APK URL, byte size, SHA-256 and release notes. Keep metadata fresh through CDN revalidation; use immutable versioned APK URLs. Compare integer build numbers, not version strings.
-2. If newer, show **Update available**, changes/size, **Download update** and **Later** when compatible. MVP can open the trusted download page in the system browser; an integrated download/install plugin is a later UX improvement, not required for startup checking.
-3. Download only from the configured HTTPS origin/allowlist. An integrated updater verifies size/hash, package id/version and expected signing identity, then invokes Android's installer with a scoped content URI/appropriate install permissions. A hash from the same server detects corruption, not an independently compromised update server; Android's signing identity is essential.
+2. If newer, show **Update available**, changes/size, **Download update** and **Later** when compatible. **Selected v1:** open the trusted download page in the system browser. An integrated downloader/installer is deferred.
+3. The download page/metadata uses the configured HTTPS origin/allowlist and immutable versioned files, with byte size, SHA-256 and signing fingerprint published. The game does not claim to verify a browser-downloaded APK it has not read. Android verifies signing identity for an in-place update. Any future integrated updater must verify the file itself before invoking the installer; that plugin is outside v1.
 4. Use the same signing key/application id and a higher versionCode for updates. Follow Android's install-from-this-source consent and installer confirmation; do not promise silent replacement. Cancellation, low storage or an interrupted download leave the installed game usable. Never require uninstalling to update, since that can delete local pending data.
 5. An unavailable update service does not stop guest solo play. Enforce incompatible-version requirements at the online service even if metadata is unavailable; block only the incompatible online operation and show the download path. Keep account reads/recovery available where schema compatibility allows.
 6. Do not initiate APK installation during a dig. Preserve sync/outbox state before launching the installer, then refresh the profile after the updated app starts.
@@ -118,19 +119,19 @@ Host the eventual download/metadata on an owner-approved location on the existin
 
 Acceptance: no update, optional update, required online update, metadata outage, corrupt download, wrong signing key, cancelled install, no space, sleep during download and successful in-place upgrade. Verify progress, settings and account access after upgrading on the actual handheld.
 
-## Suggested delivery order and remaining decisions
+## Delivery order and launch inputs
 
 | Step | Deliverable / completion gate |
 |---|---|
-| A | Select hosting and login method; document budget, recovery, offline/concurrent-device policy and exact auth integration. No paid provisioning without an owner decision. |
-| B | Durable schema, auth/profile API, authorization, atomic rewards/purchases, migration and tested backup restore using disposable accounts. |
-| C | Browser/Windows account UI and sync; cross-device acceptance checks. Existing co-op and guest saves remain usable. |
-| D | Android development APK: storage fixes, real Retroid controls, full solo run and mixed-platform co-op. The device prototype can begin before account integration is finished. |
-| E | Android account flow, lifecycle/rejoin, signed upgrade and startup update check; hardware acceptance and packaging/handoffs. |
+| A | Backend/auth/API/schema, atomic rewards/purchases, migration, admin-role bootstrap and tested backup restore; publish the tested contract first. |
+| B | Browser/Windows account UI and sync, guest protection and cross-device acceptance against the real backend. |
+| C | Read-only admin dashboard, event instrumentation, distinct user metrics and retention/deletion checks. |
+| D | Android development APK, writable paths, controls/lifecycle, account integration, mixed-platform co-op and browser-download startup updates. Device prototype can begin before B finishes. |
+| E | Already-requested co-op map sharing, pending cache notifications/choices and chest icons; coordinate shared Godot files with B/D. |
 
-Accounts/sync are the largest engineering and operational part. APK export is a smaller initial task; handheld lifecycle, secure login and reliable updates make the complete Android feature more than an export checkbox. Do not give a fixed schedule before the hosting/login choice and device spike establish the unknowns.
+Accounts/sync are the largest engineering and operational part. APK export is a smaller initial task; handheld lifecycle, secure login and reliable updates make the complete Android feature more than an export checkbox. Do not give a fixed schedule before the backend/device spikes establish the remaining runtime unknowns.
 
-Still open: managed versus self-hosted services and budget; email/social login and recovery; acceptance of online-required account starts/purchases with separate offline guest play; whether active-dig transfer beyond live-lobby rejoin is needed; browser-download versus integrated APK installer for the first version. The defaults above are proposals, not user-approved implementation details.
+All blocking product questions were answered by the user on 2026-10-14; see IMPLEMENTATION-DECISIONS.md. Workers can begin their assigned packages. SMTP credentials, owner account id/MFA, backup destination, server secrets, Android release signing key and access to real Retroid hardware are later launch inputs, not unselected product options. Keep them outside Git; do not claim real deployment/hardware checks happened during planning.
 
 After gameplay implementation, refresh the shipped Windows pack/portable ZIP and web ZIP with the existing tools, add Android packaging verification, and keep build notices and handoffs aligned. This documentation-only change requires document/link checks, not regenerated builds or a full gameplay suite. The owner performs deployment.
 
@@ -142,3 +143,4 @@ Reviewed 2026-10-14; recheck version-specific instructions during implementation
 - [Android app signing and updates](https://developer.android.com/studio/publish/app-signing), [website/sideload distribution](https://developer.android.com/distribute/marketing-tools/alternative-distribution), and [PackageInstaller](https://developer.android.com/reference/android/content/pm/PackageInstaller).
 - [RFC 8252: native-app OAuth](https://www.rfc-editor.org/rfc/rfc8252) and [RFC 8628: device authorization](https://www.rfc-editor.org/rfc/rfc8628).
 - [Supabase pricing](https://supabase.com/pricing) and [production checklist](https://supabase.com/docs/guides/deployment/going-into-prod), as one candidate rather than a selected provider.
+- [Better Auth installation](https://better-auth.com/docs/installation), [PostgreSQL](https://better-auth.com/docs/adapters/postgresql) and [device authorization](https://better-auth.com/docs/plugins/device-authorization), the selected self-hosted integration direction; prove runtime compatibility during worker A's spike.
