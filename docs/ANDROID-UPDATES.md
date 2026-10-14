@@ -5,6 +5,10 @@ sessions and startup update checks. It keeps app id `dev.galosengen.relicdiver`,
 game protocol 7, checkpoint 3 and profile 2. Guest solo remains available offline.
 Current APKs are development/test-signed and have not been published.
 
+Owner decision (2026-10-14): test this browser download flow on the Retroid first.
+An in-game download/progress-bar/installer flow is deferred polish, not current
+scope. Its implementation could reuse the metadata, hosting and packaging here.
+
 ## Local builds and tests
 
 `tools/package-android.ps1` builds ARM64; `-Emulator` builds x86_64. Use the same

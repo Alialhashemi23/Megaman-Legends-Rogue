@@ -2,6 +2,8 @@
 
 Current state of the project for a new session. Updated 2026-10-14. Game direction is in [DESIGN.md](DESIGN.md); what's next is in [docs/handoff/ROADMAP.md](docs/handoff/ROADMAP.md); build history is in [CHANGELOG.md](CHANGELOG.md).
 
+**Current continuation brief:** [docs/handoff/CLAUDE-NEXT.md](docs/handoff/CLAUDE-NEXT.md) records the exact merged/live split, completed validation, operational traps and the owner's latest decision to test the browser updater before considering an in-game progress bar.
+
 ## Status
 
 - **Roadmap phase 1 (co-op map sharing, waiting part picks, cache icons)** is merged and deployed (CHANGELOG 17).
