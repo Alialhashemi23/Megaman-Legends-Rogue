@@ -1,4 +1,14 @@
-# Next features: original brief (implemented in pass 16)
+# Next features
+
+## Pending co-op improvements — group play feedback
+
+1. **Shared minimap clearing.** Share explored/revealed rooms and cleared-room map state across the party, so each player's minimap reflects the team's exploration and clears.
+2. **Cache upgrade notification before selection.** When a teammate opens a cache, show a popup indicating an upgrade choice is available instead of immediately opening the selection screen. Let each player press a button (for example, Select) to open their pending choice when ready. The exact binding is still to be decided.
+3. **Open — awaiting the next feature.**
+
+These are recorded requests, not implemented changes.
+
+## Original brief (implemented in pass 16)
 
 **Status:** implemented on `codex/next-features-volnutt`; see [FEATURE-REPORT.md](../FEATURE-REPORT.md). The brief below is retained for rationale. The current user requested branch review and later merge, so its deployment instructions do not apply to this pass. Difficulty tuning awaits human feedback.
 
