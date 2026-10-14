@@ -9,7 +9,7 @@ The single source of truth for the next features. It replaces the earlier NEXT-F
 | 1 | [Co-op map and cache polish](#phase-1--co-op-map-and-cache-polish) | Done on `feature/coop-map-sharing` (protocol 7); awaiting merge and a group playtest | — |
 | 2 | [Android development APK (guest + cross-play)](#phase-2--android-development-apk) | Build, saves, update-in-place, online connect and reconnect verified on the emulator; Retroid hardware and credits page outstanding. See [ANDROID.md](ANDROID.md) | — |
 | 3 | [Backend: auth, profile API, deployment](#phase-3--backend-auth-profile-api-and-deployment) | Done (server only, off by default). Contract: [ACCOUNT-API.md](../ACCOUNT-API.md); operations: [ACCOUNTS-OPS.md](../ACCOUNTS-OPS.md). Admin MFA and the phase 6 event hooks are outstanding | — |
-| 4 | [Game account sync (browser, Windows)](#phase-4--game-account-sync) | Implemented locally on `feature/account-sync`; not pushed/deployed. Storage and checks: [ACCOUNT-SYNC.md](ACCOUNT-SYNC.md) | 3 |
+| 4 | [Game account sync (browser, Windows)](#phase-4--game-account-sync) | Implemented on `feature/account-sync` (`084d6a6`), pushed and deployed to the local server; awaiting merge. Live accounts backend still unconfigured. Storage/checks: [ACCOUNT-SYNC.md](ACCOUNT-SYNC.md) | 3 |
 | 5 | [Android accounts and startup updates](#phase-5--android-accounts-and-startup-updates) | Not started | 2, 3, 4 |
 | 6 | [Read-only owner dashboard](#phase-6--read-only-owner-dashboard) | Not started | 3 (+ activity signals from 4/5) |
 | — | [Launch](#launch-owner-supplied-inputs) | Owner-run | Inputs below |

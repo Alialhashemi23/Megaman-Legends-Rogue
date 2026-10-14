@@ -1,7 +1,11 @@
 # Game account sync (phase 4)
 
-Implemented locally on `feature/account-sync`; not pushed or deployed. The v1
-server contract is unchanged, and accounts remain off unless configured.
+Implemented on `feature/account-sync` (`084d6a6`), pushed and deployed with the
+user's authorization on 2026-10-14. Godot exports and Docker builds ran locally
+on the Windows PC. Public health, exact pack SHA256, isolation headers and the
+WebSocket hello passed at https://megaman.galosengen.dev. Cloudflare only tunnels
+traffic to the local server. The live database, auth secrets and mail are not
+configured, so accounts remain off. The v1 server contract is unchanged.
 Browser and Windows are in scope; Android sign-in remains phase 5.
 
 ## Ownership and storage
