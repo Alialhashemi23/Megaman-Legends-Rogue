@@ -40,6 +40,8 @@ Done on the user's Windows PC (`D:\code repos\Megaman-Legends-Rogue`, branch `on
 
 ## Next work: agreed with the user, not started
 
+**The full brief, with code locations, open questions and defaults, is in `docs/handoff/NEXT-FEATURES.md`. Read that before starting.** Summary:
+
 The user agreed to all of the following on 2026-10-13 ("the asks I all agree to"). Build them one at a time, in this order.
 
 1. **Individual attacks per character.** Mega keeps the Pulse Buster as the all-rounder. Roll gets the Needle Buster's rapid fire plus a support ability (faster revives or a repair drone). Tron gets the heavy Siege shots or commands a few Servbots that fight beside her. The Servbot is small and fast with low Life and throws bombs in an arc; give it a smaller collision capsule and a lower camera at the same time. Still to settle with the user: one fixed weapon per character, or a small set to unlock.

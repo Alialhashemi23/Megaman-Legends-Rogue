@@ -4,6 +4,7 @@ This folder preserves the project's intent and implementation context for a fres
 
 | File | Read when |
 |---|---|
+| [NEXT-FEATURES.md](NEXT-FEATURES.md) | **Starting the next work.** The user-agreed brief for individual character attacks, skill trees and zenny, saving, and smaller follow-ups |
 | [TECHNICAL.md](TECHNICAL.md) | Changing game systems, running checks, rebuilding or setting up another PC |
 | [ART-ANIMATION.md](ART-ANIMATION.md) | Editing models, textures, movement, aiming or portraits |
 | [AUDIO-UI.md](AUDIO-UI.md) | Editing sound, music, menus, icons or typography |
@@ -11,7 +12,7 @@ This folder preserves the project's intent and implementation context for a fres
 | [REPOSITORY.md](REPOSITORY.md) | Understanding tracked files, packaging, credits and Git workflow |
 | [NETWORK.md](NETWORK.md) | Changing online co-op, the web build, the lobby server or deployment |
 
-Pass 09, online co-op in the browser, is finished (see NETWORK.md and ../ONLINE.md). Pass 07, the Legends-inspired motion refinement, is also finished. No implementation from the previous conversation is pending. Do not redo completed work, dump whole folders, or repeatedly run every suite just to establish context. Inspect the files needed for the next request and keep the user informed in concise updates.
+Pass 12 (live deployment, bigger varied ruins, to-scale map, difficulty, Tron and Servbot, loading screen) is finished and merged to `main`. The next work is specified in NEXT-FEATURES.md and has not been started. Pass 09, online co-op in the browser, is finished (see NETWORK.md and ../ONLINE.md). Pass 07, the Legends-inspired motion refinement, is also finished. Do not redo completed work, dump whole folders, or repeatedly run every suite just to establish context. Inspect the files needed for the next request and keep the user informed in concise updates.
 
 Suggested fresh-instance prompt:
 
