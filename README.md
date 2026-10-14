@@ -35,7 +35,7 @@ Gameplay actions can be rebound in **Options → Controls & bindings** (sticks, 
 | Jump | Space | A |
 | Dash (brief invulnerability) | Left Shift | B |
 | Open a cache, salvage, use a well or lift | E | X |
-| Buster parts and stats (pauses solo) | Tab | View |
+| Buster parts and stats (pauses solo); opens a waiting part pick first | Tab | Select / View |
 | Pause / menu | Escape | Start |
 | Pick an upgrade on a choice screen | 1, 2, 3 | D-pad / stick + A |
 | Ping (online) | G or middle mouse | LB |
@@ -122,7 +122,7 @@ Saves from earlier builds keep every unlock they had already earned.
 
 Up to four diggers in the browser or the Windows build. **Play Online** creates a public or private lobby, lists open lobbies or joins by code; **Copy Invite Link** opens the game straight into your lobby, and friends can join a dig already underway.
 
-The run is shared (same ruins and robots, shared scrap and experience) while builds are personal: every cache and guardian core gives each digger their own pick. Robots scale with party size. A digger at 0 Life goes down until a teammate stands beside them; the dig ends only when everyone is down, and the lift waits for the team. Online menus don't pause. Refreshes, crashes, dropped connections and a leaving host don't end the dig. Hosts can remove players, lock the lobby or set a password.
+The run is shared (same ruins and robots, shared scrap and experience) while builds are personal: every cache and guardian core gives each digger their own pick. When a teammate opens a cache, your pick waits until you press **Tab / Select**, and online you can put a pick aside to finish a fight. Everyone shares one map, which also marks part caches. Robots scale with party size. A digger at 0 Life goes down until a teammate stands beside them; the dig ends only when everyone is down, and the lift waits for the team. Online menus don't pause. Refreshes, crashes, dropped connections and a leaving host don't end the dig. Hosts can remove players, lock the lobby or set a password.
 
 Hosting it on your own domain (Docker Compose + Cloudflare Tunnel, or **Host-Online.cmd**) and the full rules are in [docs/ONLINE.md](docs/ONLINE.md).
 

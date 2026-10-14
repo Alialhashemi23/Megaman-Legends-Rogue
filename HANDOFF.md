@@ -4,9 +4,10 @@ Current state of the project for a new session. Updated 2026-10-14. Game directi
 
 ## Status
 
+- **Roadmap phase 1 (co-op map sharing, waiting part picks, cache icons)** is done on `feature/coop-map-sharing`; see CHANGELOG 17.
 - **Shipped (through pass 16):** a complete three-descent roguelike loop; four playable diggers (Mega, Roll, Tron, Servbot) with signature attacks; Zenny and per-digger Workshop skill trees; versioned local progress with save codes; browser play and online co-op for up to four with host migration, reconnects and checkpoints; controller support, Options and rebinding; bigger varied ruins and a to-scale map. Details: [docs/FEATURE-REPORT.md](docs/FEATURE-REPORT.md).
-- **Compatibility numbers:** game protocol `NET_VERSION` 6 (`scripts/net.gd`), `CHECKPOINT_VERSION` 3 (`scripts/game.gd`), profile `VERSION` 2 (`scripts/progression.gd`). All co-op players must run the same protocol.
-- **Next:** the six-phase roadmap (co-op map/cache polish, Android APK, accounts backend, account sync, Android accounts/updates, owner dashboard). All product choices are made; none of it is implemented yet.
+- **Compatibility numbers:** game protocol `NET_VERSION` 7 (`scripts/net.gd`), `CHECKPOINT_VERSION` 3 (`scripts/game.gd`), profile `VERSION` 2 (`scripts/progression.gd`). All co-op players must run the same protocol.
+- **Next:** the rest of the roadmap (Android APK, accounts backend, account sync, Android accounts/updates, owner dashboard). All product choices are made; none of it is implemented yet.
 - **Still needed from humans:** a real playtest of balance (difficulty is the first-pass tuning from CHANGELOG entry 14, the Workshop numbers are provisional, co-op party scaling is a first guess) and a browser start-to-finish run of the newest content.
 
 ## User intent and constraints
@@ -22,7 +23,7 @@ A non-profit Mega Man Legends fan roguelike: colorful ancient machinery, mysteri
 ## Location and launch
 
 - Repository: `D:\code repos\Megaman-Legends-Rogue` on the user's Windows PC. Shell: PowerShell (Git Bash available).
-- Engine: Godot 4.7.1, `tools/Godot_v4.7.1-stable_win64_console.exe` (GUI editor alongside; both ignored by Git and restored from `build/RelicDiver-Windows.zip` by `tools/setup-runtime.ps1`). Web export templates are installed under `%APPDATA%\Godot\export_templates\4.7.1.stable`. No Android templates, JDK or SDK yet.
+- Engine: Godot 4.7.1, `tools/Godot_v4.7.1-stable_win64_console.exe` (GUI editor alongside; both ignored by Git and restored from `build/RelicDiver-Windows.zip` by `tools/setup-runtime.ps1`). Web export templates are installed under `%APPDATA%\Godot\export_templates\4.7.1.stable`. If a script reports an undeclared `Diver*` class, the local `.godot` class cache is stale: run the `--headless --editor --import` step in TECHNICAL.md. No Android templates, JDK or SDK yet.
 - `Play.cmd` runs the source project; `Edit.cmd` opens the editor. Portable build: `build/RelicDiver.exe` + `RelicDiver.pck`.
 - For tool and test runs set `APPDATA` and `LOCALAPPDATA` to the workspace's `tools/runtime`. Python with NumPy is needed only for the character converter; FFmpeg only for videos.
 - Node 22 and Docker are installed. Commands and suites: [docs/handoff/TECHNICAL.md](docs/handoff/TECHNICAL.md).

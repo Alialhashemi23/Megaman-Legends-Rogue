@@ -23,7 +23,7 @@ const ACTIONS = [
 	{"id": "lock_on", "name": "Lock on", "kb": {"key": KEY_Q}, "pad": {"axis": JOY_AXIS_TRIGGER_LEFT, "sign": 1}},
 	{"id": "interact", "name": "Salvage / use", "kb": {"key": KEY_E}, "pad": {"button": JOY_BUTTON_X}},
 	{"id": "ping", "name": "Ping (online)", "kb": {"key": KEY_G}, "pad": {"button": JOY_BUTTON_LEFT_SHOULDER}},
-	{"id": "parts", "name": "Buster parts", "kb": {"key": KEY_TAB}, "pad": {"button": JOY_BUTTON_BACK}},
+	{"id": "parts", "name": "Parts / part choice", "kb": {"key": KEY_TAB}, "pad": {"button": JOY_BUTTON_BACK}},
 	{"id": "menu", "name": "Menu", "kb": {"key": KEY_ESCAPE}, "pad": {"button": JOY_BUTTON_START}},
 	{"id": "chat", "name": "Chat (online)", "kb": {"key": KEY_T}, "pad": {}},
 	{"id": "callout_1", "name": "Callout: Help!", "kb": {"key": KEY_1}, "pad": {"button": JOY_BUTTON_DPAD_UP}},

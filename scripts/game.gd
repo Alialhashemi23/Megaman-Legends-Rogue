@@ -101,6 +101,12 @@ var peers: Dictionary = {}
 var party_size = 1
 var pickup_seq = 0
 var choice_queue: Array = []
+# Part picks from caches a teammate opened, waiting until this digger is ready:
+# {depth, cache, items}. Items are rolled when first opened so backing out
+# and reopening can't reroll them. `choice_source` is the open pick's entry.
+var pending_choices: Array = []
+var choice_source: Dictionary = {}
+const MAX_PENDING = 24
 var net_clock = 0.0
 var end_reason = ""
 var net_test = ""
@@ -266,6 +272,8 @@ func start_run(seed_value: int = 0, party: int = 1, id: String = "") -> void:
 	total_damage = 0
 	queue_level = false
 	choice_queue.clear()
+	pending_choices.clear()
+	choice_source = {}
 	end_reason = ""
 	pickup_seq = 0
 	new_unlocks.clear()
@@ -478,12 +486,17 @@ func game_action(id: String) -> bool:
 		"lock_on":
 			if mode == "play": player.toggle_lock(); return true
 		"parts":
+			# The same button opens a waiting part pick first, otherwise the parts list.
 			if mode == "play":
+				if open_pending_choice(): return true
 				mode = "inventory"
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 				return true
 			if mode == "inventory":
 				resume_game()
+				return true
+			if mode == "choice" and can_defer_choice():
+				defer_choice()
 				return true
 		"mute":
 			sound.muted = not sound.muted
@@ -590,8 +603,12 @@ func update_world(dt: float) -> void:
 	var here = room_index_at(player.position)
 	if here >= 0 and current_room != here:
 		current_room = here
+		# The whole party shares the map; the banner is for whoever walks in.
 		if not rooms[here].visited:
 			rooms[here].visited = true
+			net.broadcast([DiverNet.M_VISITED, depth, here])
+		if not rooms[here].entered:
+			rooms[here].entered = true
 			# Passages are quiet; chambers announce themselves.
 			if rooms[here].kind != "hall":
 				var hint = {5: "Climb the blocks to reach the hidden cache.", 6: "Take the ramps for the high ground.", 7: "A vast hall. Many machines are waking."}.get(int(rooms[here].layout), "Chamber %02d · Ancient machines are waking." % (here + 1))
@@ -696,9 +713,13 @@ func perform_interact(obj: Dictionary, who: DiverPlayer) -> void:
 	net.broadcast([DiverNet.M_USED, depth, interactables.find(obj)])
 	match obj.kind:
 		"cache":
-			# Online, every digger gets their own pick from the cache.
-			net.broadcast([DiverNet.M_CHOICE])
-			open_relic_choice()
+			# Online, every digger gets their own pick from the cache. The opener
+			# chooses now; teammates are told and choose when they're ready.
+			var cache = interactables.find(obj)
+			var opener = net.slot if who == player else who.slot
+			net.broadcast([DiverNet.M_CHOICE, depth, cache, opener])
+			if who == player: open_relic_choice({"depth": depth, "cache": cache, "items": []})
+			else: add_pending_choice(cache)
 		"spring":
 			net.broadcast([DiverNet.M_RESTORE, 0.45])
 			restore_life(0.45)
@@ -741,17 +762,23 @@ func pool() -> Array:
 		if item_unlocked(id): result.append(id)
 	return result
 
-func open_relic_choice() -> void:
+func open_relic_choice(source: Dictionary = {}) -> void:
 	if mode == "choice":
-		choice_queue.append("relic")
+		if source.is_empty(): choice_queue.append("relic")
+		else: pending_choices.push_front(source)
 		return
 	choice_kind = "relic"
+	choice_source = source
 	choice_items.clear()
-	var options = pool()
-	for n in 3:
-		var idx = rng.randi_range(0, options.size() - 1)
-		choice_items.append(options[idx])
-		options.remove_at(idx)
+	if (source.get("items", []) as Array).size() == 3:
+		choice_items = (source.items as Array).duplicate()
+	else:
+		var options = pool()
+		for n in 3:
+			var idx = rng.randi_range(0, options.size() - 1)
+			choice_items.append(options[idx])
+			options.remove_at(idx)
+		if not source.is_empty(): source.items = choice_items.duplicate()
 	mode = "choice"
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	sound.play("loot")
@@ -768,9 +795,61 @@ func open_level_choice() -> void:
 	checkpoint_dirty = true
 	sound.play("level")
 
+# A teammate opened a cache: this digger's pick waits until they open it.
+func add_pending_choice(cache: int) -> void:
+	if pending_choices.size() >= MAX_PENDING: return
+	pending_choices.append({"depth": depth, "cache": cache, "items": []})
+	notify("PART CHOICE WAITING", "A teammate opened a cache. Press %s to pick your part." % settings.prompt("parts"))
+	sound.play("loot")
+	build_changed()
+
+func open_pending_choice() -> bool:
+	if pending_choices.is_empty() or mode != "play": return false
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	open_relic_choice(pending_choices.pop_front())
+	build_changed()
+	return true
+
+# Online the dig keeps going behind menus, so a cache pick can be put back
+# for later (the same three parts stay on offer).
+func can_defer_choice() -> bool:
+	return mode == "choice" and choice_kind == "relic" and net.active()
+
+func defer_choice() -> void:
+	if not can_defer_choice(): return
+	var entry = choice_source.duplicate()
+	entry.merge({"depth": depth, "cache": -1}, false)
+	entry.items = choice_items.duplicate()
+	pending_choices.push_front(entry)
+	choice_source = {}
+	build_changed()
+	resume_game()
+
+# Whether this digger still has a pick waiting from a given cache on this floor.
+func choice_waiting(cache: int) -> bool:
+	if mode == "choice" and int(choice_source.get("depth", 0)) == depth and int(choice_source.get("cache", -1)) == cache: return true
+	for entry in pending_choices:
+		if int(entry.depth) == depth and int(entry.cache) == cache: return true
+	return false
+
+# Checkpoint/roster data comes from other machines: keep only well-formed picks.
+func clean_pending(value: Variant) -> Array:
+	var result = []
+	if not value is Array: return result
+	for entry in value:
+		if result.size() >= MAX_PENDING: break
+		if not entry is Dictionary: continue
+		var items = []
+		if entry.get("items") is Array and (entry.items as Array).size() == 3:
+			for id in entry.items:
+				if id is String and ITEMS.has(id): items.append(id)
+		result.append({"depth": clampi(int(entry.get("depth", 1)), 1, 3), "cache": int(entry.get("cache", -1)), "items": items if items.size() == 3 else []})
+	return result
+
 func choose(index: int) -> void:
 	if index < 0 or index >= choice_items.size() or mode != "choice": return
 	if choice_kind == "relic":
+		choice_source = {}
 		player.add_item(choice_items[index])
 	else:
 		match choice_items[index]:
@@ -902,6 +981,8 @@ func finish_run(won: bool) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	sound.play("win" if won else "hurt")
 	choice_queue.clear()
+	pending_choices.clear()
+	choice_source = {}
 	chat_open = false
 	clear_checkpoint()
 	if net.is_host(): net.report_status("lobby", depth)
@@ -1257,7 +1338,7 @@ func build_state() -> Dictionary:
 	var p = player
 	var queue = choice_queue.duplicate()
 	if queue_level: queue.append("level")
-	return {"id": net.player_id, "name": net.player_name, "character": p.character, "weapon": p.weapon, "skills": p.skills.duplicate(), "shot_count": p.shot_count, "repair_cooldown": p.repair_cooldown, "items": p.items.duplicate(), "level": p.level, "xp": p.xp, "xp_required": p.xp_required, "base_health": p.base_health, "base_damage": p.base_damage, "fire_multiplier": p.fire_multiplier, "hp": p.hp, "downed": p.downed, "choice": {"kind": choice_kind, "items": choice_items.duplicate()} if mode == "choice" else {}, "queue": queue}
+	return {"id": net.player_id, "name": net.player_name, "character": p.character, "weapon": p.weapon, "skills": p.skills.duplicate(), "shot_count": p.shot_count, "repair_cooldown": p.repair_cooldown, "items": p.items.duplicate(), "level": p.level, "xp": p.xp, "xp_required": p.xp_required, "base_health": p.base_health, "base_damage": p.base_damage, "fire_multiplier": p.fire_multiplier, "hp": p.hp, "downed": p.downed, "choice": {"kind": choice_kind, "items": choice_items.duplicate(), "depth": int(choice_source.get("depth", depth)), "cache": int(choice_source.get("cache", -1)), "sourced": not choice_source.is_empty()} if mode == "choice" else {}, "queue": queue, "pending": pending_choices.duplicate(true)}
 
 func apply_build(b: Dictionary) -> void:
 	var p = player
@@ -1279,10 +1360,14 @@ func apply_build(b: Dictionary) -> void:
 	if p.downed: p.hp = 0
 	p.visual.current_clip = ""
 	choice_queue = (b.get("queue", []) as Array).duplicate() if b.get("queue") is Array else []
+	pending_choices = clean_pending(b.get("pending", []))
+	choice_source = {}
 	var choice = b.get("choice", {})
 	if choice is Dictionary and choice.get("items") is Array and (choice.items as Array).size() == 3:
 		choice_kind = str(choice.kind)
 		choice_items = (choice.items as Array).duplicate()
+		if choice_kind == "relic" and bool(choice.get("sourced", false)):
+			choice_source = {"depth": clampi(int(choice.get("depth", depth)), 1, 3), "cache": int(choice.get("cache", -1)), "items": choice_items.duplicate()}
 		mode = "choice"
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	elif not choice_queue.is_empty():
@@ -1315,7 +1400,10 @@ func apply_world_state(w: Dictionary, keep_player: bool) -> void:
 	queue_level = false
 	new_unlocks.clear()
 	end_reason = ""
-	if not keep_player: choice_queue.clear()
+	if not keep_player:
+		choice_queue.clear()
+		pending_choices.clear()
+		choice_source = {}
 	rng.seed = int(w.get("floor_seed", run_seed))
 	build_floor(keep_player and is_instance_valid(player), false)
 	scrap = int(w.get("scrap", 0))
@@ -1779,7 +1867,7 @@ const SHAPES = {
 	DiverNet.M_HEAL: [NUM],
 	DiverNet.M_ITEM: [TYPE_STRING],
 	DiverNet.M_XP: [NUM],
-	DiverNet.M_CHOICE: [],
+	DiverNet.M_CHOICE: [NUM, NUM, NUM],
 	DiverNet.M_NOTIFY: [TYPE_STRING, TYPE_STRING],
 	DiverNet.M_FLOOR: [NUM, NUM],
 	DiverNet.M_END: [TYPE_BOOL],
@@ -1789,9 +1877,10 @@ const SHAPES = {
 	DiverNet.M_RESTORE: [NUM],
 	DiverNet.M_CHAT: [TYPE_STRING, TYPE_BOOL],
 	DiverNet.M_PING: [NUM, TYPE_VECTOR3, TYPE_STRING],
+	DiverNet.M_VISITED: [NUM, NUM],
 }
 # Messages tied to the current floor carry its descent number first.
-const FLOOR_MESSAGES = [DiverNet.M_STATE, DiverNet.M_SHOT, DiverNet.M_SNAP, DiverNet.M_ATTACK, DiverNet.M_RESOLVE, DiverNet.M_DAMAGE, DiverNet.M_DIE, DiverNet.M_PICKUP, DiverNet.M_PICKUP_GONE, DiverNet.M_USED, DiverNet.M_HIT, DiverNet.M_INTERACT, DiverNet.M_FROST, DiverNet.M_LIGHTNING, DiverNet.M_CLEARED, DiverNet.M_PING]
+const FLOOR_MESSAGES = [DiverNet.M_STATE, DiverNet.M_SHOT, DiverNet.M_SNAP, DiverNet.M_ATTACK, DiverNet.M_RESOLVE, DiverNet.M_DAMAGE, DiverNet.M_DIE, DiverNet.M_PICKUP, DiverNet.M_PICKUP_GONE, DiverNet.M_USED, DiverNet.M_HIT, DiverNet.M_INTERACT, DiverNet.M_FROST, DiverNet.M_LIGHTNING, DiverNet.M_CLEARED, DiverNet.M_PING, DiverNet.M_CHOICE, DiverNet.M_VISITED]
 
 func well_formed(m: Array) -> bool:
 	if typeof(m[0]) != TYPE_INT or not SHAPES.has(m[0]): return false
@@ -1897,11 +1986,15 @@ func net_message(from_slot: int, m: Array) -> void:
 		DiverNet.M_RESTORE:
 			if from_host and in_run(): restore_life(float(m[1]))
 		DiverNet.M_CHOICE:
-			if from_host and in_run(): open_relic_choice()
+			if from_host and in_run():
+				if int(m[3]) == net.slot: open_relic_choice({"depth": depth, "cache": int(m[2]), "items": []})
+				else: add_pending_choice(int(m[2]))
 		DiverNet.M_NOTIFY:
 			if from_host and in_run(): notify(m[1].left(60), m[2].left(160))
 		DiverNet.M_USED:
 			if from_host and int(m[2]) >= 0 and int(m[2]) < interactables.size(): use_interactable(interactables[int(m[2])])
+		DiverNet.M_VISITED:
+			if int(m[2]) >= 0 and int(m[2]) < rooms.size(): rooms[int(m[2])].visited = true
 		DiverNet.M_CLEARED:
 			if from_host and int(m[2]) >= 0 and int(m[2]) < rooms.size() and not rooms[int(m[2])].cleared:
 				rooms[int(m[2])].cleared = true

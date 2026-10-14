@@ -170,7 +170,11 @@ func guest_step() -> void:
 			if wait(game.enemy_by_id(0) == null and not game.pickups.is_empty(), "host kill and drops replicated"):
 				print("CHECK guest saw kill, pickups=%d" % game.pickups.size())
 		5:
-			if wait(game.mode == "choice" and game.choice_kind == "relic", "cache choice offered to guest"):
+			# The host's cache leaves the guest a waiting pick instead of opening it.
+			if wait(not game.pending_choices.is_empty(), "cache choice waiting for guest"):
+				if game.mode != "play": fail("a teammate's cache should not open the choice screen")
+				game.game_action("parts")
+				if game.mode != "choice" or game.choice_kind != "relic": fail("parts button should open the waiting choice")
 				game.choose(0)
 				if game.player.items.is_empty(): fail("choice should fit a part")
 		6:

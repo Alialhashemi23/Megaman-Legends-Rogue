@@ -109,7 +109,7 @@ func add_room(cells: Array, kind: String) -> int:
 	var first = game.rooms.is_empty()
 	game.rooms.append({"cell": cells[0], "cells": cells, "center": Vector3(middle.x, 0, middle.y), "half": half, "kind": kind, "type": kind,
 		"layout": GRAND if kind == "grand" else HALL if kind == "hall" else 0, "height": 4.8 if kind == "hall" else 8.0 if kind == "grand" else 6.4,
-		"visited": first, "cleared": first or kind == "hall", "distance": 999, "dead_end": false,
+		"visited": first, "entered": first, "cleared": first or kind == "hall", "distance": 999, "dead_end": false,
 		"cache_at": null, "well_at": null, "bonus_at": null, "pots": []})
 	return game.rooms.size() - 1
 

@@ -6,7 +6,7 @@ The single source of truth for the next features. It replaces the earlier NEXT-F
 
 | # | Phase | Status | Depends on |
 |---|---|---|---|
-| 1 | [Co-op map and cache polish](#phase-1--co-op-map-and-cache-polish) | Not started | — |
+| 1 | [Co-op map and cache polish](#phase-1--co-op-map-and-cache-polish) | Done on `feature/coop-map-sharing` (protocol 7); awaiting merge and a group playtest | — |
 | 2 | [Android development APK (guest + cross-play)](#phase-2--android-development-apk) | Not started | — (needs JDK + Android SDK on the build PC) |
 | 3 | [Backend: auth, profile API, deployment](#phase-3--backend-auth-profile-api-and-deployment) | Not started | — |
 | 4 | [Game account sync (browser, Windows)](#phase-4--game-account-sync) | Not started | 3 |

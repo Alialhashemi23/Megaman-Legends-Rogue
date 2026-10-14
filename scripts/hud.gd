@@ -321,6 +321,9 @@ func back() -> bool:
         "inventory", "pause": activate("resume")
         "options": activate(options_return)
         "controls": activate("options")
+        "choice":
+            if not game.can_defer_choice(): return false
+            game.defer_choice()
         _: return false
     return true
 
@@ -683,7 +686,9 @@ func draw_hud() -> void:
     text_at(Vector2(114, 805), "POWER %d  /  RAPID %.1f" % [buster_power(), 1 / p.fire_delay()], 21, MUTED)
     pips(Vector2(48, 824), 270, 6, float(p.xp) / p.xp_required, 20, YELLOW)
     keycap(Vector2(30, 856), p("parts"), 54)
-    text_at(Vector2(99, 879), "Buster Parts", 21)
+    var waiting = game.pending_choices.size()
+    if waiting > 0: text_at(Vector2(99, 879), "Choose Part ×%d" % waiting if waiting > 1 else "Choose Part", 21, YELLOW if int(Time.get_ticks_msec() / 400) % 2 == 0 else WHITE)
+    else: text_at(Vector2(99, 879), "Buster Parts", 21)
     var n = 0
     for id in p.items:
         var x = 382 + n * 53
@@ -720,8 +725,8 @@ func draw_hud() -> void:
 
 func draw_notice() -> void:
     window(Vector2(402, 630), Vector2(636, 98), Color(0.06, 0.16, 0.39, 0.96))
-    icon(Vector2(419, 647), "record", 48)
-    var title: String = {"CHAMBER SECURED": "Room Cleared!", "GUARDIAN SILENCED": "Guardian Defeated!", "BUSTER CALIBRATED": "Power Increased!", "CORE EXPANDED": "Life Increased!", "CAPACITOR TUNED": "Rapid Fire Increased!", "SYSTEMS RESTORED": "Life Restored!", "INSUFFICIENT SCRAP": "Not Enough Scrap", "CACHE SEALED": "Cache Sealed", "LIFT SEALED": "Lift Sealed"}.get(game.message, game.message)
+    icon(Vector2(419, 647), "cache" if game.message == "PART CHOICE WAITING" else "record", 48)
+    var title: String = {"CHAMBER SECURED": "Room Cleared!", "GUARDIAN SILENCED": "Guardian Defeated!", "BUSTER CALIBRATED": "Power Increased!", "CORE EXPANDED": "Life Increased!", "CAPACITOR TUNED": "Rapid Fire Increased!", "SYSTEMS RESTORED": "Life Restored!", "INSUFFICIENT SCRAP": "Not Enough Scrap", "CACHE SEALED": "Cache Sealed", "LIFT SEALED": "Lift Sealed", "PART CHOICE WAITING": "Part Choice Waiting!"}.get(game.message, game.message)
     var detail: String = game.message_detail
     if game.message.begins_with("DESCENT"): title = "Entering B%d" % game.depth
     if game.message == "CHAMBER SECURED": detail = "+5 Scrap. Part caches are now available."
@@ -780,6 +785,19 @@ func map_at(pos: Vector2, side: float) -> void:
         rect(corner + Vector2.ONE, (size - Vector2.ONE * 2).max(Vector2.ZERO), Color("3f7fc4") if i == game.current_room else Color("668daf") if room.cleared and room.visited else Color("224779") if room.visited else INK)
         if i == game.exit_room and bounds.has_point(origin + Vector2(room.center.x, room.center.z) * zoom): draw_circle(origin + Vector2(room.center.x, room.center.z) * zoom, 2.5, YELLOW)
     var inside = Rect2(pos + Vector2.ONE * 4, Vector2.ONE * (side - 8))
+    # Part caches in revealed rooms: grey while the room is sealed, gold when
+    # ready, flashing cyan while this digger's pick from it waits, dim once opened.
+    for i in game.interactables.size():
+        var obj: Dictionary = game.interactables[i]
+        if obj.kind != "cache" or not game.rooms[obj.room].visited: continue
+        var at = origin + Vector2(obj.node.position.x, obj.node.position.z) * zoom
+        if not bounds.has_point(at): continue
+        var color = MUTED if not game.rooms[obj.room].cleared else YELLOW
+        if game.choice_waiting(i): color = CYAN if int(Time.get_ticks_msec() / 300) % 2 == 0 else WHITE
+        elif obj.used: color = Color("4d6690")
+        rect(at - Vector2(5, 4), Vector2(10, 8), INK)
+        rect(at - Vector2(4, 3), Vector2(8, 6), color)
+        rect(at - Vector2(4, 0.5), Vector2(8, 1), INK)
     for mate in game.remote_players.values():
         if not is_instance_valid(mate): continue
         var at = (origin + Vector2(mate.global_position.x, mate.global_position.z) * zoom).clamp(inside.position, inside.end)
@@ -1046,11 +1064,24 @@ func draw_choice() -> void:
     text_at(Vector2(800, 682), "Fitted ×%d  →  ×%d" % [game.player.count(selected_id), game.player.count(selected_id) + 1] if relic else "Upgrade lasts for this dig", 25, YELLOW)
     button(Vector2(800, 706), Vector2(544, 48), "Fit This Part" if relic else "Apply Upgrade", "choice", choice_preview)
     window(Vector2(64, 706), Vector2(664, 62))
-    text_at(Vector2(86, 747), "Parts stay fitted until this dig ends.", 27, MUTED)
+    var fitted: Dictionary = game.player.items
+    if fitted.is_empty(): text_at(Vector2(86, 747), "No parts fitted yet. Parts stay fitted until this dig ends.", 24, MUTED)
+    else:
+        text_at(Vector2(82, 745), "FITTED", 18, MUTED, true)
+        var step = minf(50.0, 548.0 / fitted.size())
+        var n = 0
+        for id in fitted:
+            var x = 166 + n * step
+            icon(Vector2(x, 712), id, 44)
+            text_at(Vector2(x + 30, 762), str(fitted[id]), 17, YELLOW, true)
+            n += 1
     keycap(Vector2(64, 842), "D-PAD" if pad() else "1 2 3", 86)
     text_at(Vector2(168, 865), "Quick select", 22)
     keycap(Vector2(382, 842), "D-PAD" if pad() else "↑↓", 46)
     text_at(Vector2(443, 865), "Browse", 22)
+    if game.can_defer_choice():
+        keycap(Vector2(640, 842), p("parts"), 54)
+        text_at(Vector2(708, 865), "Choose later", 22)
     keycap(Vector2(1050, 842), "A" if pad() else "ENTER", 76)
     text_at(Vector2(1142, 865), "Fit selected part", 22)
 

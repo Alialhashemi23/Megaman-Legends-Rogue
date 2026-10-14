@@ -72,6 +72,7 @@ $env:LOCALAPPDATA = $env:APPDATA
 | Controls and Options | `tests/options_checks.gd` (simulated controller), renders via `tests/options_preview.gd` |
 | Audio | `tests/audio_checks.gd` |
 | Progression, Workshop, save codes | `tests/progression_checks.gd`, `--persistence-test`; browser: `tests/web_progression.mjs` |
+| Co-op map and part picks | `tests/coop_feedback_checks.gd`, renders via `tests/coop_feedback_preview.gd` |
 | Online and checkpoints | `server/` `npm test`, `tests/run_resume_checks.gd`, `tests/net_test.sh <godot>` (Git Bash), `tests/web_e2e.mjs`, renders via `tests/coop_preview.gd` (see NETWORK.md) |
 | Whole loop | `--smoke-test` |
 

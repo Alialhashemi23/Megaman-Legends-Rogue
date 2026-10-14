@@ -62,7 +62,8 @@ The Windows build can join the same lobbies. It defaults to `wss://megaman.galos
 ## How co-op plays
 
 - Everyone shares one run: the same seeded ruins, the same robots, shared **scrap** and shared **XP** (each digger levels up and picks their own upgrade).
-- Builds are personal. Every **part cache** gives *each* digger their own pick, and each guardian drops one core per digger.
+- Builds are personal. Every **part cache** gives *each* digger their own pick, and each guardian drops one core per digger. Whoever opens a cache chooses right away; everyone else gets a *Part Choice Waiting* notice and picks with **Tab** (controller **Select**) when ready. **Tab / Select** or **Esc / B** puts a pick aside for later without changing its options.
+- The ruins map is shared: rooms any teammate explores show up for everyone, with part caches marked (gold ready, flashing cyan waiting for you, dark opened).
 - Robots gain Life, and rooms gain extra robots, for each digger in the party. Guardians scale the most.
 - At 0 Life a digger goes **down**. Any teammate standing next to them for about 2.5 seconds revives them with 35% Life. The dig ends only when everyone is down. Taking the lift also revives downed diggers.
 - The lift waits until every standing digger is aboard.

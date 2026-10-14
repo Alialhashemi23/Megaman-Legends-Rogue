@@ -10,9 +10,9 @@ Pass 09 added browser play and online co-op for up to four diggers. The user req
 - **Host-authoritative game.** The lobby's host slot (`hostSlot`, *not* always slot 1) simulates robots, pickups, scrap, rooms, interactables and the run outcome. Guests simulate their own digger and cosmetic copies of everything else.
 - All traffic goes through the relay over WebSocket (TCP, ordered). Peer-to-peer was rejected to avoid NAT/TURN problems.
 
-## Lobby protocol (server protocol 2, game `NET_VERSION` 6)
+## Lobby protocol (server protocol 2, game `NET_VERSION` 7)
 
-Version history: `NET_VERSION` 3 is the bigger-ruins floor generator (older builds would build different ruins from the same seed), 4 the difficulty pass (robot counts and timings), 5 Tron and Servbot, 6 signature attacks. In 6, `M_SHOT` carries `[depth, position, direction_or_launch_velocity, heavy, projectile_kind]` (0 bolt, 1 bomb); cosmetic bombs use the shooter's gravity. Builds mirror purchased skills, Pulse shot count and Roll's repair cooldown; remote hitboxes match the selected rig; a nearby Roll doubles revive speed on the downed player's client. `CHECKPOINT_VERSION` 2 matched the new generator and 3 the signature-attack combat state.
+Version history: `NET_VERSION` 3 is the bigger-ruins floor generator (older builds would build different ruins from the same seed), 4 the difficulty pass (robot counts and timings), 5 Tron and Servbot, 6 signature attacks. In 6, `M_SHOT` carries `[depth, position, direction_or_launch_velocity, heavy, projectile_kind]` (0 bolt, 1 bomb); cosmetic bombs use the shooter's gravity. Builds mirror purchased skills, Pulse shot count and Roll's repair cooldown; remote hitboxes match the selected rig; a nearby Roll doubles revive speed on the downed player's client. 7 adds the shared map and waiting part picks: `M_VISITED{depth, room}` from any digger, and `M_CHOICE{depth, cache, opener_slot}` (was empty). `CHECKPOINT_VERSION` 2 matched the new generator and 3 the signature-attack combat state.
 
 Text frames are JSON, handled in `server/lobby.js`, `server/server.js` and `scripts/net.gd`.
 - **Client → server:** `hello{name,id,v}`, `list`, `create{name,public,password}`, `join{code,password}`, `resume{code,name,public,password}`, `leave`, `name`, `kick{slot}`, `lock{locked}`, `status{state,depth}`, `ping`.
@@ -31,9 +31,9 @@ Binary frames are game packets. A client sends `[target][var_to_bytes(Array of m
 
 | Owner | Messages |
 |---|---|
-| Every digger → all | `M_INFO{build}` (full build dictionary on every change), `M_STATE` (20 Hz), `M_SHOT`, `M_CHAT`, `M_PING` |
+| Every digger → all | `M_INFO{build}` (full build dictionary on every change), `M_STATE` (20 Hz), `M_SHOT`, `M_CHAT`, `M_PING`, `M_VISITED` (newly explored room) |
 | Guest → host | `M_HIT`, `M_INTERACT`, `M_FROST` |
-| Host → all | `M_START{seed,party,run_id}`, `M_FLOOR`, `M_END`, `M_SNAP`, `M_ATTACK`/`M_RESOLVE`, `M_DAMAGE`, `M_DIE`, `M_LIGHTNING`, `M_PICKUP`/`M_PICKUP_GONE`, `M_USED`, `M_CLEARED`, `M_CHOICE`, `M_RESTORE`, `M_XP`, `M_NOTIFY` |
+| Host → all | `M_START{seed,party,run_id}`, `M_FLOOR`, `M_END`, `M_SNAP`, `M_ATTACK`/`M_RESOLVE`, `M_DAMAGE`, `M_DIE`, `M_LIGHTNING`, `M_PICKUP`/`M_PICKUP_GONE`, `M_USED`, `M_CLEARED`, `M_CHOICE` (opener chooses now, everyone else gets a waiting pick), `M_RESTORE`, `M_XP`, `M_NOTIFY` |
 | Host → one | `M_SYNC{world, build}` (any joiner; `build` is their saved build if their identity is known), `M_ITEM`, `M_HEAL`, `M_NOTIFY` |
 
 ## Authority rules (keep these when changing combat)
@@ -47,7 +47,7 @@ Binary frames are game packets. A client sends `[target][var_to_bytes(Array of m
 
 ## Persistence model (pass 10)
 
-- `build_state()`/`apply_build()`: character, buster, parts, level, XP, base stats, Life, downed, the open choice (kind + offered items) and queued choices.
+- `build_state()`/`apply_build()`: character, buster, parts, level, XP, base stats, Life, downed, the open choice (kind, offered items and source cache), queued choices, and `pending` part picks (`{depth, cache, items}`; items are fixed once first shown). Restored pending lists are validated by `clean_pending` and capped at `MAX_PENDING`.
 - `world_state()`/`apply_world_state()`: run id, seeds, depth, party, scrap, kills, time, guardian flag, living robots (id, health, position, active), used interactables, cleared/visited rooms, pickups. A world is rebuilt from its floor seed, then the differences are applied. `build_floor(keep, arrive=false)` avoids the lift's free healing on restores.
 - **Roster.** Every machine mirrors every digger's build by identity from `M_INFO` (Life/downed from `M_STATE`). Whoever hosts returns a known identity's build in `M_SYNC`.
 - **Checkpoint** = `{v, online, lobby_code/name/public/password, run_id, world, build, roster, selected}`.

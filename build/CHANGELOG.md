@@ -1,5 +1,12 @@
 # Local build history
 
+## 17 — Shared co-op map, waiting part picks and cache icons
+
+- **Shared map:** rooms any teammate explores appear on everyone's ruins map; clears were already shared. Room banners still greet you the first time you walk in.
+- **Waiting part picks:** when a teammate opens a cache, you get a "Part Choice Waiting" notice instead of the choice screen taking over. **Tab / Select** opens it (and opens Buster parts when nothing is waiting). The pick screen shows your fitted parts. Online, **Tab / Select** or **Esc / B** puts a pick aside for later; the same three parts stay on offer. Waiting picks survive refreshes, rejoins and host migration.
+- **Cache icons on the map** for revealed rooms: grey while sealed, gold when ready, flashing cyan while your pick from it waits, dark once opened.
+- Game protocol 7: update all co-op clients together. Checkpoint format 3 is unchanged; saved digs from build 16 still restore.
+
 ## 16 — Signature attacks, Zenny, Workshop and portable progress
 
 - Four signature attacks: Pulse Mega, rapid/support Roll, heavy/splash Tron, ballistic-bomb Servbot. Servbot gains its own small collision capsule, lower camera, faster movement and 65 base Life.
