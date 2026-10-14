@@ -4,7 +4,7 @@
 
 1. **Shared minimap clearing.** Share explored/revealed rooms and cleared-room map state across the party, so each player's minimap reflects the team's exploration and clears.
 2. **Cache upgrade notification before selection.** When a teammate opens a cache, show a popup indicating an upgrade choice is available instead of immediately opening the selection screen. Let each player press a button (for example, Select) to open their pending choice when ready. The exact binding is still to be decided.
-3. **Open — awaiting the next feature.**
+3. **Chest icons on the minimap.** Show chests/part caches with a distinct icon on the minimap so players can locate them.
 
 These are recorded requests, not implemented changes.
 
