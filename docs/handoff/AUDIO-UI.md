@@ -2,6 +2,8 @@
 
 ## Pass 16 UI additions
 
+Phase 4 adds the title Account panel and an `account` menu mode with native `nav_*` targets, Guest/cloud summaries, device codes, sync status/retry, takeover and migration confirmations, and safe local cleanup. Workshop/results show pending Zenny separately. Save-code imports cannot replace established cloud progress. See [ACCOUNT-SYNC.md](ACCOUNT-SYNC.md).
+
 Workshop and Save Codes are menu modes with mouse, keyboard and controller navigation. Five prerequisite-gated purchases per digger; results lead to the Workshop, which returns to another solo dig or the online lobby. Import previews records/wallet and requires an explicit replacement action. Text fields must stay visible while on their page: hiding and re-showing them on every draw drops keyboard focus and breaks paste. Web progress also has a revisioned, checksummed localStorage recovery mirror for refreshes during IndexedDB sync. Options includes map_zoom, saved in settings.json.
 
 ## Sound direction and implementation

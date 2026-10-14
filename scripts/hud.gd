@@ -53,10 +53,10 @@ var new_pass_edit: LineEdit
 var chat_edit: LineEdit
 var copied_time = 0.0
 # Destructive buttons need a second click within a few seconds.
-const CONFIRM = ["leave_online", "leave_dig", "abandon", "kick", "discard", "start_new", "give_up", "reset_controls"]
+const CONFIRM = ["leave_online", "leave_dig", "abandon", "kick", "discard", "start_new", "give_up", "reset_controls", "takeover", "clear_session"]
 # Options page rows: sound, display, then controls.
 const OPTIONS = ["master", "music", "effects", "ambience", "mute", "fullscreen", "camera", "fov", "mouse", "look", "invert", "vibration", "controls", "map_zoom", "back"]
-const MENU_MODES = ["title", "pause", "options", "controls", "choice", "inventory", "archive", "end", "online", "lobby", "workshop", "save_codes"]
+const MENU_MODES = ["title", "pause", "options", "controls", "choice", "inventory", "archive", "end", "online", "lobby", "workshop", "save_codes", "account"]
 var options_return = "title"
 var workshop_return = "title"
 var workshop_character = 0
@@ -147,6 +147,10 @@ func commit_name() -> void:
 func commit_server() -> void:
     var value = server_edit.text.strip_edges()
     if value == "" or value == game.net.server_url: return
+    if game.profile_source == "account" or game.account.state == "signing_in":
+        game.net.error_text = "Sign out of the account before changing servers."
+        server_edit.text = game.net.server_url
+        return
     game.net.disconnect_server()
     game.net.server_url = value
     game.net.save_profile()
@@ -315,6 +319,9 @@ func confirm() -> void:
 # Esc / B: step back out of the current menu. Returns true when handled.
 func back() -> bool:
     match game.mode:
+        "account":
+            if game.account.state == "signing_in": game.account.cancel_sign_in()
+            activate("title")
         "archive", "online": activate("title")
         "workshop": activate(workshop_return)
         "save_codes": activate("workshop")
@@ -363,6 +370,27 @@ func activate(action: String, value: int = 0) -> void:
         return
     confirming = ""
     match action:
+        "account":
+            if not game.account.switch_allowed(): return
+            game.mode = "account"
+        "sign_in": game.account.sign_in()
+        "account_retry": game.account.retry()
+        "sign_out", "guest":
+            game.account.sign_out()
+            game.show_title()
+        "device_open": game.account.open_device_page()
+        "device_cancel": game.account.cancel_sign_in()
+        "migrate_guest": game.account.preview_migration(game.guest_meta)
+        "migrate_confirm": game.account.confirm_migration()
+        "takeover":
+            game.account.retry_run(true)
+        "retry_run": game.account.retry_run()
+        "clear_session":
+            game.account.clear_local_session()
+            if game.profile_source == "guest": game.show_title()
+        "invite_continue":
+            game.mode = "online"
+            game.net.join_lobby(game.net.invited_code(), game.net.url_param("key"))
         "start": game.start_run()
         "start_new": game.start_run()
         "continue": game.continue_saved_dig()
@@ -381,7 +409,8 @@ func activate(action: String, value: int = 0) -> void:
         "tree_character": workshop_character = value
         "buy_skill":
             var id = DiverProgression.NODES[value].id
-            workshop_message = "Purchased " + DiverProgression.NODES[value].name if game.buy_skill(workshop_character, id) else "Purchase unavailable: check Zenny and prerequisites."
+            var accepted = game.buy_skill(workshop_character, id)
+            workshop_message = ("Purchase queued. Waiting for server confirmation." if game.profile_source == "account" else "Purchased " + DiverProgression.NODES[value].name) if accepted else "Purchase unavailable: check connection, Zenny and prerequisites."
         "save_codes":
             game.mode = "save_codes"
             save_edit.text = ""
@@ -401,10 +430,17 @@ func activate(action: String, value: int = 0) -> void:
                 save_edit.text = DisplayServer.clipboard_get().left(32768)
                 pending_import = {}
         "check_import":
+            if game.profile_source == "account" and not game.account.empty_account():
+                save_message = "Cloud progress cannot be replaced by a save code. Export remains available."
+                pending_import = {}
+                return
             pending_import = DiverProgression.decode(save_edit.text)
-            save_message = "Invalid or damaged code. Your progress is unchanged." if pending_import.is_empty() else "Backup: %d digs / %d Zenny. Replace this device's progress?" % [pending_import.runs, pending_import.zenny]
+            save_message = "Invalid or damaged code. Your progress is unchanged." if pending_import.is_empty() else ("Backup: %d digs / %d Zenny. Preview adoption into this empty cloud account?" if game.profile_source == "account" else "Backup: %d digs / %d Zenny. Replace this device's progress?") % [pending_import.runs, pending_import.zenny]
             get_viewport().gui_release_focus()
         "confirm_import":
+            if game.profile_source == "account":
+                if not pending_import.is_empty(): game.account.preview_migration(pending_import)
+                return
             if not pending_import.is_empty() and game.import_progress(pending_import):
                 save_message = "Progress restored and saved."
                 pending_import = {}
@@ -506,6 +542,7 @@ func _draw() -> void:
         "end": draw_end()
         "workshop": draw_workshop()
         "save_codes": draw_save_codes()
+        "account": draw_account()
         _: draw_hud()
 
 func backdrop() -> void:
@@ -575,6 +612,7 @@ func draw_title() -> void:
     window(Vector2(64, 315), Vector2(476, 46), BLUE)
     text_at(Vector2(86, 347), "THE TIDAL ARCHIVE", 24, WHITE, true)
     text_at(Vector2(66, 399), "A dungeon-crawling fan adventure", 25, MUTED)
+    text_at(Vector2(1042, 237), "Guest progress / this device" if game.profile_source == "guest" else game.account.status, 23, CYAN)
     var menu_y = 418
     var saved: Dictionary = game.saved_dig
     if not saved.is_empty():
@@ -621,6 +659,8 @@ func draw_title() -> void:
         var y = 636 + i * 32
         keycap(Vector2(1044, y), p(controls[i][0]), 76)
         text_at(Vector2(1140, y + 23), controls[i][1], 23)
+
+    button(Vector2(1020, 154), Vector2(372, 50), "Sign In / Play as Guest" if game.profile_source == "guest" else str(game.account.identity.get("name", "Digger")) + " / Account", "account")
 
 func draw_hud() -> void:
     var p = game.player
@@ -1088,7 +1128,7 @@ func draw_choice() -> void:
 func draw_end() -> void:
     backdrop()
     stats_header()
-    page_title("DIG COMPLETE!" if game.outcome else "DIG ENDED", "Core recovered. You've returned to the surface." if game.outcome else (game.end_reason + ". Record saved." if game.end_reason != "" else "Record saved. Equipment resets when you start another dig."))
+    page_title("DIG COMPLETE!" if game.outcome else "DIG ENDED", ("Account progress: " + game.account.status) if game.profile_source == "account" else ("Core recovered. You've returned to the surface." if game.outcome else (game.end_reason + ". Record saved." if game.end_reason != "" else "Record saved. Equipment resets when you start another dig.")))
     window(Vector2(64, 282), Vector2(1312, 146))
     var labels = ["DEPTH", "MACHINES", "TIME", "LEVEL"]
     var values = ["B%d / B3" % game.depth, str(game.kills), game.time_string(), str(game.player.level)]
@@ -1128,7 +1168,7 @@ func draw_end() -> void:
         button(Vector2(64, 764), Vector2(620, 62), "Workshop / Spend Zenny", "workshop", 0, true)
         button(Vector2(716, 764), Vector2(660, 62), "Return to Title", "title")
     icon(Vector2(64, 848), "save", 32)
-    text_at(Vector2(108, 873), "+%d Zenny earned / %d in wallet" % [game.zenny_earned, game.meta.zenny], 23, YELLOW)
+    text_at(Vector2(108, 873), ("%s / +%d pending / %d in wallet" % [game.account.status, game.account.pending_zenny(), game.meta.zenny]) if game.profile_source == "account" else "+%d Zenny earned / %d in wallet" % [game.zenny_earned, game.meta.zenny], 23, YELLOW)
 
 
 # --- Online co-op screens -----------------------------------------------------
@@ -1244,7 +1284,9 @@ func draw_lobby() -> void:
         hits.append({"rect": Rect2(pos, Vector2(125, 60)), "action": "character", "value": i})
     text_at(Vector2(86, 710), game.WEAPONS[game.selected_weapon], 25, YELLOW, true)
     paragraph(Vector2(86, 746), DiverPlayer.ATTACK_DETAILS[game.selected_character], 520, 22, MUTED, 2)
-    if net.is_host(): button(Vector2(64, 778), Vector2(280, 58), "Start Dig", "start_online", 0, true)
+    if game.account.takeover_needed: button(Vector2(64, 778), Vector2(280, 58), confirm_label("takeover", 0, "Take over dig"), "takeover", 0, true)
+    elif game.account.pending_run_callback.is_valid(): button(Vector2(64, 778), Vector2(280, 58), "Retry account dig", "retry_run", 0, true)
+    elif net.is_host(): button(Vector2(64, 778), Vector2(280, 58), "Start Dig", "start_online", 0, true)
     else:
         window(Vector2(64, 778), Vector2(280, 58), INK, EDGE, false)
         text_at(Vector2(84, 815), "Waiting for host…", 23, YELLOW)
@@ -1327,6 +1369,7 @@ func draw_workshop() -> void:
     backdrop()
     page_title("THE WORKSHOP", "Permanent circuits / Each digger has their own tree. Parts and levels reset each dig.")
     text_at(Vector2(1090, 232), "%d ZENNY" % game.meta.zenny, 30, YELLOW, true)
+    if game.profile_source == "account": text_at(Vector2(64, 262), "%s / +%d pending" % [game.account.status, game.account.pending_zenny()], 21, CYAN)
     for i in DiverCharacter.COUNT:
         button(Vector2(64 + i * 328, 278), Vector2(312, 62), DiverCharacter.DISPLAY_NAMES[i], "tree_character", i, workshop_character == i)
     window(Vector2(64, 366), Vector2(300, 414))
@@ -1337,7 +1380,7 @@ func draw_workshop() -> void:
         var entry = DiverProgression.NODES[i]
         var pos = Vector2(394, 366 + i * 82)
         var owned = entry.id in skills
-        var available = DiverProgression.can_buy(game.meta, workshop_character, entry.id)
+        var available = DiverProgression.can_buy(game.meta, workshop_character, entry.id) and (game.profile_source == "guest" or game.account.status == "Synced")
         window(pos, Vector2(982, 72), SELECT if owned else PANEL, GREEN if owned else EDGE, false)
         text_at(pos + Vector2(18, 28), entry.name, 24, YELLOW if owned else WHITE, true)
         var detail = DiverProgression.ABILITIES[workshop_character] if entry.id == "ability" else "Adds %s to this digger's drop pool." % game.ITEMS[DiverProgression.RESEARCH[workshop_character]].name if entry.id == "salvage" else entry.desc
@@ -1361,12 +1404,50 @@ func draw_save_codes() -> void:
     page_title("SAVE CODE", "Keep your Zenny, skill trees, discoveries and records across browsers or devices.")
     window(Vector2(64, 282), Vector2(1312, 440))
     text_at(Vector2(96, 332), "YOUR PROGRESS / YOUR BACKUP", 27, CYAN, true)
-    paragraph(Vector2(96, 392), "Export, then copy the entire code to a safe place. Paste it here on another device, check it, then confirm. Import replaces the local progress record.", 1216, 29, WHITE, 3)
+    paragraph(Vector2(96, 392), ("Export your cloud progress. Import can only preview adoption into an empty account; an established cloud wallet cannot be replaced." if game.profile_source == "account" else "Export, then copy the entire code to a safe place. Paste it here on another device, check it, then confirm. Import replaces the local progress record."), 1216, 29, WHITE, 3)
     place_field(save_edit, Vector2(96, 492), Vector2(1248, 68), 23)
     button(Vector2(96, 570), Vector2(330, 46), "Paste from Clipboard", "paste_save")
     paragraph(Vector2(96, 660), save_message, 1216, 26, YELLOW, 2)
     button(Vector2(64, 764), Vector2(300, 62), "Export / Copy Code", "export_save", 0, true)
     button(Vector2(388, 764), Vector2(300, 62), "Check Pasted Code", "check_import")
-    if not pending_import.is_empty(): button(Vector2(712, 764), Vector2(348, 62), "Replace Local Progress", "confirm_import")
+    if not pending_import.is_empty(): button(Vector2(712, 764), Vector2(348, 62), "Preview Cloud Adoption" if game.profile_source == "account" else "Replace Local Progress", "confirm_import")
     button(Vector2(1084, 764), Vector2(292, 62), "Back", "workshop")
     text_at(Vector2(64, 876), "Run checkpoints and control settings are separate from this backup.", 23, MUTED)
+
+func draw_account() -> void:
+    backdrop()
+    page_title("DIGGER ACCOUNT", "Permanent progress across browser and Windows. Guest progress stays on this device.")
+    var a = game.account
+    window(Vector2(64, 282), Vector2(1312, 430))
+    if a.state == "signing_in":
+        text_at(Vector2(96, 335), "SIGN IN ON YOUR BROWSER", 30, CYAN, true)
+        text_at(Vector2(96, 430), str(a.device.get("user_code", "Requesting code…")), 64, YELLOW, true)
+        paragraph(Vector2(96, 496), "Approve this device in your browser. Code expires in %d seconds. Windows sessions stay in memory; sign in again after closing the game." % maxi(0, int(a.device_remaining)), 1180, 27, WHITE, 3)
+        button(Vector2(96, 620), Vector2(560, 58), "Open sign-in page", "device_open")
+        button(Vector2(688, 620), Vector2(560, 58), "Cancel", "device_cancel")
+    elif game.profile_source == "account":
+        text_at(Vector2(96, 335), str(a.identity.get("name", "Digger")) + " / " + a.status, 30, CYAN, true)
+        var synced = "Never" if a.last_sync == 0 else Time.get_datetime_string_from_unix_time(int(a.last_sync), true) + " UTC"
+        text_at(Vector2(96, 382), "Last sync: " + synced + " / +%d pending Zenny" % a.pending_zenny(), 25, YELLOW)
+        text_at(Vector2(96, 430), "Cloud: %d digs / %d machines / %d Zenny" % [game.meta.runs, game.meta.kills, game.meta.zenny], 27)
+        text_at(Vector2(96, 476), "This device's Guest: %d digs / %d machines / %d Zenny" % [game.guest_meta.runs, game.guest_meta.kills, game.guest_meta.zenny], 27)
+        if not a.migration.is_empty():
+            text_at(Vector2(96, 531), "Adopt: %d digs / %d Zenny / %d purchased circuits" % [a.migration.preview.runs, a.migration.preview.zenny, a.migration.preview.trees], 26, YELLOW)
+            button(Vector2(96, 550), Vector2(600, 56), "Confirm adoption into empty account", "migrate_confirm")
+        elif a.empty_account(): button(Vector2(96, 550), Vector2(600, 56), "Use this PC's progress / Preview", "migrate_guest")
+        else: text_at(Vector2(96, 570), "Cloud progress is active. Your Guest archive remains untouched.", 26, MUTED)
+        button(Vector2(96, 630), Vector2(340, 56), "Retry sync", "account_retry")
+        button(Vector2(468, 630), Vector2(340, 56), "Sign Out", "sign_out")
+        if a.state == "needs_sign_in": button(Vector2(840, 630), Vector2(400, 56), "Sign In again", "sign_in")
+    else:
+        text_at(Vector2(96, 342), "PLAY AS GUEST OR BRING YOUR PROGRESS", 30, CYAN, true)
+        paragraph(Vector2(96, 412), "Guest digs work offline. Account digs and Workshop purchases need the server. Pending results retry safely and become spendable after confirmation.", 1180, 30, WHITE, 4)
+        button(Vector2(96, 620), Vector2(560, 58), "Sign In", "sign_in", 0, true)
+        button(Vector2(688, 620), Vector2(560, 58), "Play as Guest", "guest")
+    if a.takeover_needed: button(Vector2(64, 736), Vector2(620, 56), confirm_label("takeover", 0, "Take over active account dig"), "takeover")
+    elif a.pending_run_callback.is_valid(): button(Vector2(64, 736), Vector2(620, 56), "Retry account dig", "retry_run")
+    elif game.net.invited_code() != "": button(Vector2(64, 736), Vector2(620, 56), "Continue to invited lobby", "invite_continue")
+    else: button(Vector2(64, 736), Vector2(620, 56), "Return to Title", "title")
+    if game.profile_source == "account": button(Vector2(716, 736), Vector2(660, 56), "Play as Guest / keep cloud outbox", "guest")
+    if game.profile_source == "account" and a.outbox.is_empty(): button(Vector2(716, 810), Vector2(660, 48), confirm_label("clear_session", 0, "Sign Out + clear this account's local cache"), "clear_session")
+    paragraph(Vector2(64, 880), game.message_detail if game.message_time > 0 else "No automatic merges. Leave a dig or lobby before changing accounts.", 1312, 22, YELLOW, 1)

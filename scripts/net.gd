@@ -47,6 +47,9 @@ var list_clock = 0.0
 var ping_clock = 0.0
 var ping_ms = 0
 var connected_once = false
+var hello_pending = false
+var account_confirmed = false
+var guest_id = ""
 var reconnect_clock = 0.0
 var reconnect_wait = 0.0
 var reconnect_attempts = 0
@@ -67,6 +70,7 @@ func _ready() -> void:
 		var page = JavaScriptBridge.eval("(location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws'", true)
 		if page is String and page.contains("/ws"): server_url = page
 	if server_url == "": server_url = str(ProjectSettings.get_setting("relic_diver/online/default_server", DEFAULT_SERVER))
+	guest_id = player_id
 
 # In a lobby (possibly reconnecting to it).
 func active() -> bool:
@@ -126,6 +130,9 @@ func connect_server() -> void:
 func disconnect_server() -> void:
 	if socket: socket.close()
 	socket = null
+	hello_pending = false
+	account_confirmed = false
+	player_id = guest_id
 	status = "offline"
 	reset_lobby()
 
@@ -239,17 +246,24 @@ func _process(dt: float) -> void:
 	socket.poll()
 	var state = socket.get_ready_state()
 	if state == WebSocketPeer.STATE_OPEN:
-		if status != "online":
+		if status != "online" and not hello_pending:
 			var rejoining = status == "reconnecting"
-			status = "online"
-			connected_once = true
-			socket.send_text(JSON.stringify({"t": "hello", "name": player_name, "id": player_id, "v": NET_VERSION}))
-			socket.send_text(JSON.stringify({"t": "list"}))
-			if rejoining and lobby_code != "":
-				socket.send_text(JSON.stringify(resume_message(lobby_code, str(lobby.get("name", "")), bool(lobby.get("isPublic", true)), lobby_password)))
-			elif not pending.is_empty():
-				socket.send_text(JSON.stringify(pending))
-			pending = {}
+			hello_pending = true
+			var current_socket = socket
+			game.account.ticket(func(ticket):
+				if socket != current_socket or socket == null: return
+				hello_pending = false
+				status = "online"
+				connected_once = true
+				var hello = {"t": "hello", "name": player_name, "id": guest_id, "v": NET_VERSION}
+				if ticket != "": hello.ticket = ticket
+				socket.send_text(JSON.stringify(hello))
+				socket.send_text(JSON.stringify({"t": "list"}))
+				if rejoining and lobby_code != "":
+					socket.send_text(JSON.stringify(resume_message(lobby_code, str(lobby.get("name", "")), bool(lobby.get("isPublic", true)), lobby_password)))
+				elif not pending.is_empty(): socket.send_text(JSON.stringify(pending))
+				pending = {}
+			)
 		while socket != null and socket.get_available_packet_count() > 0:
 			var packet = socket.get_packet()
 			if socket.was_string_packet(): handle_command(JSON.parse_string(packet.get_string_from_utf8()))
@@ -269,6 +283,7 @@ func _process(dt: float) -> void:
 			list_clock += dt
 			if list_clock > 4.0: refresh_list()
 	elif state == WebSocketPeer.STATE_CLOSED:
+		hello_pending = false
 		socket = null
 		outbox.clear()
 		pending = {}
@@ -305,6 +320,9 @@ func flush() -> void:
 func handle_command(message) -> void:
 	if not message is Dictionary: return
 	match str(message.get("t", "")):
+		"welcome":
+			account_confirmed = bool(message.get("account", false))
+			player_id = "acct:" + str(game.account.identity.id) if account_confirmed else guest_id
 		"lobbies":
 			if message.get("lobbies") is Array: public_lobbies = message.lobbies
 		"joined":
@@ -340,6 +358,11 @@ func handle_command(message) -> void:
 			if is_instance_valid(game): game.connection_failed("Your dig continued in another tab or window.")
 		"error":
 			var code = str(message.get("code", ""))
+			if code == "bad_ticket":
+				account_confirmed = false
+				player_id = guest_id
+				game.notify("ACCOUNT", "Lobby sign-in unavailable. Connected as a guest.")
+				return
 			error_text = ERRORS.get(code, "Server error: " + code)
 			if status == "reconnecting" or (active() and code in ["banned", "version", "full", "locked"]):
 				give_up(error_text)
@@ -361,4 +384,4 @@ func save_profile() -> void:
 	if is_instance_valid(game) and game.smoke_test: return
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(profile_path.get_base_dir()))
 	var f = FileAccess.open(profile_path, FileAccess.WRITE)
-	if f: f.store_string(JSON.stringify({"name": player_name, "id": player_id, "server": server_url}, "\t"))
+	if f: f.store_string(JSON.stringify({"name": player_name, "id": guest_id if guest_id != "" else player_id, "server": server_url}, "\t"))

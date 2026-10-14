@@ -79,6 +79,10 @@ var selected_weapon: int:
 var selected_character = 0
 var title_clock = 0.0
 var meta = DiverProgression.fresh()
+var profile_source = "guest"
+var guest_meta: Dictionary = {}
+var account: DiverAccount
+var account_starting = false
 var zenny_earned = 0
 var run_recorded = false
 var screenshot_timer = -1.0
@@ -143,6 +147,11 @@ func _ready() -> void:
 	net = DiverNet.new()
 	net.game = self
 	add_child(net)
+	account = DiverAccount.new()
+	account.game = self
+	account.cache_root = DiverPaths.pick("res://save/accounts", "user://accounts")
+	account.message.connect(func(text): notify("ACCOUNT", text))
+	add_child(account)
 	setup_environment()
 	var canvas = CanvasLayer.new()
 	add_child(canvas)
@@ -195,7 +204,8 @@ func _ready() -> void:
 	else:
 		saved_dig = load_checkpoint()
 		if not saved_dig.is_empty(): print("ONLINE: saved dig found run=%s online=%s" % [saved_dig.run_id, saved_dig.online])
-		if net.invited_code() != "":
+		if OS.has_feature("web") and DisplayServer.get_name() != "headless": account.refresh()
+		elif net.invited_code() != "":
 			# Invite links open straight into the lobby (and rejoin a saved dig there).
 			if saved_dig.get("online", false) and str(saved_dig.lobby_code) == net.invited_code(): continue_saved_dig()
 			else:
@@ -248,6 +258,7 @@ func position_title_camera() -> void:
 
 func show_title() -> void:
 	mode = "title"
+	if account != null and profile_source == "account": account.refresh()
 	chat_open = false
 	# Teammates and pings from an online dig don't belong on the title screen.
 	for member_slot in remote_players.keys(): remove_remote_player(member_slot)
@@ -258,8 +269,17 @@ func show_title() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 func start_run(seed_value: int = 0, party: int = 1, id: String = "") -> void:
+	if profile_source == "account" and account.server_run == "":
+		if account_starting: return
+		account_starting = true
+		account.begin_run(func():
+			start_run(seed_value, party, id)
+		)
+		return
+	account_starting = false
 	run_seed = seed_value if seed_value != 0 else int(Time.get_unix_time_from_system()) % 1000000
 	run_id = id if id != "" else new_run_id(run_seed)
+	if profile_source == "account": account.attach_world(run_id)
 	retire_saved_dig(run_id)
 	if not net.active(): roster.clear()
 	rng.seed = run_seed
@@ -961,6 +981,12 @@ func notify(title: String, detail: String = "") -> void:
 
 func finish_run(won: bool) -> void:
 	if run_recorded: return
+	if profile_source == "account":
+		if not account.result(run_outcome(won)):
+			notify("PROGRESS NOT STORED", "Free device storage, then retry finishing this dig.")
+			return
+		finish_account_run(won)
+		return
 	run_recorded = true
 	outcome = won
 	zenny_earned = DiverProgression.reward(depth, depth - 1 + int(guardian_dead), scrap)
@@ -986,6 +1012,40 @@ func finish_run(won: bool) -> void:
 	clear_checkpoint()
 	if net.is_host(): net.report_status("lobby", depth)
 
+func activate_account() -> void:
+	if profile_source == "guest": guest_meta = meta.duplicate(true)
+	profile_source = "account"
+	meta = account.profile.duplicate(true)
+
+func activate_guest() -> void:
+	if profile_source == "account" and not guest_meta.is_empty(): meta = guest_meta.duplicate(true)
+	profile_source = "guest"
+	guest_meta = {}
+	net.disconnect_server()
+
+func record_discovery(id: String) -> void:
+	if profile_source == "account": account.discover(id)
+	else:
+		meta.discovered[id] = true
+		save_meta()
+
+func run_outcome(won: bool, abandoned: bool = false) -> Dictionary:
+	return {"won": won, "depth": depth, "guardians": depth - 1 + int(guardian_dead), "scrap": scrap, "kills": kills, "run_time": run_time, "character": selected_character, "abandoned": abandoned}
+
+func finish_account_run(won: bool) -> void:
+	run_recorded = true
+	outcome = won
+	zenny_earned = DiverProgression.reward(depth, depth - 1 + int(guardian_dead), scrap)
+	mode = "end"
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	sound.play("win" if won else "hurt")
+	choice_queue.clear()
+	pending_choices.clear()
+	choice_source = {}
+	chat_open = false
+	clear_checkpoint()
+	if net.is_host(): net.report_status("lobby", depth)
+
 func load_meta() -> void:
 	if FileAccess.file_exists(save_path):
 		var f = FileAccess.open(save_path, FileAccess.READ)
@@ -1000,6 +1060,7 @@ func load_meta() -> void:
 			if not recovery.is_empty() and int(recovery.revision) >= int(meta.revision): meta = recovery
 
 func save_meta() -> bool:
+	if profile_source == "account": return false
 	if smoke_test: return true
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(save_path.get_base_dir()))
 	var f = FileAccess.open(save_path + ".tmp", FileAccess.WRITE)
@@ -1026,6 +1087,7 @@ func item_unlocked(id: String) -> bool:
 
 func buy_skill(character: int, id: String) -> bool:
 	if in_run() or not DiverProgression.can_buy(meta, character, id): return false
+	if profile_source == "account": return account.purchase(character, id)
 	var before = meta.duplicate(true)
 	var skills = DiverProgression.owned(meta, character)
 	skills.append(id)
@@ -1038,6 +1100,9 @@ func buy_skill(character: int, id: String) -> bool:
 
 func import_progress(data: Dictionary) -> bool:
 	if in_run() or net.active() or not saved_dig.is_empty(): return false
+	if profile_source == "account":
+		if account.empty_account(): account.preview_migration(data)
+		return false
 	var validated = DiverProgression.validate(data)
 	if validated.is_empty(): return false
 	var before = meta
@@ -1443,7 +1508,7 @@ func apply_world_state(w: Dictionary, keep_player: bool) -> void:
 
 func checkpoint_data() -> Dictionary:
 	if net.active(): roster[net.player_id] = build_state()
-	return {"v": CHECKPOINT_VERSION, "online": net.active(), "lobby_code": net.lobby_code, "lobby_name": str(net.lobby.get("name", "")), "public": bool(net.lobby.get("isPublic", true)), "password": net.lobby_password, "run_id": run_id, "saved": Time.get_unix_time_from_system(), "world": world_state(), "build": build_state(), "roster": roster.duplicate(true), "selected": [selected_character, selected_weapon]}
+	return {"v": CHECKPOINT_VERSION, "account_id": str(account.identity.get("id", "")) if profile_source == "account" else "", "account_run": account.server_run if profile_source == "account" else "", "online": net.active(), "lobby_code": net.lobby_code, "lobby_name": str(net.lobby.get("name", "")), "public": bool(net.lobby.get("isPublic", true)), "password": net.lobby_password, "run_id": run_id, "saved": Time.get_unix_time_from_system(), "world": world_state(), "build": build_state(), "roster": roster.duplicate(true), "selected": [selected_character, selected_weapon]}
 
 func persisting() -> bool:
 	return (not smoke_test or net_test != "") and (net.active() or solo_checkpoints)
@@ -1494,6 +1559,26 @@ func build_changed() -> void:
 func retire_saved_dig(new_run_id: String) -> void:
 	var cp = load_checkpoint()
 	if cp.is_empty() or str(cp.run_id) == new_run_id: return
+	var owner_id = str(cp.get("account_id", ""))
+	if owner_id != "":
+		if profile_source != "account" or owner_id != str(account.identity.id): return
+		var w: Dictionary = cp.world
+		if not account.enqueue("/api/v1/run-results", {"run_id": str(cp.get("account_run", "")), "outcome": {"won": false, "depth": int(w.get("depth", 1)), "guardians": int(w.get("depth", 1)) - 1 + int(w.get("guardian_dead", false)), "scrap": int(w.get("scrap", 0)), "kills": int(w.get("kills", 0)), "run_time": float(w.get("run_time", 0)), "character": int(cp.build.get("character", 0)), "abandoned": true}}): return
+		clear_checkpoint()
+		return
+	if profile_source == "account":
+		var cloud = meta
+		meta = guest_meta
+		profile_source = "guest"
+		meta.kills += int(cp.world.get("kills", 0))
+		meta.runs += 1
+		meta.deepest = maxi(int(meta.deepest), int(cp.world.get("depth", 1)))
+		save_meta()
+		guest_meta = meta
+		meta = cloud
+		profile_source = "account"
+		clear_checkpoint()
+		return
 	meta.kills = int(meta.kills) + int(cp.world.get("kills", 0))
 	meta.runs = int(meta.runs) + 1
 	meta.deepest = maxi(int(meta.deepest), int(cp.world.get("depth", 1)))
@@ -1502,6 +1587,10 @@ func retire_saved_dig(new_run_id: String) -> void:
 
 # Restore a whole dig: the floor, then this digger's build and everyone else's.
 func restore_checkpoint(cp: Dictionary) -> void:
+	if profile_source == "account" and account.server_run == "" and not account.resume_world(str(cp.run_id)):
+		account.begin_run(func(): restore_checkpoint(cp))
+		return
+	if profile_source == "account": account.attach_world(str(cp.run_id))
 	if cp.get("roster") is Dictionary: roster = (cp.roster as Dictionary).duplicate(true)
 	var selected = cp.get("selected", [selected_character, selected_weapon])
 	if selected is Array and selected.size() == 2:
@@ -1521,6 +1610,10 @@ func restore_checkpoint(cp: Dictionary) -> void:
 func continue_saved_dig() -> void:
 	var cp = load_checkpoint()
 	if cp.is_empty(): return
+	var owner_id = str(cp.get("account_id", ""))
+	if owner_id != (str(account.identity.get("id", "")) if profile_source == "account" else ""):
+		notify("SAVED DIG", "Switch to the account or Guest profile that started this dig.")
+		return
 	if not cp.online:
 		restore_checkpoint(cp)
 		return
@@ -1610,6 +1703,11 @@ func new_run_id(seed_value: int) -> String:
 
 func host_start_run() -> void:
 	if not net.is_host(): return
+	if profile_source == "account" and account.server_run == "":
+		if account_starting: return
+		account_starting = true
+		account.begin_run(host_start_run)
+		return
 	var seed_value = randi() % 1000000 + 1
 	var party = maxi(1, net.members().size())
 	var id = new_run_id(seed_value)
@@ -1750,11 +1848,18 @@ func save_checkpoint_offline() -> void:
 	DirAccess.rename_absolute(ProjectSettings.globalize_path(checkpoint_path + ".tmp"), ProjectSettings.globalize_path(checkpoint_path))
 
 func apply_sync(m: Array) -> void:
+	if profile_source == "account" and account.server_run == "": account.resume_world(str(m[1].get("run_id", "")))
+	if profile_source == "account" and account.server_run == "":
+		if account_starting: return
+		account_starting = true
+		account.begin_run(func(): apply_sync(m))
+		return
 	var w: Dictionary = m[1]
 	var build: Dictionary = m[2]
 	var same_run = in_run() and str(w.get("run_id", "")) == run_id
 	if not same_run: retire_saved_dig(str(w.get("run_id", "")))
 	apply_world_state(w, same_run)
+	if profile_source == "account": account.attach_world(run_id)
 	if same_run: pass  # Our live build is the freshest copy.
 	elif not build.is_empty():
 		apply_build(build)

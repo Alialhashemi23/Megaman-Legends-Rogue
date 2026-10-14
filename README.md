@@ -97,6 +97,8 @@ Try rapid fire with Ember Engine and Storm Coil for constant hit effects, or spl
 
 ## Progression
 
+**Accounts (browser + Windows, when the server enables them):** open the title's Account panel to sign in or play as Guest. Cloud records, Zenny, discoveries and Workshop purchases follow your account. Results that cannot sync remain pending and cannot be spent. Retry reconnects safely. Windows sign-in uses a code approved in your browser; the token stays in memory, so sign in again after closing the game. Guest progress remains on this device, separate from cloud progress. Adoption into an empty account needs preview and confirmation; save codes cannot replace an established cloud wallet. Sign-in/out and import are blocked during a dig or lobby.
+
 Every dig starts at level one with no parts. Run levels, upgrades and fitted parts reset; records, unlocks and Workshop purchases persist.
 
 **Zenny** is awarded once at the end of a dig: **25 × depth reached + 60 × guardians defeated + floor(leftover scrap / 5)**.

@@ -54,7 +54,7 @@ func run() -> void:
 	game.sound.muted = true
 	game.meta.kills = 0
 	await refresh()
-	verify(game.hud.hits.size() == 6 + DiverCharacter.COUNT, "Title has five menu actions, one unlocked buster and four diggers")
+	verify(game.hud.hits.size() == 7 + DiverCharacter.COUNT, "Title includes the account panel alongside existing menu actions and diggers")
 	verify(game.hud.hits[0].action == "start", "Default keyboard selection starts a dig")
 	verify(game.hud.hits[1].action == "online", "Play Online sits directly under Start Dig")
 	click(game.hud.hits[0])

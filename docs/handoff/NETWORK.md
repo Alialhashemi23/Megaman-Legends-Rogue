@@ -2,7 +2,7 @@
 
 Pass 09 added browser play and online co-op for up to four diggers. The user requested lobbies, invite links and a lobby browser on their own domain, hosted themselves through a Cloudflare Tunnel. Pass 10 made runs survive mishaps (the user's priority before any further work) and added co-op communication and lobby controls. The user-facing guide is [../ONLINE.md](../ONLINE.md).
 
-**Accounts (server side, phase 3):** when the server runs with accounts ([../ACCOUNTS-OPS.md](../ACCOUNTS-OPS.md)), `hello` may carry a single-use `ticket` from `POST /api/v1/lobby-ticket`. The relay redeems it before handling that client's later commands, identifies the player as `acct:<account id>` and answers `welcome{account:true}`; a bad ticket gets `error bad_ticket` and the client stays a guest. Guest `hello.id`s can no longer start with `acct:`. Lobbies and checkpoints are still memory-only, and the game doesn't send tickets yet (phase 4). Contract: [../ACCOUNT-API.md](../ACCOUNT-API.md).
+**Accounts (phases 3–4):** when configured ([../ACCOUNTS-OPS.md](../ACCOUNTS-OPS.md)), the signed-in game obtains a fresh single-use ticket before every hello/reconnect. The relay redeems it before later commands, identifies the player as `acct:<account id>` and answers `welcome{account:true}`; a bad ticket gets `error bad_ticket` and stays a guest with a notice. `online.json` retains only the guest id. Lobbies and relay checkpoints remain memory-only. Game client details: [ACCOUNT-SYNC.md](ACCOUNT-SYNC.md); unchanged contract: [../ACCOUNT-API.md](../ACCOUNT-API.md).
 
 ## Topology
 

@@ -304,8 +304,7 @@ func heal(amount: float) -> void:
 func add_item(id: String) -> void:
 	items[id] = count(id) + 1
 	if id == "heart": heal(20)
-	game.meta.discovered[id] = true
-	game.save_meta()
+	game.record_discovery(id)
 	game.sound.play("loot")
 	game.notify("%s ×%d" % [game.ITEMS[id].name, count(id)], game.ITEMS[id].desc)
 	game.build_changed()

@@ -1,5 +1,22 @@
 # Local build history
 
+## 20 — Game account sync (local, not deployed)
+
+- Browser cookie sign-in and Windows device-code sign-in, with cobalt account menus and controller navigation. Windows credentials stay in memory; no plaintext token files.
+- Separate Guest/account profiles and durable account outboxes. Results retry without duplicate rewards, pending Zenny cannot be spent, purchases use server revisions, and guest adoption requires preview/confirmation into an empty account.
+- Online account run starts, explicit takeover, lease heartbeats, account-owned checkpoints, and fresh lobby tickets on every connection. Guest identity stays separate. Game protocol remains 7.
+- Checks: 34 account client checks; progression 138, resume 24, co-op feedback 40, UI 47, Options 39; smoke and reconnect/host-migration/server-restart suites; server 34/34 with PostgreSQL; real Godot HTTP tests with deliberately lost committed responses and signed-in relay identity. Real browser sign-in preserves a pending invite under COOP/COEP; an in-game purchase survives reload and syncs to another browser and Windows.
+
+## 19 — Account server (no game change)
+
+- The server can run player accounts: email sign-up with verification and password reset, Windows/Android sign-in with a code approved in the browser, and a progress API that records run rewards and Workshop purchases exactly once. Off unless configured (`docker-compose.accounts.yml`, docs/ACCOUNTS-OPS.md), with encrypted daily database backups.
+- The game doesn't use accounts yet; that's the next update. Guest play, co-op and game protocol 7 are unchanged.
+
+## 18 — Android test build (no gameplay change)
+
+- Native ARM64 Android APK (`tools/package-android.ps1`, app id `dev.galosengen.relicdiver`), landscape, same game and online lobbies as the browser and Windows builds. Verified on the Android emulator only; not yet on the Retroid Pocket 5.
+- Saves, settings, audio settings, online identity and checkpoints use per-app storage on Android through `DiverPaths`. Desktop and web storage are unchanged. No gameplay or protocol change: still game protocol 7.
+
 ## 17 — Shared co-op map, waiting part picks and cache icons
 
 - **Shared map:** rooms any teammate explores appear on everyone's ruins map; clears were already shared. Room banners still greet you the first time you walk in.

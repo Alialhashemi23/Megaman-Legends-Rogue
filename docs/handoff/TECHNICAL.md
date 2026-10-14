@@ -8,6 +8,7 @@ Godot 4.7.1, GDScript, GL Compatibility renderer, GodotPhysics3D. Entry point: p
 |---|---|
 | scripts/game.gd | Generation, encounters, run state, rewards, saves and built-in validation modes; the online co-op rules are at the end |
 | scripts/progression.gd | Zenny rewards, the per-digger skill trees (costs, prerequisites, effects), profile v2 migration and checksummed save codes |
+| scripts/account.gd | Browser/Windows auth, account profiles, durable ordered outbox, HTTP/retries, device codes, run leases, migration and lobby tickets (ACCOUNT-SYNC.md) |
 | scripts/player.gd | CharacterBody3D movement, camera collision, aiming, lock-on, signature attacks, statistics and footsteps |
 | scripts/character.gd | `DiverCharacter`: imported rigs (`COUNT`, `IDS`, per-character buster colour/scale), manual animation advance, aim layer and muzzle |
 | scripts/enemy.gd | Robot behavior, attack preparation/recovery, guardians and damage |
