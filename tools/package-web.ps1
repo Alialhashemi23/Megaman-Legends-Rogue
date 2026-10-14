@@ -24,6 +24,8 @@ New-Item -ItemType Directory -Path $fontPath | Out-Null
 foreach ($name in @('RussoOne-Regular.ttf', 'BarlowSemiCondensed-SemiBold.ttf')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot "assets/fonts/$name") -Destination $fontPath
 }
+Copy-Item -LiteralPath (Join-Path $projectRoot 'assets/ui/volnutt_portrait.png') -Destination (Join-Path $webPath 'volnutt-portrait.png')
+Copy-Item -LiteralPath (Join-Path $projectRoot 'assets/ui/icon.png') -Destination (Join-Path $webPath 'volnutt-icon.png')
 $partialPath = "$archivePath.partial"
 if (Test-Path -LiteralPath $partialPath) { Remove-Item -LiteralPath $partialPath }
 Add-Type -AssemblyName System.IO.Compression

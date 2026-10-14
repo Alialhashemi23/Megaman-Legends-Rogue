@@ -13,6 +13,8 @@ cp -r build/font-licenses build/audio-licenses build/web/
 # The loading screen (web/shell.html) uses the game's fonts before the game has loaded.
 mkdir -p build/web/fonts
 cp assets/fonts/RussoOne-Regular.ttf assets/fonts/BarlowSemiCondensed-SemiBold.ttf build/web/fonts/
+cp assets/ui/volnutt_portrait.png build/web/volnutt-portrait.png
+cp assets/ui/icon.png build/web/volnutt-icon.png
 rm -f build/RelicDiver-Web.zip.partial
 (cd build/web && zip -q -9 -r ../RelicDiver-Web.zip.partial .)
 size=$(stat -c %s build/RelicDiver-Web.zip.partial)

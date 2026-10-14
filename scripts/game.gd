@@ -76,7 +76,6 @@ var outcome = false
 var new_unlocks: Array = []
 var selected_weapon: int:
 	get: return DiverPlayer.SIGNATURES[selected_character]
-	set(_value): pass
 var selected_character = 0
 var title_clock = 0.0
 var meta = DiverProgression.fresh()
@@ -276,7 +275,7 @@ func start_run(seed_value: int = 0, party: int = 1, id: String = "") -> void:
 	player.weapon = selected_weapon
 	player.hp = player.max_hp()
 	mode = "play"
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if OS.has_feature("web") and net.active() else Input.MOUSE_MODE_CAPTURED
 	notify("DESCENT 01 / " + DEPTH_NAMES[0], "Search the chambers. Defeat the guardian. Find the lift." if party_size == 1 else "Dig together. Stand beside a downed teammate to revive them.")
 	if net.active():
 		print("ONLINE: dig started seed=%d party=%d slot=%d rooms=%d exit=%d robots=%d" % [run_seed, party_size, net.slot, rooms.size(), exit_room, enemies.size()])
@@ -925,7 +924,10 @@ func save_meta() -> bool:
 	var error = f.get_error()
 	f.close()
 	if error != OK: return false
-	return DirAccess.rename_absolute(ProjectSettings.globalize_path(save_path + ".tmp"), ProjectSettings.globalize_path(save_path)) == OK
+	var renamed = DirAccess.rename_absolute(ProjectSettings.globalize_path(save_path + ".tmp"), ProjectSettings.globalize_path(save_path)) == OK
+	# FileAccess closed the temporary path; also sync the subsequent rename on web.
+	if renamed and OS.has_feature("web"): JavaScriptBridge.force_fs_sync()
+	return renamed
 
 func item_unlocked(id: String) -> bool:
 	return int(meta.kills) >= ITEMS[id].unlock or id in meta.legacy_unlocks or ("salvage" in DiverProgression.owned(meta, selected_character) and id == DiverProgression.RESEARCH[selected_character])
@@ -1336,7 +1338,7 @@ func apply_world_state(w: Dictionary, keep_player: bool) -> void:
 			make_pickup(int(item[0]), item[1], str(item[2]), float(item[3]), str(item[4]), str(item[5]))
 	pickup_seq = int(w.get("pickup_seq", 0))
 	mode = "play"
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if OS.has_feature("web") else Input.MOUSE_MODE_CAPTURED
 
 # --- checkpoints ---------------------------------------------------------------
 
@@ -1405,7 +1407,6 @@ func restore_checkpoint(cp: Dictionary) -> void:
 	var selected = cp.get("selected", [selected_character, selected_weapon])
 	if selected is Array and selected.size() == 2:
 		selected_character = clampi(int(selected[0]), 0, DiverCharacter.COUNT - 1)
-		selected_weapon = clampi(int(selected[1]), 0, 2)
 	apply_world_state(cp.world, false)
 	var mine = roster.get(net.player_id, cp.build if not cp.online or str(cp.build.get("id", "")) == net.player_id else {})
 	if mine is Dictionary and not mine.is_empty(): apply_build(mine)

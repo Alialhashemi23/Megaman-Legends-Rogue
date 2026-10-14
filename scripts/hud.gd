@@ -64,6 +64,7 @@ var workshop_message = ""
 var save_edit: LineEdit
 var save_message = "Export a code to keep a backup outside this browser."
 var pending_import: Dictionary = {}
+var waiting_for_paste = false
 # Rebinding: {"id": action, "column": "kb"/"pad", "time": seconds left}.
 var listening: Dictionary = {}
 var confirming = ""
@@ -388,6 +389,14 @@ func activate(action: String, value: int = 0) -> void:
             DisplayServer.clipboard_set(save_edit.text)
             save_message = "Code ready. Copy the field if your browser blocked clipboard access."
             pending_import = {}
+        "paste_save":
+            if OS.has_feature("web"):
+                JavaScriptBridge.eval("window.relicSavePaste = null; navigator.clipboard.readText().then(v => window.relicSavePaste = v).catch(() => window.relicSavePaste = '');", true)
+                waiting_for_paste = true
+                save_message = "Reading clipboard…"
+            else:
+                save_edit.text = DisplayServer.clipboard_get().left(32768)
+                pending_import = {}
         "check_import":
             pending_import = DiverProgression.decode(save_edit.text)
             save_message = "Invalid or damaged code. Your progress is unchanged." if pending_import.is_empty() else "Backup: %d digs / %d Zenny. Replace this device's progress?" % [pending_import.runs, pending_import.zenny]
@@ -401,9 +410,6 @@ func activate(action: String, value: int = 0) -> void:
         "inventory": game.mode = "inventory"
         "inspect": selected_item = value
         "title": game.show_title()
-        "weapon":
-            game.selected_weapon = value
-            game.send_info()
         "character": select_character(value)
         "mute": game.sound.muted = not game.sound.muted
         "options":
@@ -475,7 +481,12 @@ func _draw() -> void:
     copied_time = maxf(0, copied_time - get_process_delta_time())
     confirm_time -= get_process_delta_time()
     if confirm_time <= 0: confirming = ""
-    for field in [name_edit, code_edit, server_edit, pass_edit, new_pass_edit, save_edit]: field.visible = false
+    # Hiding a focused LineEdit releases focus, even if shown again in this draw.
+    # Only hide fields when their page no longer owns them.
+    name_edit.visible = game.mode in ["online", "lobby"]
+    for field in [code_edit, server_edit, pass_edit, new_pass_edit]:
+        if game.mode != "online": field.visible = false
+    save_edit.visible = game.mode == "save_codes"
     var chatting = game.net.active() and (game.mode == "lobby" or (game.mode == "play" and game.chat_open))
     if not chatting: chat_edit.visible = false
     match game.mode:
@@ -1302,19 +1313,27 @@ func draw_workshop() -> void:
         text_at(pos + Vector2(18, 56), detail, 21, MUTED, false, 715)
         var label = "Fitted" if owned else "%d Z / Buy" % entry.cost if available else "%d Z / Locked" % entry.cost
         button(pos + Vector2(748, 12), Vector2(216, 48), label, "buy_skill", i)
-    text_at(Vector2(394, 802), workshop_message if workshop_message != "" else "Frame → Mobility + Research → Signature Circuit → Master Mechanic", 22, CYAN)
+    text_at(Vector2(394, 802), workshop_message if workshop_message != "" else "Frame > Mobility + Research > Signature Circuit > Master Mechanic", 22, CYAN)
     button(Vector2(64, 828), Vector2(300, 56), "Save Codes / Backup", "save_codes")
     button(Vector2(394, 828), Vector2(460, 56), "Return to Lobby" if game.net.active() else "Start Another Dig", "lobby_room" if game.net.active() else "start", 0, true)
     button(Vector2(884, 828), Vector2(492, 56), "Back", workshop_return)
 
 func draw_save_codes() -> void:
+    if waiting_for_paste:
+        var pasted = JavaScriptBridge.eval("window.relicSavePaste", true)
+        if pasted is String:
+            waiting_for_paste = false
+            save_edit.text = pasted.left(32768)
+            pending_import = {}
+            save_message = "Code pasted. Check it before replacing progress." if pasted != "" else "Clipboard access blocked. Click the field and paste your code manually."
     backdrop()
     page_title("SAVE CODE", "Keep your Zenny, skill trees, discoveries and records across browsers or devices.")
     window(Vector2(64, 282), Vector2(1312, 440))
     text_at(Vector2(96, 332), "YOUR PROGRESS / YOUR BACKUP", 27, CYAN, true)
     paragraph(Vector2(96, 392), "Export, then copy the entire code to a safe place. Paste it here on another device, check it, then confirm. Import replaces the local progress record.", 1216, 29, WHITE, 3)
     place_field(save_edit, Vector2(96, 492), Vector2(1248, 68), 23)
-    paragraph(Vector2(96, 620), save_message, 1216, 26, YELLOW, 3)
+    button(Vector2(96, 570), Vector2(330, 46), "Paste from Clipboard", "paste_save")
+    paragraph(Vector2(96, 660), save_message, 1216, 26, YELLOW, 2)
     button(Vector2(64, 764), Vector2(300, 62), "Export / Copy Code", "export_save", 0, true)
     button(Vector2(388, 764), Vector2(300, 62), "Check Pasted Code", "check_import")
     if not pending_import.is_empty(): button(Vector2(712, 764), Vector2(348, 62), "Replace Local Progress", "confirm_import")

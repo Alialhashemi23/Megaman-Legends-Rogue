@@ -44,6 +44,10 @@ func run() -> void:
 		var collision = p.get_child(0) as CollisionShape3D
 		verify(is_equal_approx(collision.shape.height, 1.05 if character == 3 else 1.8), "Collision height matches model")
 		verify(is_equal_approx(p.max_hp(), 65 if character == 3 else 100), "Servbot is fragile")
+		var life_before = p.max_hp()
+		p.base_health += 20
+		verify(is_equal_approx(p.max_hp(), life_before + 20), "Run Life upgrades retain their full value")
+		p.base_health -= 20
 		verify(p.speed() > 7.0 if character == 3 else is_equal_approx(p.speed(), 6.2), "Servbot is fast")
 		p.shoot()
 		var bolts = game.world.find_children("*", "Node3D", false, false).filter(func(n): return n is DiverBolt)
@@ -128,7 +132,6 @@ func run() -> void:
 	game.mode = "workshop"
 	game.finish_run(false)
 	verify(game.meta.zenny == balance and game.zenny_earned == 180, "Run reward is recorded once")
-	game.save_path = "res://save/missing-dir/not-a-file/invalid.json"
 	# Verify the actual new menus with keyboard focus, not just drawing helpers.
 	game.mode = "end"
 	game.hud.activate("workshop")
@@ -141,6 +144,11 @@ func run() -> void:
 	await process_frame
 	await process_frame
 	verify(game.hud.save_edit.visible, "Save field is visible")
+	game.hud.save_edit.grab_focus()
+	game.hud.queue_redraw()
+	await process_frame
+	await process_frame
+	verify(game.hud.save_edit.has_focus(), "Save field retains focus across redraws")
 	game.hud.save_edit.text = code
 	game.hud.activate("check_import")
 	verify(not game.hud.pending_import.is_empty(), "Import previews progress before replacing it")

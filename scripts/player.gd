@@ -103,7 +103,8 @@ func count(id: String) -> int:
 	return int(items.get(id, 0))
 
 func max_hp() -> float:
-	return base_health * (0.65 if character == 3 else 1.0) * (1.08 if "frame" in skills else 1.0) + 20 * count("heart")
+	var starting_life = 65.0 if character == 3 else 100.0
+	return base_health - 100.0 + starting_life * (1.08 if "frame" in skills else 1.0) + 20 * count("heart")
 
 func damage() -> float:
 	return base_damage * (1.0 + 0.16 * count("lens"))
@@ -359,7 +360,7 @@ func apply_state(pos: Vector3, vel: Vector3, new_yaw: float, new_pitch: float, i
 	move_input = input
 	net_flags = flags
 	hp = life
-	base_health = (life_max - 20 * count("heart")) / ((0.65 if character == 3 else 1.0) * (1.08 if "frame" in skills else 1.0))
+	base_health = life_max - 20 * count("heart") - (65.0 if character == 3 else 100.0) * (1.08 if "frame" in skills else 1.0) + 100.0
 	revive = revive_amount
 	var was_down = downed
 	downed = flags & FLAG_DOWN != 0
