@@ -26,6 +26,11 @@ var xp = 0
 var xp_required = 12
 var items: Dictionary = {}
 var weapon = 0
+var skills: Array = []
+var shot_count = 0
+var repair_cooldown = 0.0
+const SIGNATURES = [0, 1, 2, 3]
+const ATTACK_DETAILS = ["Steady all-round Pulse shots", "Rapid Needle shots / revives twice as fast", "Heavy Siege shots / splash behind exposed targets", "Arcing salvage bombs / small, fast, fragile"]
 var trauma = 0.0
 var lock_blocked = 0.0
 var footstep_time = 0.0
@@ -77,6 +82,12 @@ func _ready() -> void:
 
 func set_character(index: int) -> void:
 	character = clampi(index, 0, DiverCharacter.COUNT - 1)
+	weapon = SIGNATURES[character]
+	for child in get_children():
+		if child is CollisionShape3D:
+			child.shape.height = 1.05 if character == 3 else 1.8
+			child.shape.radius = 0.23 if character == 3 else 0.34
+			child.position.y = child.shape.height * 0.5
 	var facing = visual.rotation.y if is_instance_valid(visual) else yaw
 	if is_instance_valid(visual):
 		remove_child(visual)
@@ -85,24 +96,24 @@ func set_character(index: int) -> void:
 	visual.character = character
 	add_child(visual)
 	visual.rotation.y = facing
-	visual.equip(weapon)
+	visual.equip(mini(weapon, 2))
 	art = {"root": visual}
 
 func count(id: String) -> int:
 	return int(items.get(id, 0))
 
 func max_hp() -> float:
-	return base_health + 20 * count("heart")
+	return base_health * (0.65 if character == 3 else 1.0) * (1.08 if "frame" in skills else 1.0) + 20 * count("heart")
 
 func damage() -> float:
 	return base_damage * (1.0 + 0.16 * count("lens"))
 
 func speed() -> float:
-	return base_speed * (1.0 + 0.09 * count("boots"))
+	return base_speed * (1.18 if character == 3 else 1.0) * (1.04 if "mobility" in skills else 1.0) * (1.0 + 0.09 * count("boots"))
 
 func fire_delay() -> float:
-	var base = [0.25, 0.13, 0.65][weapon]
-	return base / (fire_multiplier * (1.0 + 0.14 * count("spring")))
+	var base = [0.25, 0.13, 0.65, 0.75][weapon]
+	return base / (fire_multiplier * (1.05 if "mastery" in skills else 1.0) * (1.0 + 0.14 * count("spring")))
 
 func _physics_process(dt: float) -> void:
 	if not game.world_running(): return
@@ -112,6 +123,7 @@ func _physics_process(dt: float) -> void:
 	# Online menus and choices keep the world running; the digger simply stands still.
 	var controls = game.mode == "play" and not downed and not game.chat_open
 	cooldown -= dt
+	repair_cooldown -= dt
 	invincible -= dt
 	dash_cooldown -= dt
 	dash_time -= dt
@@ -141,6 +153,10 @@ func _physics_process(dt: float) -> void:
 		dash_cooldown = maxf(0.65, 1.35 - count("boots") * 0.06)
 		invincible = 0.26
 		game.sound.play("dash")
+		if character == 1 and "ability" in skills and repair_cooldown <= 0:
+			heal(8)
+			repair_cooldown = 8.0
+			game.burst(global_position + Vector3.UP, Color("9cde70"), 6)
 		if count("frost") > 0: game.frost_burst(position, 2 + count("frost"))
 	if dash_time > 0:
 		velocity.x = dash_direction.x * 19
@@ -166,7 +182,7 @@ func _physics_process(dt: float) -> void:
 	art.root.rotation.z = lerpf(art.root.rotation.z, -input.x * 0.065, dt * 8)
 	var aiming = controls and (Input.is_action_pressed("fire") or is_instance_valid(lock_target) or cooldown > 0)
 	aiming_now = aiming
-	visual.equip(weapon)
+	visual.equip(mini(weapon, 2))
 	if downed:
 		visual.preview(dt, true, false)
 		update_revive(dt)
@@ -186,7 +202,7 @@ func update_camera(dt: float) -> void:
 	if downed and is_local:
 		var mate = game.spectate_target()
 		if mate: focus = mate
-	var pivot = focus.global_position + Vector3(0, 1.55, 0)
+	var pivot = focus.global_position + Vector3(0, 0.85 if focus.character == 3 else 1.55, 0)
 	var basis_cam = Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, pitch)
 	var desired = pivot + basis_cam * Vector3(-0.78, 0.60, 5.8)
 	var ray = PhysicsRayQueryParameters3D.create(pivot, desired, 1)
@@ -231,12 +247,12 @@ func shoot() -> void:
 	cooldown = fire_delay()
 	recoil = 1
 	visual.fire()
-	game.sound.play(["shot", "needle", "siege"][weapon])
+	game.sound.play(["shot", "needle", "siege", "siege"][weapon])
 	# Apply full aim on the first shot as well as during sustained fire.
 	visual.arm_weight = 1.0
 	visual.layer_aim(0, true, pitch, recoil)
 	var start = visual.muzzle.global_position
-	var muzzle_wall = PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * 1.2, start, 1)
+	var muzzle_wall = PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * (0.65 if character == 3 else 1.2), start, 1)
 	if not get_world_3d().direct_space_state.intersect_ray(muzzle_wall).is_empty():
 		game.burst(start, Color("ffca68"), 3)
 		return
@@ -250,13 +266,20 @@ func shoot() -> void:
 	if not hit.is_empty(): aim = hit.position
 	if is_instance_valid(lock_target): aim = lock_target.global_position + Vector3.UP * (2.5 if lock_target.kind == 3 else 1.1)
 	var direction = (aim - start).normalized()
-	var amount = damage() * ([1.0, 0.55, 2.4][weapon])
-	game.spawn_bolt(start, direction, amount, false, weapon == 2, 0, self)
+	if weapon == 3:
+		var target = start + (aim - start).limit_length(28.0)
+		var flight = maxf(0.25, Vector2(target.x - start.x, target.z - start.z).length() / 18.0)
+		direction = (target - start) / flight + Vector3.UP * 10.0 * flight
+	var amount = damage() * ([1.0, 0.55, 2.4, 2.0][weapon])
+	shot_count += 1
+	if character == 0 and "ability" in skills and shot_count % 5 == 0: amount *= 1.6
+	game.spawn_bolt(start, direction, amount, false, weapon >= 2, 1 if weapon == 3 else 0, self)
+	game.build_changed()
 	if count("echo") > 0 and game.rng.randf() < minf(0.8, 0.12 * count("echo")):
-		game.spawn_bolt(start + Vector3.UP * 0.18, direction.rotated(Vector3.UP, 0.025), amount * 0.7, false, false, 0, self)
+		game.spawn_bolt(start + Vector3.UP * 0.18, direction.rotated(Vector3.UP, 0.025), amount * 0.7, false, weapon >= 2, 1 if weapon == 3 else 0, self)
 	if count("split") > 0:
 		for sign_dir in [-1, 1]:
-			game.spawn_bolt(start, direction.rotated(Vector3.UP, sign_dir * 0.13), amount * minf(0.75, 0.25 + count("split") * 0.12), false, false, 0, self)
+			game.spawn_bolt(start, direction.rotated(Vector3.UP, sign_dir * 0.13), amount * minf(0.75, 0.25 + count("split") * 0.12), false, weapon >= 2, 1 if weapon == 3 else 0, self)
 
 func hurt(amount: float) -> void:
 	if invincible > 0 or downed or not game.world_running(): return
@@ -301,7 +324,10 @@ func update_revive(dt: float) -> void:
 	var helper = ""
 	for other in game.remote_players.values():
 		if is_instance_valid(other) and not other.downed and other.global_position.distance_to(global_position) < 2.4: helper = other.display_name
-	revive = clampf(revive + (dt / 2.5 if helper != "" else -dt * 0.25), 0, 1)
+	var rate = 1.0
+	for other in game.remote_players.values():
+		if is_instance_valid(other) and not other.downed and other.character == 1 and other.global_position.distance_to(global_position) < 2.4: rate = 2.0
+	revive = clampf(revive + (dt * rate / 2.5 if helper != "" else -dt * 0.25), 0, 1)
 	if revive >= 1: revive_now(0.35, helper)
 
 func revive_now(fraction: float, helper: String = "") -> void:
@@ -333,7 +359,7 @@ func apply_state(pos: Vector3, vel: Vector3, new_yaw: float, new_pitch: float, i
 	move_input = input
 	net_flags = flags
 	hp = life
-	base_health = life_max - 20 * count("heart")
+	base_health = (life_max - 20 * count("heart")) / ((0.65 if character == 3 else 1.0) * (1.08 if "frame" in skills else 1.0))
 	revive = revive_amount
 	var was_down = downed
 	downed = flags & FLAG_DOWN != 0
@@ -348,7 +374,7 @@ func remote_process(dt: float) -> void:
 	global_position = global_position.lerp(target, minf(1, dt * 14))
 	art.root.rotation.y = lerp_angle(art.root.rotation.y, yaw, dt * 16)
 	art.root.rotation.z = lerpf(art.root.rotation.z, -move_input.x * 0.065, dt * 8)
-	visual.equip(weapon)
+	visual.equip(mini(weapon, 2))
 	if downed: visual.preview(dt, true, false)
 	else: visual.animate(dt, move_input, net_flags & FLAG_FLOOR != 0, net_vel.y, net_flags & FLAG_DASH != 0, net_flags & FLAG_AIM != 0, pitch, recoil, speed() / base_speed)
 	if visual.foot_contact and footstep_time <= 0 and not downed:
@@ -363,7 +389,7 @@ func remote_shot(start: Vector3) -> void:
 	visual.fire()
 	visual.arm_weight = 1.0
 	game.muzzle_flash(start, Color("ffda82"), 0.28 if weapon == 2 else 0.16)
-	game.sound.play(["shot", "needle", "siege"][weapon], 1.0, start)
+	game.sound.play(["shot", "needle", "siege", "siege"][weapon], 1.0, start)
 
 # Quick-chat callouts float above the digger for a few seconds.
 func speak(text: String) -> void:

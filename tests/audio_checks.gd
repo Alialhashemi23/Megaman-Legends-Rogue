@@ -62,7 +62,7 @@ func run() -> void:
 	game.hud.queue_redraw()
 	await process_frame
 	await process_frame
-	verify(game.hud.hits.size() == 14, "Options expose sound, display and control settings")
+	verify(game.hud.hits.size() == game.hud.OPTIONS.size(), "Options expose sound, display and control settings")
 	var music_level = game.sound.volumes.Music
 	press(KEY_DOWN)
 	press(KEY_LEFT)

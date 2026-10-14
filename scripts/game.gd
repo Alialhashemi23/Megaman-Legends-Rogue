@@ -7,15 +7,15 @@ const ITEMS = {
 	"boots": {"name": "Gyro Soles", "desc": "+9% movement speed and a shorter dash cooldown.", "color": "a7c8f5", "unlock": 0},
 	"shell": {"name": "Fossil Plating", "desc": "Damage reduction scales with each stack.", "color": "b8c7a4", "unlock": 0},
 	"moss": {"name": "Copper Moss", "desc": "Every defeated machine restores 1.5 health per stack.", "color": "95d89d", "unlock": 0},
-	"ember": {"name": "Ember Engine", "desc": "Buster hits burn enemies for 2 damage per tick per stack.", "color": "f99668", "unlock": 10},
-	"coil": {"name": "Storm Coil", "desc": "18% chance per stack to chain lightning to nearby enemies.", "color": "9fb4ff", "unlock": 10},
-	"prism": {"name": "Oracle Prism", "desc": "+8% critical chance per stack. Critical hits deal double damage.", "color": "dca4ec", "unlock": 25},
-	"echo": {"name": "Echo Circuit", "desc": "12% chance per stack to fire a second bolt at 70% damage.", "color": "8edee8", "unlock": 25},
-	"split": {"name": "Forked Antenna", "desc": "Add two side bolts. Stacks increase their damage.", "color": "edd998", "unlock": 50},
-	"frost": {"name": "Winter Flywheel", "desc": "Dashing slows nearby machines. Stacks extend the slow.", "color": "b2e4ef", "unlock": 50},
-	"clover": {"name": "Salvager's Charm", "desc": "+2.5 percentage points to relic drop chance per stack.", "color": "c1dc8e", "unlock": 50}
+	"ember": {"name": "Ember Engine", "desc": "Buster hits burn enemies for 2 damage per tick per stack.", "color": "f99668", "unlock": 40},
+	"coil": {"name": "Storm Coil", "desc": "18% chance per stack to chain lightning to nearby enemies.", "color": "9fb4ff", "unlock": 40},
+	"prism": {"name": "Oracle Prism", "desc": "+8% critical chance per stack. Critical hits deal double damage.", "color": "dca4ec", "unlock": 100},
+	"echo": {"name": "Echo Circuit", "desc": "12% chance per stack to fire a second bolt at 70% damage.", "color": "8edee8", "unlock": 100},
+	"split": {"name": "Forked Antenna", "desc": "Add two side bolts. Stacks increase their damage.", "color": "edd998", "unlock": 220},
+	"frost": {"name": "Winter Flywheel", "desc": "Dashing slows nearby machines. Stacks extend the slow.", "color": "b2e4ef", "unlock": 220},
+	"clover": {"name": "Salvager's Charm", "desc": "+2.5 percentage points to relic drop chance per stack.", "color": "c1dc8e", "unlock": 220}
 }
-const WEAPONS = ["PULSE BUSTER", "NEEDLE BUSTER", "SIEGE BUSTER"]
+const WEAPONS = ["PULSE BUSTER", "NEEDLE BUSTER", "SIEGE BUSTER", "SALVAGE BOMBS"]
 const DEPTH_NAMES = ["THE TIDAL ARCHIVE", "GARDEN OF ENGINES", "HEART OF THE MACHINE"]
 const BOSS_NAMES = ["ARCHIVE KEEPER", "VERDANT ENGINE", "CORE WARDEN"]
 const ROOM_NAMES = ["PILLAR GALLERY", "RELAY CHAMBER", "SALVAGE ARCHIVE", "COOLANT WORKS", "BROKEN FOUNDRY", "STEPPED VAULT", "TERRACE HALL", "GRAND CONCOURSE", "PASSAGE"]
@@ -74,10 +74,14 @@ var choice_items: Array = []
 var choice_kind = ""
 var outcome = false
 var new_unlocks: Array = []
-var selected_weapon = 0
+var selected_weapon: int:
+	get: return DiverPlayer.SIGNATURES[selected_character]
+	set(_value): pass
 var selected_character = 0
 var title_clock = 0.0
-var meta = {"kills": 0, "runs": 0, "wins": 0, "deepest": 0, "discovered": {}, "best_time": 0.0}
+var meta = DiverProgression.fresh()
+var zenny_earned = 0
+var run_recorded = false
 var screenshot_timer = -1.0
 var smoke_test = false
 var test_clock = 0.0
@@ -266,8 +270,11 @@ func start_run(seed_value: int = 0, party: int = 1, id: String = "") -> void:
 	end_reason = ""
 	pickup_seq = 0
 	new_unlocks.clear()
+	run_recorded = false
+	zenny_earned = 0
 	build_floor(false)
 	player.weapon = selected_weapon
+	player.hp = player.max_hp()
 	mode = "play"
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	notify("DESCENT 01 / " + DEPTH_NAMES[0], "Search the chambers. Defeat the guardian. Find the lift." if party_size == 1 else "Dig together. Stand beside a downed teammate to revive them.")
@@ -322,6 +329,7 @@ func build_floor(keep_player: bool, arrive: bool = true) -> void:
 		player = DiverPlayer.new()
 		player.game = self
 		player.character = selected_character
+		player.skills = DiverProgression.owned(meta, selected_character)
 		world.add_child(player)
 	player.slot = net.slot
 	player.player_id = net.player_id if net.active() else ""
@@ -731,7 +739,7 @@ func enter_floor() -> void:
 func pool() -> Array:
 	var result = []
 	for id in ITEMS:
-		if int(meta.kills) >= ITEMS[id].unlock: result.append(id)
+		if item_unlocked(id): result.append(id)
 	return result
 
 func open_relic_choice() -> void:
@@ -819,10 +827,11 @@ func award_pickup(p: Dictionary, who: DiverPlayer) -> void:
 			else: net.send(who.slot, [DiverNet.M_ITEM, p.id])
 	net.broadcast([DiverNet.M_PICKUP_GONE, depth, p.net_id, who.slot, p.kind])
 
-func spawn_bolt(pos: Vector3, dir: Vector3, amount: float, hostile: bool, heavy: bool, _unused: int = 0, source: Node3D = null, cosmetic: bool = false) -> void:
+func spawn_bolt(pos: Vector3, dir: Vector3, amount: float, hostile: bool, heavy: bool, projectile_kind: int = 0, source: Node3D = null, cosmetic: bool = false) -> void:
 	var bolt = DiverBolt.new()
 	bolt.game = self
-	bolt.direction = dir.normalized()
+	bolt.direction = dir if projectile_kind == 1 else dir.normalized()
+	bolt.bomb = projectile_kind == 1
 	bolt.amount = amount
 	bolt.hostile = hostile
 	bolt.heavy = heavy
@@ -831,7 +840,7 @@ func spawn_bolt(pos: Vector3, dir: Vector3, amount: float, hostile: bool, heavy:
 	world.add_child(bolt)
 	bolt.global_position = pos
 	bolt.look_at(pos + dir)
-	if source == player and not cosmetic and net.active(): net.broadcast([DiverNet.M_SHOT, depth, pos, dir, heavy])
+	if source == player and not cosmetic and net.active(): net.broadcast([DiverNet.M_SHOT, depth, pos, dir, heavy, projectile_kind])
 
 func register_effect(node: Node3D, duration: float, grow: float = 0) -> void:
 	if effects.size() > 120: node.queue_free(); return
@@ -874,8 +883,11 @@ func notify(title: String, detail: String = "") -> void:
 	message_time = 4.5
 
 func finish_run(won: bool) -> void:
-	if mode == "end": return
+	if run_recorded: return
+	run_recorded = true
 	outcome = won
+	zenny_earned = DiverProgression.reward(depth, depth - 1 + int(guardian_dead), scrap)
+	meta.zenny = int(meta.zenny) + zenny_earned
 	var previous_kills = int(meta.kills)
 	meta.kills = previous_kills + kills
 	meta.runs = int(meta.runs) + 1
@@ -886,8 +898,6 @@ func finish_run(won: bool) -> void:
 	new_unlocks.clear()
 	for id in ITEMS:
 		if ITEMS[id].unlock > previous_kills and ITEMS[id].unlock <= int(meta.kills): new_unlocks.append(ITEMS[id].name)
-	if previous_kills < 10 and int(meta.kills) >= 10: new_unlocks.append("Needle Buster")
-	if previous_kills < 50 and int(meta.kills) >= 50: new_unlocks.append("Siege Buster")
 	save_meta()
 	mode = "end"
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -902,18 +912,46 @@ func load_meta() -> void:
 	var f = FileAccess.open(save_path, FileAccess.READ)
 	if f == null: return
 	var data = JSON.parse_string(f.get_as_text())
-	if data is Dictionary:
-		for key in meta:
-			if data.has(key) and typeof(data[key]) == typeof(meta[key]): meta[key] = data[key]
-		# JSON numbers decode as floats.
-		for key in ["kills", "runs", "wins", "deepest"]:
-			if data.get(key) is float or data.get(key) is int: meta[key] = maxi(0, int(data[key]))
+	var validated = DiverProgression.validate(data)
+	if not validated.is_empty(): meta = validated
 
-func save_meta() -> void:
-	if smoke_test: return
+func save_meta() -> bool:
+	if smoke_test: return true
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(save_path.get_base_dir()))
-	var f = FileAccess.open(save_path, FileAccess.WRITE)
-	if f != null: f.store_string(JSON.stringify(meta, "\t"))
+	var f = FileAccess.open(save_path + ".tmp", FileAccess.WRITE)
+	if f == null: return false
+	f.store_string(JSON.stringify(meta, "\t"))
+	f.flush()
+	var error = f.get_error()
+	f.close()
+	if error != OK: return false
+	return DirAccess.rename_absolute(ProjectSettings.globalize_path(save_path + ".tmp"), ProjectSettings.globalize_path(save_path)) == OK
+
+func item_unlocked(id: String) -> bool:
+	return int(meta.kills) >= ITEMS[id].unlock or id in meta.legacy_unlocks or ("salvage" in DiverProgression.owned(meta, selected_character) and id == DiverProgression.RESEARCH[selected_character])
+
+func buy_skill(character: int, id: String) -> bool:
+	if in_run() or not DiverProgression.can_buy(meta, character, id): return false
+	var before = meta.duplicate(true)
+	var skills = DiverProgression.owned(meta, character)
+	skills.append(id)
+	meta.trees[str(character)] = skills
+	meta.zenny -= DiverProgression.node(id).cost
+	if not save_meta():
+		meta = before
+		return false
+	return true
+
+func import_progress(data: Dictionary) -> bool:
+	if in_run() or net.active() or not saved_dig.is_empty(): return false
+	var validated = DiverProgression.validate(data)
+	if validated.is_empty(): return false
+	var before = meta
+	meta = validated
+	if not save_meta():
+		meta = before
+		return false
+	return true
 
 func time_string() -> String:
 	return "%02d:%02d" % [int(run_time) / 60, int(run_time) % 60]
@@ -1051,7 +1089,7 @@ func run_combat_test(dt: float) -> void:
 
 func validate_persistence() -> void:
 	save_path = "res://save/validation.json"
-	meta.kills = 57
+	meta.kills = 257
 	meta.runs = 4
 	meta.wins = 1
 	meta.discovered = {"coil": true}
@@ -1061,7 +1099,7 @@ func validate_persistence() -> void:
 	meta.wins = 0
 	meta.discovered = {}
 	load_meta()
-	assert(meta.kills == 57 and meta.runs == 4 and meta.wins == 1)
+	assert(meta.kills == 257 and meta.runs == 4 and meta.wins == 1)
 	assert(meta.discovered.has("coil"))
 	assert(pool().size() == ITEMS.size())
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path))
@@ -1092,7 +1130,7 @@ func run_movement_test(dt: float) -> void:
 # a local checkpoint while the host also stores one on the server.
 
 const QUICK_CHAT = ["Help!", "Over here!", "Nice!", "Wait up!"]
-const CHECKPOINT_VERSION = 2
+const CHECKPOINT_VERSION = 3
 
 func all_players() -> Array:
 	var result = [player] if is_instance_valid(player) else []
@@ -1194,17 +1232,27 @@ func local_player_down() -> void:
 # --- builds and world snapshots --------------------------------------------
 
 # Everything needed to hand a digger back their exact build.
+func clean_skills(value: Variant) -> Array:
+	var result = []
+	if value is Array:
+		for id in value:
+			if id is String and not DiverProgression.node(id).is_empty() and id not in result: result.append(id)
+	return result
+
 func build_state() -> Dictionary:
 	var p = player
 	var queue = choice_queue.duplicate()
 	if queue_level: queue.append("level")
-	return {"id": net.player_id, "name": net.player_name, "character": p.character, "weapon": p.weapon, "items": p.items.duplicate(), "level": p.level, "xp": p.xp, "xp_required": p.xp_required, "base_health": p.base_health, "base_damage": p.base_damage, "fire_multiplier": p.fire_multiplier, "hp": p.hp, "downed": p.downed, "choice": {"kind": choice_kind, "items": choice_items.duplicate()} if mode == "choice" else {}, "queue": queue}
+	return {"id": net.player_id, "name": net.player_name, "character": p.character, "weapon": p.weapon, "skills": p.skills.duplicate(), "shot_count": p.shot_count, "repair_cooldown": p.repair_cooldown, "items": p.items.duplicate(), "level": p.level, "xp": p.xp, "xp_required": p.xp_required, "base_health": p.base_health, "base_damage": p.base_damage, "fire_multiplier": p.fire_multiplier, "hp": p.hp, "downed": p.downed, "choice": {"kind": choice_kind, "items": choice_items.duplicate()} if mode == "choice" else {}, "queue": queue}
 
 func apply_build(b: Dictionary) -> void:
 	var p = player
 	if int(b.get("character", p.character)) != p.character: p.set_character(int(b.character))
 	selected_character = p.character
-	p.weapon = clampi(int(b.get("weapon", p.weapon)), 0, 2)
+	p.weapon = DiverPlayer.SIGNATURES[p.character]
+	p.skills = clean_skills(b.get("skills", []))
+	p.shot_count = maxi(0, int(b.get("shot_count", 0)))
+	p.repair_cooldown = clampf(float(b.get("repair_cooldown", 0)), 0, 8)
 	p.items = (b.get("items", {}) as Dictionary).duplicate() if b.get("items") is Dictionary else {}
 	p.level = int(b.get("level", 1))
 	p.xp = int(b.get("xp", 0))
@@ -1245,6 +1293,7 @@ func world_state() -> Dictionary:
 
 # Rebuild the floor from its seed, then apply everything that has happened on it.
 func apply_world_state(w: Dictionary, keep_player: bool) -> void:
+	if run_id != str(w.get("run_id", "")): run_recorded = false
 	run_id = str(w.get("run_id", ""))
 	run_seed = int(w.get("seed", 1))
 	party_size = clampi(int(w.get("party", 1)), 1, DiverNet.MAX_PLAYERS)
@@ -1390,6 +1439,7 @@ func send_info() -> void:
 	if mode in ["lobby", "online", "title"]:
 		build.character = selected_character
 		build.weapon = selected_weapon
+		build.skills = DiverProgression.owned(meta, selected_character)
 	if net.active():
 		roster[net.player_id] = build
 		net.broadcast([DiverNet.M_INFO, build])
@@ -1414,7 +1464,8 @@ func create_remote_player(member_slot: int) -> DiverPlayer:
 	proxy.player_id = net.member_id(member_slot)
 	proxy.display_name = net.member_name(member_slot)
 	proxy.character = clampi(int(info.get("character", 0)), 0, DiverCharacter.COUNT - 1)
-	proxy.weapon = clampi(int(info.get("weapon", 0)), 0, 2)
+	proxy.weapon = DiverPlayer.SIGNATURES[proxy.character]
+	proxy.skills = clean_skills(info.get("skills", []))
 	proxy.items = (info.get("items", {}) as Dictionary).duplicate() if info.get("items") is Dictionary else {}
 	proxy.level = int(info.get("level", 1))
 	world.add_child(proxy)
@@ -1699,7 +1750,7 @@ const NUM = -1
 const SHAPES = {
 	DiverNet.M_INFO: [TYPE_DICTIONARY],
 	DiverNet.M_STATE: [NUM, TYPE_VECTOR3, TYPE_VECTOR3, NUM, NUM, TYPE_VECTOR2, NUM, NUM, NUM, NUM],
-	DiverNet.M_SHOT: [NUM, TYPE_VECTOR3, TYPE_VECTOR3, TYPE_BOOL],
+	DiverNet.M_SHOT: [NUM, TYPE_VECTOR3, TYPE_VECTOR3, TYPE_BOOL, NUM],
 	DiverNet.M_START: [NUM, NUM, TYPE_STRING],
 	DiverNet.M_SNAP: [NUM, NUM, NUM, TYPE_BOOL, NUM, TYPE_PACKED_FLOAT32_ARRAY],
 	DiverNet.M_ATTACK: [NUM, NUM, TYPE_STRING, NUM, TYPE_VECTOR3],
@@ -1757,7 +1808,8 @@ func net_message(from_slot: int, m: Array) -> void:
 			var proxy = sender(from_slot)
 			if proxy:
 				if proxy.character != int(b.get("character", 0)): proxy.set_character(int(b.get("character", 0)))
-				proxy.weapon = clampi(int(b.get("weapon", 0)), 0, 2)
+				proxy.weapon = DiverPlayer.SIGNATURES[proxy.character]
+				proxy.skills = clean_skills(b.get("skills", []))
 				proxy.items = (b.items as Dictionary).duplicate()
 				proxy.level = int(b.get("level", 1))
 		DiverNet.M_STATE:
@@ -1769,7 +1821,7 @@ func net_message(from_slot: int, m: Array) -> void:
 				roster[id].hp = float(m[8])
 				roster[id].downed = int(m[7]) & DiverPlayer.FLAG_DOWN != 0
 		DiverNet.M_SHOT:
-			spawn_bolt(m[2], m[3], 0, false, m[4], 0, sender(from_slot), true)
+			spawn_bolt(m[2], m[3], 0, false, m[4], clampi(int(m[5]), 0, 1), sender(from_slot), true)
 			if sender(from_slot): sender(from_slot).remote_shot(m[2])
 		DiverNet.M_START:
 			if from_host:

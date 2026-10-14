@@ -36,7 +36,7 @@ func run() -> void:
 	# Solo digs aren't saved by default; the restore path is the one online rejoins use.
 	game.solo_checkpoints = true
 	game.clear_checkpoint()
-	game.meta = {"kills": 0, "runs": 0, "wins": 0, "deepest": 0, "discovered": {}, "best_time": 0.0}
+	game.meta = DiverProgression.fresh()
 	await process_frame
 
 	# Play a little: parts, a level, damage, kills, salvage, a descent and an open choice.

@@ -42,6 +42,7 @@ var invert_y = false
 var vibration = true
 var fullscreen = false
 var camera_effects = true
+var map_zoom = false
 var fov = 67.0
 var bindings: Dictionary = {}
 var using_pad = false
@@ -198,6 +199,7 @@ func load_settings() -> void:
 	invert_y = data.get("invert_y", false) == true
 	vibration = data.get("vibration", true) == true
 	fullscreen = data.get("fullscreen", false) == true
+	map_zoom = data.get("map_zoom", false) == true
 	camera_effects = data.get("camera_effects", true) == true
 	fov = clampf(float(data.get("fov", 67.0)), 55.0, 85.0)
 	var saved = data.get("bindings", {})
@@ -224,4 +226,4 @@ func save_settings() -> void:
 	if game and game.get("smoke_test"): return
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path.get_base_dir()))
 	var f = FileAccess.open(path, FileAccess.WRITE)
-	if f: f.store_string(JSON.stringify({"mouse_sensitivity": mouse_sensitivity, "look_speed": look_speed, "invert_y": invert_y, "vibration": vibration, "fullscreen": fullscreen, "camera_effects": camera_effects, "fov": fov, "bindings": bindings}, "\t"))
+	if f: f.store_string(JSON.stringify({"mouse_sensitivity": mouse_sensitivity, "look_speed": look_speed, "invert_y": invert_y, "vibration": vibration, "fullscreen": fullscreen, "camera_effects": camera_effects, "map_zoom": map_zoom, "fov": fov, "bindings": bindings}, "\t"))

@@ -55,9 +55,15 @@ var copied_time = 0.0
 # Destructive buttons need a second click within a few seconds.
 const CONFIRM = ["leave_online", "leave_dig", "abandon", "kick", "discard", "start_new", "give_up", "reset_controls"]
 # Options page rows: sound, display, then controls.
-const OPTIONS = ["master", "music", "effects", "ambience", "mute", "fullscreen", "camera", "fov", "mouse", "look", "invert", "vibration", "controls", "back"]
-const MENU_MODES = ["title", "pause", "options", "controls", "choice", "inventory", "archive", "end", "online", "lobby"]
+const OPTIONS = ["master", "music", "effects", "ambience", "mute", "fullscreen", "camera", "fov", "mouse", "look", "invert", "vibration", "controls", "map_zoom", "back"]
+const MENU_MODES = ["title", "pause", "options", "controls", "choice", "inventory", "archive", "end", "online", "lobby", "workshop", "save_codes"]
 var options_return = "title"
+var workshop_return = "title"
+var workshop_character = 0
+var workshop_message = ""
+var save_edit: LineEdit
+var save_message = "Export a code to keep a backup outside this browser."
+var pending_import: Dictionary = {}
 # Rebinding: {"id": action, "column": "kb"/"pad", "time": seconds left}.
 var listening: Dictionary = {}
 var confirming = ""
@@ -67,6 +73,7 @@ func _ready() -> void:
     mouse_filter = Control.MOUSE_FILTER_IGNORE
     texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
     for id in DiverCharacter.IDS: portraits.append(load("res://assets/ui/%s_portrait.png" % id))
+    save_edit = make_field(32768, "Paste a Relic Diver save code here")
     name_edit = make_field(16, "Your digger name")
     name_edit.text_submitted.connect(func(_text): commit_name(); get_viewport().gui_release_focus())
     name_edit.focus_exited.connect(commit_name)
@@ -293,8 +300,7 @@ func navigate(delta: int, horizontal: bool) -> void:
         if not hits.is_empty() and hits[clampi(focus_index, 0, hits.size()-1)].action == "character":
             select_character(game.selected_character + 1)
         else:
-            var count = 3 if game.meta.kills >= 50 else 2 if game.meta.kills >= 10 else 1
-            game.selected_weapon = wrapi(game.selected_weapon + delta, 0, count)
+            select_character(game.selected_character + delta)
     else: move_focus(delta)
     game.sound.play("menu_move")
 
@@ -309,6 +315,8 @@ func confirm() -> void:
 func back() -> bool:
     match game.mode:
         "archive", "online": activate("title")
+        "workshop": activate(workshop_return)
+        "save_codes": activate("workshop")
         "inventory", "pause": activate("resume")
         "options": activate(options_return)
         "controls": activate("options")
@@ -360,6 +368,35 @@ func activate(action: String, value: int = 0) -> void:
         "lock": game.net.set_locked(not bool(game.net.lobby.get("locked", false)))
         "resume": game.resume_game()
         "choice": game.choose(value)
+        "workshop":
+            if game.mode != "save_codes":
+                workshop_return = game.mode
+                workshop_character = game.selected_character
+                workshop_message = ""
+            game.mode = "workshop"
+        "tree_character": workshop_character = value
+        "buy_skill":
+            var id = DiverProgression.NODES[value].id
+            workshop_message = "Purchased " + DiverProgression.NODES[value].name if game.buy_skill(workshop_character, id) else "Purchase unavailable: check Zenny and prerequisites."
+        "save_codes":
+            game.mode = "save_codes"
+            save_edit.text = ""
+            pending_import = {}
+            save_message = "Export a code, then copy the whole field somewhere safe."
+        "export_save":
+            save_edit.text = DiverProgression.encode(game.meta)
+            DisplayServer.clipboard_set(save_edit.text)
+            save_message = "Code ready. Copy the field if your browser blocked clipboard access."
+            pending_import = {}
+        "check_import":
+            pending_import = DiverProgression.decode(save_edit.text)
+            save_message = "Invalid or damaged code. Your progress is unchanged." if pending_import.is_empty() else "Backup: %d digs / %d Zenny. Replace this device's progress?" % [pending_import.runs, pending_import.zenny]
+            get_viewport().gui_release_focus()
+        "confirm_import":
+            if not pending_import.is_empty() and game.import_progress(pending_import):
+                save_message = "Progress restored and saved."
+                pending_import = {}
+            else: save_message = "Import blocked. Leave online and finish or discard a saved dig first."
         "archive": game.mode = "archive"
         "inventory": game.mode = "inventory"
         "inspect": selected_item = value
@@ -385,6 +422,7 @@ func activate(action: String, value: int = 0) -> void:
             if game.net.active(): game.leave_online()
             else: game.finish_run(false)
         "pause": game.mode = "pause"
+        "end": game.mode = "end"
         "volume":
             var bus: String = ["Master", "Music", "Effects", "Ambience"][value]
             game.sound.adjust_volume(bus, -1.0 if game.sound.volumes[bus] >= 0.99 else 0.10)
@@ -437,7 +475,7 @@ func _draw() -> void:
     copied_time = maxf(0, copied_time - get_process_delta_time())
     confirm_time -= get_process_delta_time()
     if confirm_time <= 0: confirming = ""
-    for field in [name_edit, code_edit, server_edit, pass_edit, new_pass_edit]: field.visible = false
+    for field in [name_edit, code_edit, server_edit, pass_edit, new_pass_edit, save_edit]: field.visible = false
     var chatting = game.net.active() and (game.mode == "lobby" or (game.mode == "play" and game.chat_open))
     if not chatting: chat_edit.visible = false
     match game.mode:
@@ -452,6 +490,8 @@ func _draw() -> void:
         "controls": draw_controls()
         "inventory": draw_parts(false)
         "end": draw_end()
+        "workshop": draw_workshop()
+        "save_codes": draw_save_codes()
         _: draw_hud()
 
 func backdrop() -> void:
@@ -540,17 +580,10 @@ func draw_title() -> void:
         button(Vector2(64, menu_y), Vector2(230, 48), "Options", "options")
         button(Vector2(310, menu_y), Vector2(230, 48), "Quit", "quit")
     window(Vector2(48, 690), Vector2(508, 156))
-    text_at(Vector2(68, 723), "SELECT BUSTER", 21, WHITE, true)
-    for i in 3:
-        var pos = Vector2(70 + i * 157, 740)
-        var available = game.meta.kills >= [0, 10, 50][i]
-        var selected = game.selected_weapon == i
-        window(pos, Vector2(144, 82), SELECT if selected else INK, YELLOW if selected else EDGE, false)
-        icon(pos + Vector2(8, 7), ["pulse", "needle", "siege"][i] if available else "lock", 48, Color.WHITE if available else Color("8197bc"))
-        text_at(pos + Vector2(60, 35), ["Pulse", "Needle", "Siege"][i], 21, WHITE if available else MUTED)
-        text_at(pos + Vector2(60, 63), "Fitted" if selected else "%d kills" % [0, 10, 50][i] if not available else "Select", 18, YELLOW if selected else MUTED)
-        if available: hits.append({"rect": Rect2(pos, Vector2(144, 82)), "action": "weapon", "value": i})
-    text_at(Vector2(68, 881), "A fresh dig starts with base power.", 20, MUTED)
+    text_at(Vector2(68, 723), "SIGNATURE ATTACK", 21, WHITE, true)
+    button(Vector2(68, 854), Vector2(472, 40), "Workshop / Zenny & Skill Trees", "workshop")
+    text_at(Vector2(72, 766), game.WEAPONS[game.selected_weapon], 28, YELLOW, true)
+    paragraph(Vector2(72, 808), DiverPlayer.ATTACK_DETAILS[game.selected_character], 460, 22, MUTED, 2)
     window(Vector2(1080, 32), Vector2(312, 104), Color(0.06, 0.16, 0.40, 0.92))
     icon(Vector2(1098, 51), "record", 48)
     text_at(Vector2(1162, 65), "DIG RECORD", 21, WHITE, true)
@@ -634,8 +667,8 @@ func draw_hud() -> void:
             var names = {"slam": "Shockwave! Jump or dash away!", "bombard": "Bombardment! Leave the rings!", "cross": "Cross beam! Clear the lanes!", "fan": "Burst incoming! Keep moving!"}
             text_at(Vector2(522, 226), names.get(enemy.planned, "Watch out!"), 23, YELLOW)
     window(Vector2(30, 738), Vector2(310, 104), Color(0.05, 0.13, 0.35, 0.92))
-    icon(Vector2(42, 750), ["pulse", "needle", "siege"][p.weapon], 62)
-    text_at(Vector2(114, 774), ["Pulse Buster", "Needle Buster", "Siege Buster"][p.weapon], 25, WHITE, true, 212)
+    icon(Vector2(42, 750), ["pulse", "needle", "siege", "scrap"][p.weapon], 62)
+    text_at(Vector2(114, 774), ["Pulse Buster", "Needle Buster", "Siege Buster", "Salvage Bombs"][p.weapon], 25, WHITE, true, 212)
     text_at(Vector2(114, 805), "POWER %d  /  RAPID %.1f" % [buster_power(), 1 / p.fire_delay()], 21, MUTED)
     pips(Vector2(48, 824), 270, 6, float(p.xp) / p.xp_required, 20, YELLOW)
     keycap(Vector2(30, 856), p("parts"), 54)
@@ -710,21 +743,31 @@ func map_at(pos: Vector2, side: float) -> void:
     var span = high - low
     var zoom = (side - 20) / maxf(1.0, maxf(span.x, span.y))
     var origin = pos + (Vector2.ONE * side - span * zoom) * 0.5 - low * zoom
+    var bounds = Rect2(pos + Vector2.ONE * 4, Vector2.ONE * (side - 8))
+    if game.settings.map_zoom:
+        zoom = (side - 8) / 80.0
+        origin = pos + Vector2.ONE * side * 0.5 - Vector2(game.player.position.x, game.player.position.z) * zoom
+    var clip_polygon = PackedVector2Array([bounds.position, Vector2(bounds.end.x, bounds.position.y), bounds.end, Vector2(bounds.position.x, bounds.end.y)])
     var known = []
     for i in game.rooms.size(): known.append(game.rooms[i].visited)
     for link in game.links:
         if not (game.rooms[link.a].visited or game.rooms[link.b].visited): continue
         known[link.a] = true
         known[link.b] = true
-        draw_line(origin + link.from * zoom, origin + link.to * zoom, Color("5077b0"), maxf(2.0, 3.5 * zoom))
+        for segment in Geometry2D.intersect_polyline_with_polygon(PackedVector2Array([origin + link.from * zoom, origin + link.to * zoom]), clip_polygon):
+            draw_polyline(segment, Color("5077b0"), maxf(2.0, 3.5 * zoom))
     for i in game.rooms.size():
         if not known[i]: continue
         var room = game.rooms[i]
         var corner = origin + (Vector2(room.center.x, room.center.z) - room.half) * zoom
         var size: Vector2 = room.half * 2 * zoom
-        rect(corner - Vector2.ONE, size + Vector2.ONE * 2, CYAN if i == game.current_room else YELLOW if i == game.exit_room else EDGE)
-        rect(corner, size, Color("3f7fc4") if i == game.current_room else Color("668daf") if room.cleared and room.visited else Color("224779") if room.visited else INK)
-        if i == game.exit_room: draw_circle(corner + size * 0.5, 2.5, YELLOW)
+        var area = Rect2(corner, size).intersection(bounds)
+        if not area.has_area(): continue
+        corner = area.position
+        size = area.size
+        rect(corner, size, CYAN if i == game.current_room else YELLOW if i == game.exit_room else EDGE)
+        rect(corner + Vector2.ONE, (size - Vector2.ONE * 2).max(Vector2.ZERO), Color("3f7fc4") if i == game.current_room else Color("668daf") if room.cleared and room.visited else Color("224779") if room.visited else INK)
+        if i == game.exit_room and bounds.has_point(origin + Vector2(room.center.x, room.center.z) * zoom): draw_circle(origin + Vector2(room.center.x, room.center.z) * zoom, 2.5, YELLOW)
     var inside = Rect2(pos + Vector2.ONE * 4, Vector2.ONE * (side - 8))
     for mate in game.remote_players.values():
         if not is_instance_valid(mate): continue
@@ -759,8 +802,8 @@ func draw_pause() -> void:
     draw_texture_rect(portrait(), Rect2(542, 319, 166, 187), false)
     text_at(Vector2(548, 556), DiverCharacter.DISPLAY_NAMES[game.player.character], 24)
     text_at(Vector2(752, 335), "EQUIPMENT", 28, WHITE, true)
-    icon(Vector2(752, 358), ["pulse", "needle", "siege"][game.player.weapon], 68)
-    text_at(Vector2(840, 402), ["Pulse Buster", "Needle Buster", "Siege Buster"][game.player.weapon], 30, YELLOW)
+    icon(Vector2(752, 358), ["pulse", "needle", "siege", "scrap"][game.player.weapon], 68)
+    text_at(Vector2(840, 402), ["Pulse Buster", "Needle Buster", "Siege Buster", "Salvage Bombs"][game.player.weapon], 30, YELLOW)
     stat_line(Vector2(752, 464), "Power", "%.1f" % buster_power(), 560)
     stat_line(Vector2(752, 509), "Fire rate", "%.1f / sec" % (1 / game.player.fire_delay()), 560)
     stat_line(Vector2(752, 554), "Run speed", "%.1f" % game.player.speed(), 560)
@@ -771,7 +814,7 @@ func draw_pause() -> void:
     menu_footer("Select", "Return")
 
 func option_label(id: String) -> String:
-    return {"master": "Master volume", "music": "Music", "effects": "Effects", "ambience": "Ambience", "mute": "Mute all", "fullscreen": "Fullscreen", "camera": "Camera motion", "fov": "Field of view", "mouse": "Mouse sensitivity", "look": "Controller look speed", "invert": "Invert look (up/down)", "vibration": "Controller vibration", "controls": "Controls & bindings…", "back": "Back"}.get(id, id)
+    return {"master": "Master volume", "music": "Music", "effects": "Effects", "ambience": "Ambience", "mute": "Mute all", "fullscreen": "Fullscreen", "camera": "Camera motion", "fov": "Field of view", "mouse": "Mouse sensitivity", "look": "Controller look speed", "invert": "Invert look (up/down)", "vibration": "Controller vibration", "controls": "Controls & bindings…", "map_zoom": "Ruins map", "back": "Back"}.get(id, id)
 
 func option_value(id: String) -> String:
     var s = game.settings
@@ -779,6 +822,7 @@ func option_value(id: String) -> String:
         "master", "music", "effects", "ambience": return "%d%%" % roundi(game.sound.volumes[id.capitalize()] * 100)
         "mute": return "On" if game.sound.muted else "Off"
         "fullscreen": return "On" if s.fullscreen else "Off"
+        "map_zoom": return "Follow / zoomed" if s.map_zoom else "Whole floor"
         "camera": return "On" if s.camera_effects else "Off"
         "fov": return "%d°" % int(s.fov)
         "mouse": return "%.1f×" % s.mouse_sensitivity
@@ -796,7 +840,7 @@ func adjust_option(index: int, delta: int) -> void:
         "fov": s.fov = clampf(s.fov + delta * 2, 55, 85)
         "mouse": s.mouse_sensitivity = clampf(snappedf(s.mouse_sensitivity + delta * 0.1, 0.1), 0.2, 3.0)
         "look": s.look_speed = clampf(snappedf(s.look_speed + delta * 0.1, 0.1), 0.2, 3.0)
-        "mute", "fullscreen", "camera", "invert", "vibration": activate_option(index)
+        "mute", "fullscreen", "camera", "invert", "vibration", "map_zoom": activate_option(index)
         _: return
     s.save_settings()
 
@@ -811,6 +855,7 @@ func activate_option(index: int) -> void:
             game.sound.adjust_volume(bus, -1.0 if game.sound.volumes[bus] >= 0.99 else 0.10)
         "mute": game.sound.muted = not game.sound.muted
         "fullscreen": s.set_fullscreen(not s.fullscreen)
+        "map_zoom": s.map_zoom = not s.map_zoom
         "camera": s.camera_effects = not s.camera_effects
         "fov": s.fov = 55.0 if s.fov >= 85 else s.fov + 5
         "mouse": s.mouse_sensitivity = 0.2 if s.mouse_sensitivity >= 3.0 else snappedf(s.mouse_sensitivity + 0.2, 0.1)
@@ -844,8 +889,8 @@ func draw_options() -> void:
     text_at(Vector2(738, 278), "CONTROLS", 20, CYAN, true)
     for i in OPTIONS.size():
         option_row(Vector2(64, 292 + i * 62) if i < 8 else Vector2(736, 292 + (i - 8) * 62), i)
-    window(Vector2(736, 680), Vector2(640, 104), Color(0.06, 0.16, 0.40, 0.9))
-    paragraph(Vector2(758, 716), "Left / right adjusts. Plug in a controller any time: prompts switch to it automatically.", 600, 23, MUTED, 2)
+    window(Vector2(736, 752), Vector2(640, 72), Color(0.06, 0.16, 0.40, 0.9))
+    paragraph(Vector2(758, 780), "Left / right adjusts. Plug in a controller any time: prompts switch to it automatically.", 600, 23, MUTED, 2)
     menu_footer("Select", "Back", "Change")
 
 func draw_controls() -> void:
@@ -892,7 +937,7 @@ func total_parts() -> int:
     return count
 
 func buster_power() -> float:
-    return game.player.damage() * [1.0, 0.55, 2.4][game.player.weapon]
+    return game.player.damage() * [1.0, 0.55, 2.4, 2.0][game.player.weapon]
 
 func draw_parts(collection: bool) -> void:
     backdrop()
@@ -913,7 +958,7 @@ func draw_parts(collection: bool) -> void:
         for row in mini(7, ids.size() - list_scroll):
             var i = row + list_scroll
             var id: String = ids[i]
-            var unlocked = not collection or game.meta.kills >= game.ITEMS[id].unlock
+            var unlocked = not collection or game.item_unlocked(id)
             var pos = Vector2(80, 290 + row * 68)
             var area = Rect2(pos, Vector2(620, 60))
             if i == selected_item:
@@ -932,7 +977,7 @@ func draw_parts(collection: bool) -> void:
 
 func part_detail(pos: Vector2, id: String, collection: bool) -> void:
     var data = game.ITEMS[id]
-    var unlocked = not collection or game.meta.kills >= data.unlock
+    var unlocked = not collection or game.item_unlocked(id)
     text_at(pos + Vector2(0, 30), data.name if unlocked else "UNKNOWN PART", 32, WHITE, true, 568)
     text_at(pos + Vector2(0, 68), TYPES[id] if unlocked else "SEALED RECORD", 21, CYAN, true)
     window(pos + Vector2(174, 96), Vector2(212, 192), INK, Color("6285b8"), false)
@@ -1032,16 +1077,16 @@ func draw_end() -> void:
     text_at(Vector2(948, 507), "DIG RECORD", 26, WHITE, true)
     stat_line(Vector2(948, 560), "Total machines", str(game.meta.kills), 398)
     stat_line(Vector2(948, 608), "Successful digs", str(game.meta.wins), 398)
-    var next_unlock = 10 if game.meta.kills < 10 else 25 if game.meta.kills < 25 else 50
-    text_at(Vector2(948, 673), "%d to next unlock" % (next_unlock - game.meta.kills) if game.meta.kills < 50 else "All parts unlocked!", 27, YELLOW)
+    var next_unlock = 40 if game.meta.kills < 40 else 100 if game.meta.kills < 100 else 220
+    text_at(Vector2(948, 673), "%d to next unlock" % (next_unlock - game.meta.kills) if game.meta.kills < 220 else "All parts unlocked!", 27, YELLOW)
     if game.net.active():
-        button(Vector2(64, 764), Vector2(620, 62), "Return to Lobby", "lobby_room", 0, true)
+        button(Vector2(64, 764), Vector2(620, 62), "Workshop / Spend Zenny", "workshop", 0, true)
         button(Vector2(716, 764), Vector2(660, 62), confirm_label("leave_online", 0, "Leave Lobby"), "leave_online")
     else:
-        button(Vector2(64, 764), Vector2(620, 62), "Start Another Dig" if game.outcome else "Try Again", "start", 0, true)
+        button(Vector2(64, 764), Vector2(620, 62), "Workshop / Spend Zenny", "workshop", 0, true)
         button(Vector2(716, 764), Vector2(660, 62), "Return to Title", "title")
     icon(Vector2(64, 848), "save", 32)
-    text_at(Vector2(108, 873), "Dig record saved in this browser." if OS.has_feature("web") else "Dig record saved on this computer.", 23, MUTED)
+    text_at(Vector2(108, 873), "+%d Zenny earned / %d in wallet" % [game.zenny_earned, game.meta.zenny], 23, YELLOW)
 
 
 # --- Online co-op screens -----------------------------------------------------
@@ -1120,7 +1165,7 @@ func digger_card(pos: Vector2, member_slot: int, member_name: String, character:
     window(pos + Vector2(10, 8), Vector2(68, 76), BLUE, EDGE, false)
     draw_texture_rect(portraits[clampi(character, 0, DiverCharacter.COUNT - 1)], Rect2(pos + Vector2(13, 10), Vector2(62, 72)), false)
     text_at(pos + Vector2(94, 38), member_name, 27, color, true, 330)
-    text_at(pos + Vector2(94, 72), "%s  ·  %s" % [DiverCharacter.SHORT_NAMES[clampi(character, 0, DiverCharacter.COUNT - 1)].capitalize(), ["Pulse", "Needle", "Siege"][clampi(weapon, 0, 2)] + " Buster"], 22, MUTED, false, 360)
+    text_at(pos + Vector2(94, 72), "%s  ·  %s" % [DiverCharacter.SHORT_NAMES[clampi(character, 0, DiverCharacter.COUNT - 1)].capitalize(), ["Pulse Buster", "Needle Buster", "Siege Buster", "Salvage Bombs"][clampi(weapon, 0, 3)]], 22, MUTED, false, 360)
     var x = 576
     if member_slot == net.host_slot:
         badge(pos + Vector2(x, 14), "HOST", 86, YELLOW)
@@ -1155,15 +1200,8 @@ func draw_lobby() -> void:
         draw_texture_rect(portraits[i], Rect2(pos + Vector2(4, 3), Vector2(48, 54)), false)
         text_at(pos + Vector2(56, 38), DiverCharacter.SHORT_NAMES[i].capitalize(), 19 if i < 3 else 15, WHITE, true)
         hits.append({"rect": Rect2(pos, Vector2(125, 60)), "action": "character", "value": i})
-    for i in 3:
-        var pos = Vector2(86 + i * 176, 680)
-        var available = game.meta.kills >= [0, 10, 50][i]
-        var selected = game.selected_weapon == i
-        window(pos, Vector2(164, 62), SELECT if selected else INK, YELLOW if selected else EDGE, false)
-        icon(pos + Vector2(6, 7), ["pulse", "needle", "siege"][i] if available else "lock", 46, Color.WHITE if available else Color("8197bc"))
-        text_at(pos + Vector2(58, 28), ["Pulse", "Needle", "Siege"][i], 21, WHITE if available else MUTED)
-        text_at(pos + Vector2(58, 52), "Fitted" if selected else "Select" if available else "%d kills" % [0, 10, 50][i], 17, YELLOW if selected else MUTED)
-        if available: hits.append({"rect": Rect2(pos, Vector2(164, 62)), "action": "weapon", "value": i})
+    text_at(Vector2(86, 710), game.WEAPONS[game.selected_weapon], 25, YELLOW, true)
+    paragraph(Vector2(86, 746), DiverPlayer.ATTACK_DETAILS[game.selected_character], 520, 22, MUTED, 2)
     if net.is_host(): button(Vector2(64, 778), Vector2(280, 58), "Start Dig", "start_online", 0, true)
     else:
         window(Vector2(64, 778), Vector2(280, 58), INK, EDGE, false)
@@ -1242,3 +1280,43 @@ func draw_team() -> void:
         text_at(Vector2(446, 330), "A teammate can revive you by standing close.", 23, WHITE, false, 550)
         pips(Vector2(446, 342), 548, 8, game.player.revive, 24, YELLOW)
         text_at(Vector2(446, 378), "Watching %s  ·  %s to switch" % [watching.display_name, "A" if pad() else "click"] if watching else "Hold on — help is on the way.", 21, MUTED, false, 550)
+
+func draw_workshop() -> void:
+    backdrop()
+    page_title("THE WORKSHOP", "Permanent circuits / Each digger has their own tree. Parts and levels reset each dig.")
+    text_at(Vector2(1090, 232), "%d ZENNY" % game.meta.zenny, 30, YELLOW, true)
+    for i in DiverCharacter.COUNT:
+        button(Vector2(64 + i * 328, 278), Vector2(312, 62), DiverCharacter.DISPLAY_NAMES[i], "tree_character", i, workshop_character == i)
+    window(Vector2(64, 366), Vector2(300, 414))
+    draw_texture_rect(portraits[workshop_character], Rect2(92, 388, 244, 282), false)
+    paragraph(Vector2(86, 712), DiverPlayer.ATTACK_DETAILS[workshop_character], 260, 23, CYAN, 3)
+    var skills = DiverProgression.owned(game.meta, workshop_character)
+    for i in DiverProgression.NODES.size():
+        var entry = DiverProgression.NODES[i]
+        var pos = Vector2(394, 366 + i * 82)
+        var owned = entry.id in skills
+        var available = DiverProgression.can_buy(game.meta, workshop_character, entry.id)
+        window(pos, Vector2(982, 72), SELECT if owned else PANEL, GREEN if owned else EDGE, false)
+        text_at(pos + Vector2(18, 28), entry.name, 24, YELLOW if owned else WHITE, true)
+        var detail = DiverProgression.ABILITIES[workshop_character] if entry.id == "ability" else "Adds %s to this digger's drop pool." % game.ITEMS[DiverProgression.RESEARCH[workshop_character]].name if entry.id == "salvage" else entry.desc
+        text_at(pos + Vector2(18, 56), detail, 21, MUTED, false, 715)
+        var label = "Fitted" if owned else "%d Z / Buy" % entry.cost if available else "%d Z / Locked" % entry.cost
+        button(pos + Vector2(748, 12), Vector2(216, 48), label, "buy_skill", i)
+    text_at(Vector2(394, 802), workshop_message if workshop_message != "" else "Frame → Mobility + Research → Signature Circuit → Master Mechanic", 22, CYAN)
+    button(Vector2(64, 828), Vector2(300, 56), "Save Codes / Backup", "save_codes")
+    button(Vector2(394, 828), Vector2(460, 56), "Return to Lobby" if game.net.active() else "Start Another Dig", "lobby_room" if game.net.active() else "start", 0, true)
+    button(Vector2(884, 828), Vector2(492, 56), "Back", workshop_return)
+
+func draw_save_codes() -> void:
+    backdrop()
+    page_title("SAVE CODE", "Keep your Zenny, skill trees, discoveries and records across browsers or devices.")
+    window(Vector2(64, 282), Vector2(1312, 440))
+    text_at(Vector2(96, 332), "YOUR PROGRESS / YOUR BACKUP", 27, CYAN, true)
+    paragraph(Vector2(96, 392), "Export, then copy the entire code to a safe place. Paste it here on another device, check it, then confirm. Import replaces the local progress record.", 1216, 29, WHITE, 3)
+    place_field(save_edit, Vector2(96, 492), Vector2(1248, 68), 23)
+    paragraph(Vector2(96, 620), save_message, 1216, 26, YELLOW, 3)
+    button(Vector2(64, 764), Vector2(300, 62), "Export / Copy Code", "export_save", 0, true)
+    button(Vector2(388, 764), Vector2(300, 62), "Check Pasted Code", "check_import")
+    if not pending_import.is_empty(): button(Vector2(712, 764), Vector2(348, 62), "Replace Local Progress", "confirm_import")
+    button(Vector2(1084, 764), Vector2(292, 62), "Back", "workshop")
+    text_at(Vector2(64, 876), "Run checkpoints and control settings are separate from this backup.", 23, MUTED)
