@@ -17,6 +17,7 @@ Godot 4.7.1, GDScript, GL Compatibility renderer, GodotPhysics3D. Entry point: p
 | scripts/hud.gd | Scaled UI, menus (`MENU_MODES`), Workshop, save codes, equipment, map and input targets |
 | scripts/sound.gd | Audio buses, voices, crossfades, settings and ambience |
 | scripts/art.gd | Environment/robot construction, materials, floor-tile MultiMesh and historical procedural character code |
+| scripts/paths.gd | `DiverPaths`: picks portable `save/` or sandboxed `user://` storage per platform |
 | scripts/net.gd | Online transport, identity, lobby state, reconnect loop and invite links |
 | scripts/settings.gd | Options and the InputMap: rebindable keyboard/controller actions, prompts, rumble, display (settings.json) |
 | server/ | Node web host and lobby relay for the browser build (NETWORK.md) |
@@ -36,7 +37,7 @@ For another operating system, use a compatible Godot editor and open project.god
 
 ## Persistence precautions
 
-| Data | Desktop (source) | Web |
+| Data | Desktop (source) | Web / Android (`user://`) |
 |---|---|---|
 | Progress profile | `save/archive.json` | `user://archive.json` (IndexedDB) + localStorage recovery mirror |
 | Settings and controls | `save/settings.json` | `user://settings.json` |
@@ -44,7 +45,7 @@ For another operating system, use a compatible Godot editor and open project.god
 | Online identity | `save/online.json` | `user://online.json` |
 | Active online dig | `save/run_checkpoint.dat` | `user://run_checkpoint.dat` |
 
-The portable build keeps its own `build/save/` (or the extracted bundle's `save/`); it is a separate profile. Preserve existing profiles and never commit them. Desktop paths are `res://save/...`, which won't be writable in an Android APK (roadmap phase 2).
+The portable build keeps its own `build/save/` (or the extracted bundle's `save/`); it is a separate profile. Preserve existing profiles and never commit them. Desktop paths are `res://save/...`, which is read-only inside an Android APK, so `DiverPaths.pick()` (`scripts/paths.gd`) sends web and Android to `user://` (see [ANDROID.md](ANDROID.md)).
 
 Progress saves atomically on every Workshop purchase and at the end of each run; discoveries are recorded when parts are fitted. Online digs checkpoint every 5 s and on build changes; finishing a run deletes the checkpoint. Solo digs are not checkpointed (`solo_checkpoints = false`).
 

@@ -49,7 +49,7 @@ var using_pad = false
 var loaded = false
 
 func _ready() -> void:
-	if OS.has_feature("web"): path = WEB_PATH
+	path = DiverPaths.pick(PATH, WEB_PATH)
 	reset_bindings()
 	load_settings()
 	apply_bindings()
@@ -181,12 +181,12 @@ func rumble(weak: float, strong: float, seconds: float) -> void:
 	for device in Input.get_connected_joypads(): Input.start_joy_vibration(device, weak, strong, seconds)
 
 func apply_display() -> void:
-	if OS.has_feature("web") or DisplayServer.get_name() == "headless": return
+	if DiverPaths.sandboxed() or DisplayServer.get_name() == "headless": return
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if fullscreen else DisplayServer.WINDOW_MODE_WINDOWED)
 
 func set_fullscreen(value: bool) -> void:
 	fullscreen = value
-	if DisplayServer.get_name() != "headless":
+	if DisplayServer.get_name() != "headless" and not DiverPaths.sandboxed():
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if fullscreen else DisplayServer.WINDOW_MODE_WINDOWED)
 	save_settings()
 

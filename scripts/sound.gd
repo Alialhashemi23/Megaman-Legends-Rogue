@@ -29,7 +29,7 @@ var settings_path = SETTINGS_PATH
 
 func _ready() -> void:
 	rng.seed = 90317
-	if OS.has_feature("web"): settings_path = "user://audio.json"
+	settings_path = DiverPaths.pick(SETTINGS_PATH, "user://audio.json")
 	setup_buses()
 	load_settings()
 	for kind in EFFECT_NAMES:

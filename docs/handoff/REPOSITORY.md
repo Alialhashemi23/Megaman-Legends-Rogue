@@ -12,6 +12,10 @@ Ignore .godot caches, personal save profiles, backups, Python caches, runtime lo
 
 The SoundFont and FluidSynth are authoring tools; the game itself plays finished audio. Original character ZIPs are provenance and editable input, not an additional runtime requirement. assets/characters/*.glb and rendered portraits are the files actually used by Godot.
 
+## Android build
+
+`tools/package-android.ps1` produces `build/RelicDiver-android*.apk`; APKs, keystores (`*.keystore`, `*.jks`) and `.idsig` files are git-ignored and never tracked. The toolchain and signing keys live outside the repo (see [ANDROID.md](ANDROID.md)).
+
 ## Web build and server
 
 `build/RelicDiver-Web.zip` is the tracked browser bundle (game files plus notices); the loose `build/web/` export is ignored. `server/` holds the lobby relay and static host (`node_modules` ignored). The root `docker-compose.yml`, `.dockerignore`, `.env.example` and `Host-Online.cmd` deploy it. `.env` carries the user's Cloudflare Tunnel token and must never be committed. The user runs the deployment on their own machines and domain.

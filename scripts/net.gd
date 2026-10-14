@@ -52,7 +52,7 @@ var reconnect_wait = 0.0
 var reconnect_attempts = 0
 
 func _ready() -> void:
-	if OS.has_feature("web"): profile_path = "user://online.json"
+	profile_path = DiverPaths.pick(PROFILE_PATH, "user://online.json")
 	load_profile()
 	if player_name == "": player_name = "Digger %d" % (absi(hash([Time.get_unix_time_from_system(), Time.get_ticks_usec(), randi()])) % 900 + 100)
 	for arg in OS.get_cmdline_user_args():

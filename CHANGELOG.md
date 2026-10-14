@@ -1,5 +1,10 @@
 # Local build history
 
+## 18 — Android test build (no gameplay change)
+
+- Native ARM64 Android APK (`tools/package-android.ps1`, app id `dev.galosengen.relicdiver`), landscape, same game and online lobbies as the browser and Windows builds. Verified on the Android emulator only; not yet on the Retroid Pocket 5.
+- Saves, settings, audio settings, online identity and checkpoints use per-app storage on Android through `DiverPaths`. Desktop and web storage are unchanged. No gameplay or protocol change: still game protocol 7.
+
 ## 17 — Shared co-op map, waiting part picks and cache icons
 
 - **Shared map:** rooms any teammate explores appear on everyone's ruins map; clears were already shared. Room banners still greet you the first time you walk in.

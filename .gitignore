@@ -19,6 +19,11 @@ Thumbs.db
 /server/node_modules/
 *.pem
 *.key
+*.keystore
+*.jks
+*.apk
+*.aab
+*.idsig
 
 # Keep authoring inputs; omit machine runtimes and generated captures.
 /tools/*
@@ -29,6 +34,7 @@ Thumbs.db
 !/tools/package-windows.ps1
 !/tools/package-web.ps1
 !/tools/package-web.sh
+!/tools/package-android.ps1
 !/tools/requirements.txt
 /tools/audio/*
 !/tools/audio/compose.py

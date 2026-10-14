@@ -718,7 +718,7 @@ func draw_hud() -> void:
         if game.net.reconnecting(): draw_reconnecting()
     if game.message_time > 0: draw_notice()
     if not game.nearest.is_empty() and game.mode == "play" and not p.downed: interaction_prompt()
-    if game.mode == "play" and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and DisplayServer.get_name() != "headless" and not pad():
+    if game.mode == "play" and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and DisplayServer.get_name() != "headless" and not pad() and not OS.has_feature("android"):
         window(Vector2(560, 384), Vector2(320, 46), INK, YELLOW, false)
         text_at(Vector2(584, 415), "Click to take aim", 24, YELLOW, true)
     if game.hurt_flash > 0: rect(Vector2.ZERO, BASE, Color(0.9, 0.2, 0.08, game.hurt_flash * 0.25))

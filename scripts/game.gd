@@ -131,9 +131,8 @@ var leave_guard = false
 var logged_checkpoint = ""
 
 func _ready() -> void:
-	if OS.has_feature("web"):
-		save_path = WEB_SAVE_PATH
-		checkpoint_path = WEB_CHECKPOINT_PATH
+	save_path = DiverPaths.pick(SAVE_PATH, WEB_SAVE_PATH)
+	checkpoint_path = DiverPaths.pick(CHECKPOINT_PATH, WEB_CHECKPOINT_PATH)
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--checkpoint-path="): checkpoint_path = arg.substr(18)
 	load_meta()

@@ -7,7 +7,7 @@ The single source of truth for the next features. It replaces the earlier NEXT-F
 | # | Phase | Status | Depends on |
 |---|---|---|---|
 | 1 | [Co-op map and cache polish](#phase-1--co-op-map-and-cache-polish) | Done on `feature/coop-map-sharing` (protocol 7); awaiting merge and a group playtest | — |
-| 2 | [Android development APK (guest + cross-play)](#phase-2--android-development-apk) | Not started | — (needs JDK + Android SDK on the build PC) |
+| 2 | [Android development APK (guest + cross-play)](#phase-2--android-development-apk) | Build, saves, update-in-place, online connect and reconnect verified on the emulator; Retroid hardware and credits page outstanding. See [ANDROID.md](ANDROID.md) | — |
 | 3 | [Backend: auth, profile API, deployment](#phase-3--backend-auth-profile-api-and-deployment) | Not started | — |
 | 4 | [Game account sync (browser, Windows)](#phase-4--game-account-sync) | Not started | 3 |
 | 5 | [Android accounts and startup updates](#phase-5--android-accounts-and-startup-updates) | Not started | 2, 3, 4 |
@@ -77,6 +77,8 @@ Native Godot export for the Retroid Pocket 5 (Android 13, Snapdragon 865, 5.5" 1
 3. **Export preset and packaging.** ARM64, landscape, Compatibility renderer, 60 FPS target, Internet permission (HTTPS + WSS), app id `dev.galosengen.relicdiver`, increasing `versionCode`. A reproducible `tools/package-android.ps1`. Signing comes from environment variables, never tracked presets; add ignore rules for keystores. A debug/test key for development; the release key is a launch input. Ship engine and asset notices and an in-game credits/license view.
 4. **Handheld UX.** Validate every menu with the real sticks, triggers, buttons and Back key across Retroid controller modes, including the Workshop, save codes and pending choices. Soft-keyboard text entry, legible text at 5.5", safe areas, docked display. Add render resolution/quality options only if measurements need them. Phone touch controls are out of scope.
 5. **Lifecycle.** Sleep, backgrounding, Wi-Fi changes and process death go through the existing reconnect/host-migration path. A sleeping handheld can't keep hosting; a long sleep may outlast lobby retention and must say so.
+
+**Progress (2026-10-14):** steps 1–3 and the lifecycle reconnect are done and emulator-verified (details and screenshots in [ANDROID.md](ANDROID.md)). Still open: step 4 on real hardware (controller mappings and prompts, text entry, readable text), the in-game credits/licence page, and the performance run on the Retroid.
 
 **Done when:** a test-signed APK installs and upgrades in place without losing saves/settings; all four diggers and their tree abilities work; the Retroid + browser + Windows complete a co-op dig with late join, choices, revive, lift, host migration in both directions and suspend/rejoin; a sustained full run is measured for frame pacing, heat and battery. Emulator-only results don't count as Retroid validation.
 
