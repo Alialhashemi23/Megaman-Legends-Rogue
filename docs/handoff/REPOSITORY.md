@@ -2,7 +2,7 @@
 
 Authorized remote: https://github.com/Alialhashemi23/Megaman-Legends-Rogue (origin, main). The user explicitly requested committing the existing game, design and handoffs here, superseding the earlier no-repository preference. This is not authorization to deploy a hosted game or publish elsewhere.
 
-On 2026-10-14 the user explicitly selected `main` (the existing default, not a new `master`) for merging `codex/next-features-volnutt` after finalizing implementation choices. Pass-16 gameplay already exists on `main`; this merge adds planning/worker documents only, so no package regeneration is needed. [IMPLEMENTATION-DECISIONS.md](IMPLEMENTATION-DECISIONS.md) and [WORKER-BRIEFS.md](WORKER-BRIEFS.md) are the starting points for assigned implementation branches. Future database/auth backups, activity records, session credentials and Android signing keys must remain outside Git and distributed packages.
+`main` is the integration branch (the user chose it over creating `master`). New work goes on a feature branch per [ROADMAP.md](ROADMAP.md) phase and merges into `main` with the user's approval. `online-coop` and `codex/next-features-volnutt` are historical branches already contained in `main`. Future database/auth backups, activity records, session credentials and Android signing keys must remain outside Git and distributed packages.
 
 ## What belongs in Git
 

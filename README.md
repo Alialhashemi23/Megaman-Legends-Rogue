@@ -1,233 +1,159 @@
 # Relic Diver — The Tidal Archive
 
-A local, third-person 3D dungeon roguelike fan prototype made in Godot 4.7.1. Its inspiration is Mega Man Legends and the growing item combinations of action roguelikes. Play as helmet-off Mega Man Volnutt or Roll Caskett using the original PS1 models and textures supplied from The Models Resource. Both have skeletal animation and a left-arm buster. Supporting environment art, music compositions, sound effects and ambience were authored locally.
+A third-person 3D dungeon roguelike fan prototype made in Godot 4.7.1, inspired by Mega Man Legends and the stacking item combinations of action roguelikes. Play as helmet-off Mega Man Volnutt, Roll Caskett, Tron Bonne or a Servbot, using the original PS1 models and textures supplied from The Models Resource. Explore seeded ruins alone or with up to three friends online. Environment art, animation, music, sound effects and ambience were authored for this project.
 
-## Signature attacks, the Workshop and backups
+This is a non-profit fan project, not affiliated with Capcom. See [Credits and licensing](#credits-and-licensing).
 
-Choose one of four diggers: Mega fires the Pulse Buster; Roll fires the rapid Needle and revives teammates twice as fast; Tron fires heavy Siege splash shots; Servbot throws arcing bombs, runs 18% faster, and has 65 base Life with a smaller hitbox and lower camera.
+## Play
 
-Open **Workshop / Zenny & Skill Trees** from the title or results. Each character has five permanent nodes: Reinforced Frame (+8% base Life), Lightweight Joints (+4% speed), Salvage Research (early access to a themed part), Signature Circuit (character ability), and Master Mechanic (+5% attack speed). Frame opens the mobility and research branches; research opens the signature circuit; mastery needs both branches. Costs are 100 / 140 / 180 / 260 / 400 Zenny. Purchases take effect next dig.
+- **Browser:** https://megaman.galosengen.dev (desktop Chrome, Edge, Firefox or Safari).
+- **Windows, from this folder:** double-click **Play.cmd**. On a fresh clone it extracts the tracked `build/RelicDiver-Windows.zip` and prepares the pinned Godot runtime first. No installation, account, network connection or extra downloads are needed for solo play.
+- **Portable:** extract `build/RelicDiver-Windows.zip` and run **RelicDiver.exe**, keeping `RelicDiver.pck` and the notices beside it. The executable is the full Godot runtime, so it is larger than a normal release export.
+- **Edit:** **Edit.cmd** opens the project in the bundled editor. The entry point is `project.godot`; gameplay lives in `scripts/`.
 
-Zenny is recorded once at the end of a dig: **25 × depth reached + 60 × guardians defeated + floor(leftover scrap / 5)**. Parts, run upgrades and levels reset. New-profile part gates are 40 / 100 / 220 machines; saves from earlier builds retain every already-earned unlock. Signature weapons are available immediately with their digger.
+## Diggers
 
-**Workshop → Save Codes / Backup** exports a code with records, discoveries, Zenny and all four trees. Copy the entire field if clipboard access is blocked. To restore, paste the code, check the preview and explicitly replace local progress. Damaged codes leave progress untouched. Leave online and resolve any saved dig before importing. Browser progress saves to IndexedDB with a validated synchronous local recovery copy; the code is a manual backup for another browser/device or cleared site data. Controls and active run checkpoints are separate.
+| Digger | Signature attack | Notes |
+|---|---|---|
+| Mega | Pulse Buster, the all-rounder | |
+| Roll | Rapid Needle Buster | Revives teammates twice as fast |
+| Tron | Heavy Siege Buster with cover-aware splash | |
+| Servbot | Arcing salvage bombs | 65 base Life, 18% faster, smaller hitbox and lower camera |
 
-**Options → Ruins map** switches between the whole-floor survey and a scrolling 80 m local view. The web loader and favicon now use the supplied model's Volnutt portrait. Game protocol 6 and checkpoint format 3 require all co-op players to update together; old-format active digs cannot resume. Persistent progress migrates.
+Press **C** (controller **Y**) on the title screen to cycle diggers. Each has their own Workshop tree (see [Progression](#progression)).
 
-See [the implementation and validation report](docs/FEATURE-REPORT.md) for screenshots and checks.
+## Controls
 
-## Design and handoffs
+Gameplay actions can be rebound in **Options → Controls & bindings** (sticks, menu navigation, upgrade picks, digger switch and mute are fixed). Prompts follow the last device you used.
 
-The intended experience is documented in [DESIGN.md](DESIGN.md). Start a new coding session with [HANDOFF.md](HANDOFF.md), then read only the relevant [subsystem handoff](docs/handoff/README.md). These cover technical setup, art/animation, audio/UI, playtest priorities and repository packaging.
+| Action | Keyboard / mouse | Controller |
+|---|---|---|
+| Move | WASD | Left stick |
+| Aim / camera | Mouse | Right stick |
+| Fire | Hold left mouse | RT |
+| Lock on to a visible enemy | Q or right mouse | LT |
+| Jump | Space | A |
+| Dash (brief invulnerability) | Left Shift | B |
+| Open a cache, salvage, use a well or lift | E | X |
+| Buster parts and stats (pauses solo) | Tab | View |
+| Pause / menu | Escape | Start |
+| Pick an upgrade on a choice screen | 1, 2, 3 | D-pad / stick + A |
+| Ping (online) | G or middle mouse | LB |
+| Chat (online) | T or Enter | — |
+| Quick callouts (online) | 1–4 | D-pad |
+| Switch digger (title) | C | Y |
+| Mute | M | — |
 
-The user authorized this repository after the initial local-only development: https://github.com/Alialhashemi23/Megaman-Legends-Rogue. The user later requested browser co-op hosted on their own domain; the server and deployment files are included, and the user runs the deployment. No public release is configured. Personal saves, import caches, historical backups and raw video captures remain local and are ignored by Git.
+Menus: arrows or the mouse to browse, Enter to confirm, Escape to go back (controller: D-pad or left stick, A, B). The mouse wheel scrolls part lists.
 
-## Online co-op pass 09
+## Your first descent
 
-Play in the browser with up to four diggers. Choose **Play Online** on the title screen to create a public or private lobby, browse open lobbies, or join by code. **Copy Invite Link** gives friends a link that opens the game straight into your lobby. Friends can also join a dig already in progress.
+1. Pick a digger and begin. Open the golden starter cache on your left with E for a free part.
+2. Follow doorways into connected chambers. The ruins map reveals rooms as you explore and outlines the guardian chamber in gold once you're nearby.
+3. Shoot the machines, dash through attacks and collect their scrap and experience. Nearby drops move toward you.
+4. Clear a room to unlock its cache and earn five bonus scrap. Spend scrap on a choice of three parts, or save it for a restoration well. Vessels hold free salvage.
+5. Levelling up offers a choice of damage, Life or fire-rate upgrades.
+6. Defeat the guardian to power the lift. You can keep exploring first. Lifts keep your build and restore 25% Life.
+7. Survive three descents and activate the extraction beacon to win.
 
-Everyone shares the run: the same ruins and robots, shared scrap and experience. Builds are personal: each cache offers every digger their own part, and each guardian drops a core per digger. Robots grow tougher with each digger. A digger at 0 Life goes down; stand beside them to revive them, and while down you watch a teammate. The dig ends only when the whole team is down, and the lift waits for everyone. Online menus don't pause the action. Chat with T, ping with G and use 1–4 for quick callouts. Hosts can remove players, lock the lobby or set a password.
+There is no countdown or time-based difficulty. Explore at your own pace; difficulty rises with each descent.
 
-Pass 11 adds full controller support, an **Options** menu (sound, display, sensitivity, invert look, vibration and full key/button rebinding) and **Leave Dig** in the pause menu for every player. Online, a host who leaves hands the dig to the others. Solo digs are short and don't save mid-run.
+**Combat tips.** Every robot attack is telegraphed: melee swing arcs, sentry aim lines that lock just before firing, charge lanes, bombardment circles, shockwaves and beam lanes. Leave marked zones before the wind-up ends, jump over shockwaves or dash through with invulnerability. Solid cover blocks melee, shockwaves, beams and splash. Lock-on releases when a target stays behind cover for 0.75 s. At half Life, guardians shield briefly and enter overdrive.
 
-Runs are protected against mishaps (pass 10): a refresh, crash or dropped connection brings you back into the same dig with your exact build; if the host leaves, hosting moves to another player; if everyone drops out, the server holds the dig for 15 minutes; and every browser keeps its own checkpoint, so even a server restart can be resumed with **Rejoin Dig**. (Solo digs don't save mid-run as of pass 11.)
+## Content
 
-To host it on your domain, see [docs/ONLINE.md](docs/ONLINE.md): `docker compose up -d --build` with a Cloudflare Tunnel token, or **Host-Online.cmd** without Docker. The web bundle is `build/RelicDiver-Web.zip`; rebuild it with `tools/package-web.ps1` or `tools/package-web.sh`. Implementation notes are in [docs/handoff/NETWORK.md](docs/handoff/NETWORK.md).
-
-On a fresh Windows clone, double-click Play.cmd or Edit.cmd. The launcher extracts the tracked build/RelicDiver-Windows.zip and prepares the pinned Godot runtime if necessary. Alternatively, extract that ZIP to a folder and run RelicDiver.exe. Keep the executable, pack and notices together. The original PC's existing runtime and saves are preserved.
-
-## Motion pass 07
-
-Mega and Roll now use compact, springy running cycles with distinct contact, push-off and recovery poses. Bent knees and rolling boots replace the mirrored marching motion. Shoulder and pelvis movement stays restrained to suit the original Legends models. The converter fits body height to each model's actual boot soles.
-
-Run, backpedal and strafe transitions preserve the current step. Footstep sounds follow the animation contacts, and torso compensation keeps the buster steady while the body moves. Movement, jump and dash controls remain responsive. These are newly authored animations inspired by Legends; the supplied archives contain no original animation clips. The previous character pass is preserved in `backups/v6/`.
-
-## Tron Bonne and Servbot (pass 15)
-
-Tron Bonne and a Servbot are playable alongside Mega and Roll, built from the user's supplied Legends models. **C** (or **Y** on a controller) cycles through all four on the title screen. They now have their own signature attacks and skill trees (see the current feature overview above). See `assets/characters/CREDITS.md`.
-
-## Character pass 06
-
-The procedural player has been replaced with the supplied original Legends model. Roll is a second playable digger. Choose **Mega** or **Roll** on the title screen, or press **C** to switch the preview. Both share the same statistics, weapons, unlocks, loot and progression; selection remains active across descents.
-
-Both retain their original 18-joint skins and painted texture atlases. Twelve new clips cover idle, running, backpedal, strafing, jump/fall, dash, damage, firing, victory and defeat. Aiming and recoil layer onto the buster arm while the legs continue running. The muzzle position comes from that animated arm. The left glove is replaced by an attached cannon to prevent mesh intersections. Roll uses her more detailed cutscene mesh and a red cannon.
-
-The HUD and pause menu show the selected character's name and portraits rendered from the imported models. Editable GLB files are in `assets/characters/`; unmodified source archives, a repeatable converter and hashes are in `tools/model-sources/`. Model credits are in `assets/characters/CREDITS.md`. These Capcom assets are excluded from the original-code MIT license. The previous version is preserved in `backups/v5/`. Everything remains local.
-
-## Audio pass 05
-
-Seven original music cues now cover the title, each of the three descents, guardians, extraction and defeat. The sampled electric piano, bells, marimba, guitars, bass and percussion use GeneralUser GS 2.0.3 by S. Christian Collins, rendered locally with FluidSynth. Godot plays the finished files and needs no audio middleware or SoundFont installed. Guardians trigger a battle theme; music crossfades and lowers during menus and part choices.
-
-There are 29 original sound effects: distinct Pulse, Needle and Siege busters, varied metal impacts and footsteps, jump/landing, dashes, robot weapons and destruction, attack warnings, scrap, healing, parts and menu cues. Robot effects have 3D positioning. A quiet ventilation and resonant machinery loop fills the ruins. No original Mega Man music or game sound files were used.
-
-Pause → **Options** (pass 11; formerly Sound Settings) adjusts Master, Music, Effects and Ambience separately. Use arrows to select/adjust, or click a row. **M** toggles all sound. Settings save locally in `save/audio.json`; they do not change your run records. The local build has been updated. Full sources, editable MIDI scores and a soundtrack preview are in `tools/audio/`; see `assets/audio/AUDIO-NOTES.md` for credits and implementation details.
-
-## Historical visual pass 02
-
-The initial block character has been replaced with a segmented low-poly Volnutt fan model. Running now includes a swinging free arm and body lean; aiming and recoil use the left buster. The follow camera sits over the left shoulder to match the firing position.
-
-Five editable 128 × 128 SVG texture sources live in `assets/textures/`: painted masonry, stone floor, weathered metal, blue armor, and the character face. Godot rasterizes them on import and samples them with nearest filtering. No artificial screen wobble or forced low-resolution filter is applied.
-
-Rooms now have ceilings, ceiling beams, warm interior lamps, painted masonry walls, metal door frames, and inlaid floor paths. Enemy bodies are more rounded and have mechanical eye details. The title camera shows the playable character inside the landing chamber.
-
-The previous scripts and playable content pack are preserved in `backups/v1/`. No Git repository, upload, or publishing step was used. This historical pass used locally authored characters; pass 06 above replaces them with the supplied game assets.
-
-## Combat and exploration pass 03
-
-Enemy attacks now have distinct windups and recovery windows. Melee robots mark a swing arc, sentries show a committed aim line, and armored machines mark a charge lane before rushing. Aim lines stay fixed once the windup starts, giving you time to move away. Attacks pause with the game.
-
-Each guardian has its own attack mix:
+- Three ruin palettes across three descents: Tidal Archive, Garden of Engines, Heart of the Machine.
+- Seeded floors of 8, 9 and 10 rooms, joined by corridors that fork, loop back or dead-end at hidden salvage.
+- Five chamber arrangements (Pillar Gallery, Relay Chamber, Salvage Archive, Coolant Works, Broken Foundry) plus a two-cell Grand Concourse with a raised dais, a Stepped Vault jump puzzle with a ledge cache, and a Terrace Hall whose ramps robots can follow you up.
+- Chase robots, floating sentries, charging armored machines and three guardians:
 
 | Descent | Guardian | Attacks |
 |---|---|---|
 | 1 | Archive Keeper | Fan bursts and a nearby ground shockwave |
-| 2 | Verdant Engine | Three marked bombardment circles, fan bursts, and a nearby shockwave |
-| 3 | Core Warden | Crossing beam lanes, wider fan bursts, and a nearby shockwave |
+| 2 | Verdant Engine | Three marked bombardment circles, fan bursts and a shockwave |
+| 3 | Core Warden | Crossing beam lanes, wider fan bursts and a shockwave |
 
-Leave marked danger zones before the windup finishes. Jump above ground shockwaves, or use dash invulnerability. Solid cover blocks melee attacks, shockwaves, beams, and Siege Buster splash. At half health, guardians enter overdrive after a short recovery window.
+- Thirteen stackable parts, experience levels, scrap, healing wells, paid caches, enemy drops and salvage vessels.
 
-Buster feedback now includes a muzzle flash at the actual barrel, short bolt trails, recoil, confirmed-hit crosses, enemy hit flashes, small knockback, kill confirmation, and impact rings. Siege shots also splash exposed enemies when they hit a wall. The pause menu can disable camera effects. Lock-on releases after a target stays behind cover for 0.75 seconds.
+## Parts and combinations
 
-Ordinary chambers now use five arrangements: Pillar Gallery, Relay Chamber, Salvage Archive, Coolant Works, and Broken Foundry. These change cover positions and sightlines while keeping doors accessible. A grid pathfinder gives robots routes around cover and between connected rooms. The current chamber's name appears in the HUD.
-
-The prior visual-pass version is preserved locally in `backups/v2/`. Current staged attack and room previews are in `screenshots/`.
-
-## Play
-
-Double-click **Play.cmd** in this folder. No installation, account, network connection, Blender, or additional asset downloads are required.
-
-Alternatively, double-click **build/RelicDiver.exe**. Keep **RelicDiver.pck** next to that executable. The portable build includes the Godot runtime in its executable, which makes it larger than a normal release-template export.
-
-Double-click **Edit.cmd** to open the editable project in the bundled Godot editor. The entry point is `project.godot`; all gameplay lives in `scripts/`.
-
-## UI pass 04
-
-The interface now follows the visual language of console adventure menus: framed cobalt windows, a blue mechanical background pattern, shaded cream lettering, a yellow selection cursor, and green segmented Life meters. The title screen, combat HUD, pause menu, equipment list, part choices, collection, and results screen all use the same spacing and palette.
-
-Russo One provides the heavy display lettering and counters. Barlow Semi Condensed SemiBold provides the menu text and descriptions. Both font files are bundled locally, with their SIL Open Font License notices in `assets/fonts/`. No system font installation or runtime download is needed.
-
-The hand-drawn icon atlas contains 32 equipment and status icons, including a distinct icon for each of the thirteen parts and each buster. The UI also includes a locally drawn Volnutt portrait. Menu copy uses Life, Buster Parts, and Dig terminology. Fitted parts show their stack count and combined effect. The equipment panel reports the current buster's actual shot power, including its weapon multiplier.
-
-Use arrow keys to browse menus and part lists, Enter to confirm, and Escape to return. Mouse selection and the existing 1/2/3 upgrade shortcuts work too. Scroll the parts list with the mouse wheel. The combat view keeps most of the center clear, with a vertical Life gauge, small buster panel, part icons, and a framed ruins map.
-
-UI elements scale uniformly rather than stretching text and icons. Widescreen views expand the game view while keeping the interface inside a centered safe area. Inventory, pause, results, and HUD previews are in `screenshots/ui-*.png`. Preview images use staged equipment and stats; they do not change your save.
-
-The previous combat-pass scripts, assets, and content pack are preserved in `backups/v3/`.
-
-## Controls
-
-| Input | Action |
+| Part | Effect per stack |
 |---|---|
-| WASD | Move relative to the camera |
-| Mouse | Free aim / rotate camera |
-| Hold left mouse | Fire the buster |
-| Q or right mouse | Toggle lock-on to a visible nearby enemy |
-| Left Shift | Dash with a short invulnerability window |
-| Space | Jump |
-| E | Open a cache, salvage a vessel, use a well, or activate a lift |
-| Tab | Inspect your relics and current stats; pauses the game |
-| Escape | Pause / resume |
-| 1, 2, 3 | Pick an upgrade on a choice screen |
-| M | Mute / unmute sound and ambience |
-| Enter | Start a run from the title or results screen |
-| Arrow keys | Browse menu options and equipment |
-| Enter in a menu | Confirm the highlighted option |
-| Mouse wheel in equipment / collection | Scroll through parts |
+| Sunken Lens | +16% damage |
+| Clockwork Spring | +14% fire rate |
+| Ceramic Heart | +20 max Life and restore 20 |
+| Gyro Soles | +9% speed and shorter dash cooldown |
+| Fossil Plating | Incoming damage divided by `1 + 0.18 × stacks` |
+| Copper Moss | Heal 1.5 on each kill |
+| Ember Engine | Hits burn for 2 damage per tick per stack |
+| Storm Coil | +18 points chain chance (max 75%); stacks add chain targets |
+| Oracle Prism | +8 points double-damage chance (max 60%) |
+| Echo Circuit | +12 points extra-shot chance (max 80%) |
+| Forked Antenna | Two side bolts; stacks raise their damage (max 75% of the main bolt) |
+| Winter Flywheel | Dash slows enemies within six units; stacks extend the duration |
+| Salvager's Charm | +2.5 points enemy part drop chance |
 
-## Your first descent
+Try rapid fire with Ember Engine and Storm Coil for constant hit effects, or splash with Sunken Lens for crowds. Copper Moss and Fossil Plating make a forgiving exploration build.
 
-1. Choose the Pulse Buster and begin. Approach the golden starter cache on your left and press E for a free relic.
-2. Follow doorways into connected chambers. The survey map reveals adjoining rooms as you explore. The guardian chamber gets a gold outline once discovered nearby.
-3. Shoot the machines, dash through attacks, and collect their scrap and experience. Nearby drops move toward you automatically.
-4. Clear a room to unlock its cache and earn five bonus scrap. Spend scrap on a choice of three relics or save it for a restoration well. Vessels contain free salvage. Use cover to break enemy aim and watch the ground warnings before committing to a fight.
-5. Leveling pauses combat for a choice of damage, health, or fire-rate upgrades.
-6. Defeat the Archive Keeper to power the lift. You can still explore other chambers before leaving. Lifts preserve the run's build and restore 25% health.
-7. Survive three descents and activate the final extraction beacon to win.
+## Progression
 
-There is no countdown or time-based difficulty escalation. Explore at your own pace. Difficulty increases with descent depth.
+Every dig starts at level one with no parts. Run levels, upgrades and fitted parts reset; records, unlocks and Workshop purchases persist.
 
-## Content
+**Zenny** is awarded once at the end of a dig: **25 × depth reached + 60 × guardians defeated + floor(leftover scrap / 5)**.
 
-- Three ruin palettes: Tidal Archive, Garden of Engines, Heart of the Machine.
-- Connected, seeded layouts of 8, 9, and 10 rooms joined by corridors and passages that fork, loop back or dead-end at hidden salvage, with cover and a guardian room.
-- Special chambers: a two-cell Grand Concourse with a colonnade and raised dais, a Stepped Vault jump puzzle with a free cache on its ledge, and a Terrace Hall whose high ground is reached by ramps (robots use the ramps too).
-- Chase robots, floating ranged sentries, charging armored machines, and three guardian attack patterns with overdrive phases.
-- Five room arrangements with different cover, machinery, shelves, tanks, and sightlines.
-- Thirteen stackable relics, three busters, experience levels, scrap, healing wells, paid caches, enemy drops, and salvage vessels.
-- Camera collision, free aim, optional line-of-sight lock-on, animated segmented characters, painted low-resolution textures, enclosed and lit ruins, hit feedback, particles, damage numbers, audio, map, inventory, archive, pause screen, and run results.
+**Workshop** (title or results screen): each digger has five nodes. Reinforced Frame (+8% base Life) opens Lightweight Joints (+4% speed) and Salvage Research (early access to a themed part); research opens the Signature Circuit (a character ability); Master Mechanic (+5% attack speed) needs both branches. Costs are 100 / 140 / 180 / 260 / 400 Zenny and take effect next dig.
 
-## Persistent progression
+**Part unlocks** come from lifetime machine kills:
 
-Every run starts at level one with character statistics, purchased circuits and no relics. Lifetime machine kills unlock new drops and weapon choices for subsequent runs. Merely unlocking an item does not add it to your starting inventory.
-
-| Total kills across completed / ended runs | Unlock |
+| Total kills | Unlock |
 |---|---|
-| 0 | Six base relics and all four signature attacks |
+| 0 | Six base parts and all four signature attacks |
 | 40 | Ember Engine, Storm Coil |
 | 100 | Oracle Prism, Echo Circuit |
 | 220 | Forked Antenna, Winter Flywheel, Salvager's Charm |
 
-Discoveries save when a relic is installed. Kill totals, wins, and run records save on death, extraction, or **End Run & Record Discoveries** in the pause menu. Closing the window during a run does not record that run's kills. Online digs keep rejoin checkpoints; solo digs do not save mid-run.
+Saves from earlier builds keep every unlock they had already earned.
 
-The source launcher saves in `save/archive.json`. The portable executable saves in `build/save/archive.json`. These are independent profiles; copy the JSON between them if you switch versions. The file is plain JSON and can be backed up. Saves remain on your computer.
+**Saving.** Progress saves on every purchase and at the end of each dig (death, extraction or **End Run & Record Discoveries**); discoveries save when a part is fitted. Solo digs don't save mid-run; online digs keep rejoin checkpoints. The browser saves to IndexedDB with a local recovery copy. On Windows the source launcher uses `save/archive.json` and the portable build `build/save/archive.json`; they are separate profiles.
 
-## Relics and combinations
+**Save Codes / Backup** (in the Workshop) exports records, discoveries, Zenny and all four trees as a code. Paste a code to preview it, then explicitly replace local progress. Damaged codes change nothing. Leave online play and resolve any saved dig before importing. Settings and active checkpoints aren't included.
 
-| Relic | Effect per stack |
-|---|---|
-| Sunken Lens | +16% damage |
-| Clockwork Spring | +14% fire rate |
-| Ceramic Heart | +20 max health and restore 20 |
-| Gyro Soles | +9% speed and reduced dash cooldown |
-| Fossil Plating | Incoming damage divided by `1 + 0.18 × stacks` |
-| Copper Moss | Heal 1.5 on each kill |
-| Ember Engine | Hits burn for 2 damage per tick per stack |
-| Storm Coil | +18 percentage points chain chance, capped at 75%; stacks add chain targets |
-| Oracle Prism | +8 percentage points double-damage chance, capped at 60% |
-| Echo Circuit | +12 percentage points extra-shot chance, capped at 80% |
-| Forked Antenna | Two side bolts; stacks raise their damage, capped at 75% of the main bolt |
-| Winter Flywheel | Dash slows enemies within six units; stacks extend duration |
-| Salvager's Charm | +2.5 percentage points enemy relic drop chance |
+## Online co-op
 
-Try Needle Buster with Ember Engine and Storm Coil for frequent hit effects, or Siege Buster with Sunken Lens for crowd damage. Copper Moss and Fossil Plating support a more forgiving exploration build.
+Up to four diggers in the browser or the Windows build. **Play Online** creates a public or private lobby, lists open lobbies or joins by code; **Copy Invite Link** opens the game straight into your lobby, and friends can join a dig already underway.
 
-## Project layout
+The run is shared (same ruins and robots, shared scrap and experience) while builds are personal: every cache and guardian core gives each digger their own pick. Robots scale with party size. A digger at 0 Life goes down until a teammate stands beside them; the dig ends only when everyone is down, and the lift waits for the team. Online menus don't pause. Refreshes, crashes, dropped connections and a leaving host don't end the dig. Hosts can remove players, lock the lobby or set a password.
 
-- `scripts/game.gd`: dungeon generation, encounters, drops, progression, persistence, run state, validation modes.
-- `scripts/player.gd`: movement, dash, camera, aiming, busters, character animation, stats.
-- `scripts/enemy.gd`: robot behavior, guardian, damage, item hit effects.
-- `scripts/navigation.gd`: traversable dungeon grid and routes around cover.
-- `scripts/bolt.gd`: swept projectile collisions and splash damage.
-- `scripts/art.gd`: modular meshes, Volnutt fan model, robot construction, materials, and texture application.
-- `assets/textures/`: editable painted SVG texture sources, rasterized by Godot on import.
-- `scripts/hud.gd`: resolution-scaled menus, inventory, map, and HUD.
-- `assets/ui/`: original painted icon atlas, portrait, and blue menu pattern.
-- `assets/fonts/`: bundled display and menu fonts plus their license notices.
-- `scripts/sound.gd`: synthesized effects and looping ambience.
+Hosting it on your own domain (Docker Compose + Cloudflare Tunnel, or **Host-Online.cmd**) and the full rules are in [docs/ONLINE.md](docs/ONLINE.md).
 
-## Verification
+## Options
 
-The build was imported and run with the bundled engine. Automated checks cover generation connectivity, relic stacking, cache choices, damage, experience, upgrades, floor transitions, extraction, projectile collisions with a moving enemy, hostile projectile damage, physical keyboard movement through a doorway and corridor, and save/load persistence. Title, gameplay, choice screens, guardian warnings, and room layouts were rendered and visually inspected at 1280 × 800 on the local GPU.
+Sound (Master, Music, Effects, Ambience), display (fullscreen, camera motion, field of view), the ruins map (whole-floor survey or a scrolling 80 m local view) and controls (mouse sensitivity, look speed, invert, vibration, rebinding). Settings save separately from progress.
 
-The additional behavior suite checks six generation seeds, reachability around all five cover arrangements, enemy spawns, harmless windups, successful dodges, committed ranged aim, charging, bombardment, cross beams, jumping over shockwaves, dash invulnerability, melee and splash obstruction, overdrive cancellation, enemy pursuit around an obstacle, and paused warning timers. It uses an isolated scene and does not write a player profile.
+## For developers
 
-The UI suite checks menu actions, keyboard navigation, empty and full inventories, scrolling all thirteen parts, mouse targets after resizing, upgrade confirmation, number shortcuts, and locked collection entries. UI renders were inspected at 960 × 600, 1280 × 800, and 1920 × 1080.
+- Game direction: [DESIGN.md](DESIGN.md). Current status and how to work on the project: [HANDOFF.md](HANDOFF.md), then the relevant [subsystem handoff](docs/handoff/README.md). Upcoming features: [docs/handoff/ROADMAP.md](docs/handoff/ROADMAP.md).
+- Architecture, file responsibilities, tuning knobs, test suites and export commands: [docs/handoff/TECHNICAL.md](docs/handoff/TECHNICAL.md). Latest validation: [docs/FEATURE-REPORT.md](docs/FEATURE-REPORT.md).
+- Build history: [CHANGELOG.md](CHANGELOG.md).
+- Repository: https://github.com/Alialhashemi23/Megaman-Legends-Rogue. Personal saves, import caches, local backups and raw video captures are ignored by Git. No public release is configured.
 
-Run the checks with the console engine:
+Quick checks with the console engine (they don't touch your profile):
 
 ```powershell
 .\tools\Godot_v4.7.1-stable_win64_console.exe --headless --path . -- --smoke-test
 .\tools\Godot_v4.7.1-stable_win64_console.exe --headless --path . -- --combat-test
 .\tools\Godot_v4.7.1-stable_win64_console.exe --headless --path . -- --movement-test
-.\tools\Godot_v4.7.1-stable_win64_console.exe --headless --path . -- --persistence-test
 .\tools\Godot_v4.7.1-stable_win64_console.exe --headless --path . --script res://tests/combat_checks.gd
-.\tools\Godot_v4.7.1-stable_win64_console.exe --headless --path . --script res://tests/ui_checks.gd
 ```
-
-The first three do not save a player profile. The persistence test uses a separate temporary validation file and removes it on success.
 
 ## Prototype scope
 
-This is a playable prototype with a complete start-to-extraction loop. Mega and Roll use the supplied original meshes, textures and skeletons with newly authored animation clips and a runtime buster aiming layer. The three guardians share a base silhouette with different palettes and attack mixes. Enemy navigation uses a flat dungeon grid; dynamic crowd avoidance and more elaborate vertical traversal remain future improvements. Balancing needs human playtesting. Later passes added online co-op (09–10) and controller support with an Options menu (11); there is still no authored story.
+A playable prototype with a complete start-to-extraction loop, not a finished game. There is no authored story or surface hub, guardians share a base silhouette, and balance needs human playtesting. See [PLAYTEST-ROADMAP.md](docs/handoff/PLAYTEST-ROADMAP.md).
 
-The next development pass should use human playtest feedback to tune movement, attack timing, progression, room density, and readability. Distinct boss silhouettes, environmental puzzles, and mid-run resume are useful subsequent improvements. Original code and locally authored assets are MIT licensed; the supplied Capcom character meshes, textures and skeletons are excluded. See LICENSE.md. Godot's license notice is in GODOT-LICENSE.txt. Mega Man Volnutt, Roll Caskett and Mega Man Legends belong to Capcom. No original-game music, sound effects or animation clips are included.
+## Credits and licensing
+
+- Original code and locally authored assets are MIT licensed ([LICENSE.md](LICENSE.md)).
+- Mega Man Volnutt, Roll Caskett, Tron Bonne, the Servbots and Mega Man Legends belong to Capcom. The supplied character meshes, textures and skeletons (and portraits rendered from them) are excluded from the MIT license; provenance and credits are in `assets/characters/CREDITS.md`. The twelve animation clips are newly authored; the source archives contain none.
+- Music and effects are original, rendered with GeneralUser GS 2.0.3 by S. Christian Collins via FluidSynth; Godot plays the finished files. No original Mega Man music, sound or animation is included. Sources and credits: `assets/audio/AUDIO-NOTES.md`, `tools/audio/`.
+- Fonts: Russo One and Barlow Semi Condensed SemiBold, bundled with their SIL Open Font License notices in `assets/fonts/`.
+- Godot's license: [GODOT-LICENSE.txt](GODOT-LICENSE.txt).

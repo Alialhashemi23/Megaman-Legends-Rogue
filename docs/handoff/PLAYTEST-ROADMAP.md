@@ -9,7 +9,7 @@ The full prototype loop is implemented and automated checks pass. The user has r
 3. Explore a branch before the guardian. Look for recognizable room functions, useful salvage and reasons to choose a route. Record empty or repetitive stretches.
 4. Try stacking parts across a descent. Check whether descriptions make the effect understandable, upgrades change the build, and healing/caches create useful scrap decisions.
 5. Defeat a guardian and descend. Check preparation/recovery windows, fairness, retained build, music changes and navigation to the lift. End the run deliberately to check recorded unlocks.
-6. Repeat a short section with Roll. Check original-model presentation and the shared buster behavior. Test sound levels and menu readability at the intended monitor size.
+6. Repeat a short section with Roll, Tron and Servbot. Check original-model presentation and each signature attack (Needle and revive support, Siege splash, bomb arcs). Test sound levels and menu readability at the intended monitor size.
 
 ## How to record useful feedback
 
@@ -23,7 +23,7 @@ For each issue, note character, descent, room or nearby landmark, weapon/parts, 
 | Combat readability | Tune warnings, guardian windows and target feedback | Three guardian attack mixes implemented |
 | Exploration | Denser environmental storytelling, stronger room identities, secrets/puzzles | Five cover arrangements; puzzle design undecided |
 | Progression | Drop frequency, stack balance, cache prices and unlock pacing | Complete prototype systems; balance unproven |
-| Character expression | Additional faithful poses or per-character personality | Twelve authored clips for each; mechanics shared |
+| Character expression | Additional faithful poses or per-character personality | Twelve shared authored clips; signature attacks and skill trees are per digger |
 | Accessibility/input | Controller support and more settings | Pass 11: controller, Options menu, rebinding; more accessibility options possible |
 | Run continuity | Mid-run resume | Online rejoin only (pass 10); solo mid-run saving dropped by the user in pass 11 |
 | Boss identity | Distinct meshes and silhouettes | Guardians currently share a base silhouette |

@@ -53,7 +53,7 @@ On macOS/Linux the equivalent is `cd server && npm ci --omit=dev`, unzip `build/
 Open `https://your-domain/`. The first visit downloads about 13 MB (the server compresses the game). After that the browser revalidates instead of downloading it again. Use a desktop browser with keyboard and mouse: Chrome, Edge, Firefox or Safari.
 
 - **Create Public Lobby** lists your lobby in everyone's lobby browser. **Create Private Lobby** hides it, so only people with the link or the 5-letter code can join.
-- Everyone picks Mega or Roll and a buster in the lobby. Only the host can start the dig.
+- Everyone picks a digger (Mega, Roll, Tron or Servbot, each with a signature attack) in the lobby. Only the host can start the dig.
 - Friends can join a dig already underway. They arrive at the current descent with a fresh build.
 - In the dig, click once to capture the mouse for aiming. Browsers only allow mouse capture after a click.
 

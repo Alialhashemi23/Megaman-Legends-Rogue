@@ -2,11 +2,7 @@
 
 Pass 09 added browser play and online co-op for up to four diggers. The user requested lobbies, invite links and a lobby browser on their own domain, hosted themselves through a Cloudflare Tunnel. Pass 10 made runs survive mishaps (the user's priority before any further work) and added co-op communication and lobby controls. The user-facing guide is [../ONLINE.md](../ONLINE.md).
 
-## Pass 16 additions
-
-**Ready-to-assign follow-up (2026-10-14):** the user selected self-hosted Node + PostgreSQL + Better Auth, email/password/open registration, online account progress, a read-only admin dashboard and Android startup checks with browser downloads. See [IMPLEMENTATION-DECISIONS.md](IMPLEMENTATION-DECISIONS.md), [WORKER-BRIEFS.md](WORKER-BRIEFS.md) and [ACCOUNTS-ANDROID-PLAN.md](ACCOUNTS-ANDROID-PLAN.md). None is implemented. The relay remains memory-only, and `hello.id` is still a client-supplied reconnect identity rather than authentication. Future account membership uses validated one-use lobby tickets and server-derived identity. Do not describe planned database/auth features as current behavior.
-
-`NET_VERSION` 6 adds bomb shots: M_SHOT now carries `[depth, position, direction_or_launch_velocity, heavy, projectile_kind]` (0 bolt, 1 bomb). Cosmetic bombs use the same gravity as the shooter. Builds now mirror purchased skills, Pulse shot count and Roll repair cooldown. Remote character hitboxes match the selected rig; Roll nearby doubles revive speed on the downed player's client. CHECKPOINT_VERSION 3 prevents restoring incompatible prior combat state.
+**Planned (not implemented):** accounts, Android cross-play and co-op map/cache changes are in [ROADMAP.md](ROADMAP.md). Today the relay is memory-only and `hello.id` is a client-supplied reconnect identity, not authentication; accounts will join with one-use lobby tickets and server-derived identity. Don't describe planned features as current behavior.
 
 ## Topology
 
@@ -16,7 +12,7 @@ Pass 09 added browser play and online co-op for up to four diggers. The user req
 
 ## Lobby protocol (server protocol 2, game `NET_VERSION` 6)
 
-`NET_VERSION` 3 (pass 12) marks the new floor generator and 4 the difficulty pass (robot counts and timings): older builds would build different ruins from the same seed, so they can't share a lobby. `CHECKPOINT_VERSION` went to 2 for the same reason.
+Version history: `NET_VERSION` 3 is the bigger-ruins floor generator (older builds would build different ruins from the same seed), 4 the difficulty pass (robot counts and timings), 5 Tron and Servbot, 6 signature attacks. In 6, `M_SHOT` carries `[depth, position, direction_or_launch_velocity, heavy, projectile_kind]` (0 bolt, 1 bomb); cosmetic bombs use the shooter's gravity. Builds mirror purchased skills, Pulse shot count and Roll's repair cooldown; remote hitboxes match the selected rig; a nearby Roll doubles revive speed on the downed player's client. `CHECKPOINT_VERSION` 2 matched the new generator and 3 the signature-attack combat state.
 
 Text frames are JSON, handled in `server/lobby.js`, `server/server.js` and `scripts/net.gd`.
 - **Client → server:** `hello{name,id,v}`, `list`, `create{name,public,password}`, `join{code,password}`, `resume{code,name,public,password}`, `leave`, `name`, `kick{slot}`, `lock{locked}`, `status{state,depth}`, `ping`.
