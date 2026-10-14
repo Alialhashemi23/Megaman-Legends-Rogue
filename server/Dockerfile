@@ -5,6 +5,7 @@ WORKDIR /app
 COPY server/package.json server/package-lock.json ./server/
 RUN cd server && npm ci --omit=dev
 COPY server/*.js ./server/
+COPY server/accounts ./server/accounts
 # The tracked web bundle (tools/package-web.*) is unpacked into the web root.
 COPY build/RelicDiver-Web.zip /tmp/web.zip
 RUN mkdir -p /app/web && unzip -q /tmp/web.zip -d /app/web && rm /tmp/web.zip

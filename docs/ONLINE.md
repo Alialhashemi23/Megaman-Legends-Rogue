@@ -92,6 +92,10 @@ The game saves every 5 seconds and immediately whenever a build changes, so at m
 
 Everyone in a lobby must run the same game version. After you update the server, players with an old tab open are asked to refresh.
 
+## Player accounts (optional)
+
+The server can also offer accounts so progress follows players between browsers, PCs and the Android build. It's off by default and needs a database, a mail provider and backups; see [ACCOUNTS-OPS.md](ACCOUNTS-OPS.md). The game itself starts using accounts in a later update.
+
 ## Updating the game
 
 After changing gameplay, re-export the web build and restart the server:

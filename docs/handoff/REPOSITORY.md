@@ -16,6 +16,10 @@ The SoundFont and FluidSynth are authoring tools; the game itself plays finished
 
 `tools/package-android.ps1` produces `build/RelicDiver-android*.apk`; APKs, keystores (`*.keystore`, `*.jks`) and `.idsig` files are git-ignored and never tracked. The toolchain and signing keys live outside the repo (see [ANDROID.md](ANDROID.md)).
 
+## Accounts
+
+`docker-compose.accounts.yml`, `server/accounts/`, `server/backup/` and the operator scripts (`server/migrate.js`, `server/admin-role.js`) are tracked. Database volumes, `db-backups/` (git-ignored), dumps, `.env` secrets and backup passphrases never go into Git or build archives. `.dockerignore` is an allowlist: new server folders must be added to it or the image silently lacks them.
+
 ## Web build and server
 
 `build/RelicDiver-Web.zip` is the tracked browser bundle (game files plus notices); the loose `build/web/` export is ignored. `server/` holds the lobby relay and static host (`node_modules` ignored). The root `docker-compose.yml`, `.dockerignore`, `.env.example` and `Host-Online.cmd` deploy it. `.env` carries the user's Cloudflare Tunnel token and must never be committed. The user runs the deployment on their own machines and domain.

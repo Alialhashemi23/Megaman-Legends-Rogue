@@ -1,5 +1,10 @@
 # Local build history
 
+## 19 — Account server (no game change)
+
+- The server can run player accounts: email sign-up with verification and password reset, Windows/Android sign-in with a code approved in the browser, and a progress API that records run rewards and Workshop purchases exactly once. Off unless configured (`docker-compose.accounts.yml`, docs/ACCOUNTS-OPS.md), with encrypted daily database backups.
+- The game doesn't use accounts yet; that's the next update. Guest play, co-op and game protocol 7 are unchanged.
+
 ## 18 — Android test build (no gameplay change)
 
 - Native ARM64 Android APK (`tools/package-android.ps1`, app id `dev.galosengen.relicdiver`), landscape, same game and online lobbies as the browser and Windows builds. Verified on the Android emulator only; not yet on the Retroid Pocket 5.

@@ -1,0 +1,73 @@
+# Accounts add-on for docker-compose.yml: PostgreSQL, explicit migrations,
+# encrypted daily backups and the account settings for the game server.
+# Fill in the account values in .env (see .env.example and docs/ACCOUNTS-OPS.md), then:
+#   docker compose -f docker-compose.yml -f docker-compose.accounts.yml up -d --build
+# Add `--profile dev-mail` to run Mailpit (a local inbox at http://localhost:8025)
+# instead of a real mail server while testing.
+services:
+  postgres:
+    image: postgres:17.11-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: relic
+      POSTGRES_USER: relic
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - relic-db:/var/lib/postgresql/data
+    # No published port: only the containers on this network can reach the database.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relic -d relic"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Applies schema migrations, then exits. The game server waits for it.
+  migrate:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    command: ["node", "server/migrate.js"]
+    restart: "no"
+    environment: &account-env
+      DATABASE_URL: postgres://relic:${POSTGRES_PASSWORD}@postgres:5432/relic
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://megaman.galosengen.dev}
+      MAIL_URL: ${MAIL_URL:-}
+      MAIL_FROM: ${MAIL_FROM:-Relic Diver <noreply@galosengen.dev>}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  relic-diver:
+    environment: *account-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  backup:
+    build:
+      context: .
+      dockerfile: server/backup/Dockerfile
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGUSER: relic
+      PGDATABASE: relic
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE:?set BACKUP_PASSPHRASE in .env}
+    # A volume on the same disk is NOT a backup: point BACKUP_HOST_DIR at a
+    # folder that is copied off this machine (NAS mount, synced cloud folder…).
+    volumes:
+      - ${BACKUP_HOST_DIR:-./db-backups}:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  mailpit:
+    image: axllent/mailpit:v1.29
+    profiles: ["dev-mail"]
+    ports:
+      - "127.0.0.1:8025:8025"
+
+volumes:
+  relic-db:

@@ -5,10 +5,11 @@ Current state of the project for a new session. Updated 2026-10-14. Game directi
 ## Status
 
 - **Roadmap phase 1 (co-op map sharing, waiting part picks, cache icons)** is merged and deployed (CHANGELOG 17).
-- **Roadmap phase 2 (Android)** is in progress on `feature/android-apk`: the APK builds with `tools/package-android.ps1` and runs on the emulator; the Retroid is untested. See [docs/handoff/ANDROID.md](docs/handoff/ANDROID.md).
+- **Roadmap phase 2 (Android)** is merged: the APK builds with `tools/package-android.ps1` and runs on the emulator; the Retroid is untested. See [docs/handoff/ANDROID.md](docs/handoff/ANDROID.md).
+- **Roadmap phase 3 (accounts backend)** is done on `feature/accounts-backend`, server only and **off unless configured**: Better Auth + PostgreSQL, the `/api/v1` progress API, device-code sign-in and lobby tickets. Contract [docs/ACCOUNT-API.md](docs/ACCOUNT-API.md); running it [docs/ACCOUNTS-OPS.md](docs/ACCOUNTS-OPS.md). The game doesn't use it yet (phase 4).
 - **Shipped (through pass 16):** a complete three-descent roguelike loop; four playable diggers (Mega, Roll, Tron, Servbot) with signature attacks; Zenny and per-digger Workshop skill trees; versioned local progress with save codes; browser play and online co-op for up to four with host migration, reconnects and checkpoints; controller support, Options and rebinding; bigger varied ruins and a to-scale map. Details: [docs/FEATURE-REPORT.md](docs/FEATURE-REPORT.md).
 - **Compatibility numbers:** game protocol `NET_VERSION` 7 (`scripts/net.gd`), `CHECKPOINT_VERSION` 3 (`scripts/game.gd`), profile `VERSION` 2 (`scripts/progression.gd`). All co-op players must run the same protocol.
-- **Next:** the rest of the roadmap (Android APK, accounts backend, account sync, Android accounts/updates, owner dashboard). All product choices are made; none of it is implemented yet.
+- **Next:** the rest of the roadmap (game account sync, accounts backend, account sync, Android accounts/updates, owner dashboard). All product choices are made; none of it is implemented yet.
 - **Still needed from humans:** a real playtest of balance (difficulty is the first-pass tuning from CHANGELOG entry 14, the Workshop numbers are provisional, co-op party scaling is a first guess) and a browser start-to-finish run of the newest content.
 
 ## User intent and constraints
@@ -51,6 +52,7 @@ Then check `https://megaman.galosengen.dev/healthz` and that the site's `index.p
 | Any roadmap feature | [ROADMAP.md](docs/handoff/ROADMAP.md) |
 | Game systems, checks, exports | [TECHNICAL.md](docs/handoff/TECHNICAL.md) |
 | Online co-op, server, web build | [NETWORK.md](docs/handoff/NETWORK.md) |
+| Accounts API, account server operations | [ACCOUNT-API.md](docs/ACCOUNT-API.md), [ACCOUNTS-OPS.md](docs/ACCOUNTS-OPS.md) |
 | Android APK, toolchain, emulator | [ANDROID.md](docs/handoff/ANDROID.md) |
 | Models, animation, aiming | [ART-ANIMATION.md](docs/handoff/ART-ANIMATION.md) |
 | Menus, sound, music, videos | [AUDIO-UI.md](docs/handoff/AUDIO-UI.md) |

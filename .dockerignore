@@ -3,4 +3,6 @@
 !server/package.json
 !server/package-lock.json
 !server/*.js
+!server/accounts/*.js
+!server/backup/*.sh
 !build/RelicDiver-Web.zip

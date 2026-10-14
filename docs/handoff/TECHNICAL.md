@@ -21,6 +21,7 @@ Godot 4.7.1, GDScript, GL Compatibility renderer, GodotPhysics3D. Entry point: p
 | scripts/net.gd | Online transport, identity, lobby state, reconnect loop and invite links |
 | scripts/settings.gd | Options and the InputMap: rebindable keyboard/controller actions, prompts, rumble, display (settings.json) |
 | server/ | Node web host and lobby relay for the browser build (NETWORK.md) |
+| server/accounts/ | Optional accounts: Better Auth config, PostgreSQL schema, progress store, `/api/v1` routes, account pages, and `rules.js` (a server copy of the progression rules) |
 
 ## Floors and tuning knobs
 
@@ -74,6 +75,7 @@ $env:LOCALAPPDATA = $env:APPDATA
 | Audio | `tests/audio_checks.gd` |
 | Progression, Workshop, save codes | `tests/progression_checks.gd`, `--persistence-test`; browser: `tests/web_progression.mjs` |
 | Co-op map and part picks | `tests/coop_feedback_checks.gd`, renders via `tests/coop_feedback_preview.gd` |
+| Accounts server | `server/` `npm test` runs `rules.test.js` always and `accounts.test.js` when `TEST_DATABASE_URL` points at a PostgreSQL server (see the file header for a one-line Docker command) |
 | Online and checkpoints | `server/` `npm test`, `tests/run_resume_checks.gd`, `tests/net_test.sh <godot>` (Git Bash), `tests/web_e2e.mjs`, renders via `tests/coop_preview.gd` (see NETWORK.md) |
 | Whole loop | `--smoke-test` |
 

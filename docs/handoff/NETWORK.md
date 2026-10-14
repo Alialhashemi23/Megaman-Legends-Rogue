@@ -2,7 +2,7 @@
 
 Pass 09 added browser play and online co-op for up to four diggers. The user requested lobbies, invite links and a lobby browser on their own domain, hosted themselves through a Cloudflare Tunnel. Pass 10 made runs survive mishaps (the user's priority before any further work) and added co-op communication and lobby controls. The user-facing guide is [../ONLINE.md](../ONLINE.md).
 
-**Planned (not implemented):** accounts, Android cross-play and co-op map/cache changes are in [ROADMAP.md](ROADMAP.md). Today the relay is memory-only and `hello.id` is a client-supplied reconnect identity, not authentication; accounts will join with one-use lobby tickets and server-derived identity. Don't describe planned features as current behavior.
+**Accounts (server side, phase 3):** when the server runs with accounts ([../ACCOUNTS-OPS.md](../ACCOUNTS-OPS.md)), `hello` may carry a single-use `ticket` from `POST /api/v1/lobby-ticket`. The relay redeems it before handling that client's later commands, identifies the player as `acct:<account id>` and answers `welcome{account:true}`; a bad ticket gets `error bad_ticket` and the client stays a guest. Guest `hello.id`s can no longer start with `acct:`. Lobbies and checkpoints are still memory-only, and the game doesn't send tickets yet (phase 4). Contract: [../ACCOUNT-API.md](../ACCOUNT-API.md).
 
 ## Topology
 
@@ -15,7 +15,7 @@ Pass 09 added browser play and online co-op for up to four diggers. The user req
 Version history: `NET_VERSION` 3 is the bigger-ruins floor generator (older builds would build different ruins from the same seed), 4 the difficulty pass (robot counts and timings), 5 Tron and Servbot, 6 signature attacks. In 6, `M_SHOT` carries `[depth, position, direction_or_launch_velocity, heavy, projectile_kind]` (0 bolt, 1 bomb); cosmetic bombs use the shooter's gravity. Builds mirror purchased skills, Pulse shot count and Roll's repair cooldown; remote hitboxes match the selected rig; a nearby Roll doubles revive speed on the downed player's client. 7 adds the shared map and waiting part picks: `M_VISITED{depth, room}` from any digger, and `M_CHOICE{depth, cache, opener_slot}` (was empty). `CHECKPOINT_VERSION` 2 matched the new generator and 3 the signature-attack combat state.
 
 Text frames are JSON, handled in `server/lobby.js`, `server/server.js` and `scripts/net.gd`.
-- **Client → server:** `hello{name,id,v}`, `list`, `create{name,public,password}`, `join{code,password}`, `resume{code,name,public,password}`, `leave`, `name`, `kick{slot}`, `lock{locked}`, `status{state,depth}`, `ping`.
+- **Client → server:** `hello{name,id,v,ticket?}`, `list`, `create{name,public,password}`, `join{code,password}`, `resume{code,name,public,password}`, `leave`, `name`, `kick{slot}`, `lock{locked}`, `status{state,depth}`, `ping`.
 - **Server → client:** `welcome`, `lobbies`, `joined{code,slot,hostSlot,takeover,checkpoint,recreated,password}`, `lobby{lobby}`, `host{slot}`, `entered{slot,name,id}`, `left{slot}`, `kicked`, `replaced`, `error{code}`, `pong`.
 
 Rules:

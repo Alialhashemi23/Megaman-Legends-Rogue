@@ -2,6 +2,7 @@
 /.godot/
 /save/
 /backups/
+/db-backups/
 /export_templates/
 /feature_profiles/
 /script_templates/
