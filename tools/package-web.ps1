@@ -18,10 +18,24 @@ foreach ($name in @('LICENSE.md', 'GODOT-LICENSE.txt', 'CHARACTER-CREDITS.md', '
 foreach ($folder in @('font-licenses', 'audio-licenses')) {
     Copy-Item -LiteralPath (Join-Path $buildPath $folder) -Destination $webPath -Recurse
 }
+# The loading screen (web/shell.html) uses the game's fonts before the game has loaded.
+$fontPath = Join-Path $webPath 'fonts'
+New-Item -ItemType Directory -Path $fontPath | Out-Null
+foreach ($name in @('RussoOne-Regular.ttf', 'BarlowSemiCondensed-SemiBold.ttf')) {
+    Copy-Item -LiteralPath (Join-Path $projectRoot "assets/fonts/$name") -Destination $fontPath
+}
 $partialPath = "$archivePath.partial"
 if (Test-Path -LiteralPath $partialPath) { Remove-Item -LiteralPath $partialPath }
+Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-[System.IO.Compression.ZipFile]::CreateFromDirectory($webPath, $partialPath, [System.IO.Compression.CompressionLevel]::Optimal, $false)
+# Entry names need forward slashes: the server image unpacks this on Linux.
+$archive = [System.IO.Compression.ZipFile]::Open($partialPath, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+    foreach ($file in Get-ChildItem -LiteralPath $webPath -File -Recurse) {
+        $name = $file.FullName.Substring($webPath.Length + 1).Replace('\', '/')
+        [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file.FullName, $name, [System.IO.Compression.CompressionLevel]::Optimal)
+    }
+} finally { $archive.Dispose() }
 if ((Get-Item -LiteralPath $partialPath).Length -ge 100MB) { throw 'The web ZIP exceeds GitHub normal Git file limits.' }
 Move-Item -LiteralPath $partialPath -Destination $archivePath -Force
 Get-Item -LiteralPath $archivePath | Select-Object Name, Length

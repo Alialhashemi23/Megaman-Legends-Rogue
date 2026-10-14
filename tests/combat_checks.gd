@@ -35,7 +35,7 @@ func run() -> void:
 	root.add_child(game)
 	game.smoke_test = true
 	game.set_process(false)
-	# Generation must offer paths through all five cover arrangements.
+	# Generation must offer paths through every kind of chamber.
 	var layouts = {}
 	for seed_value in [49381, 8, 120, 8394, 5920, 8888]:
 		game.rng.seed = seed_value
@@ -49,7 +49,8 @@ func run() -> void:
 		for enemy in game.enemies:
 			verify(game.navigation.open_at(enemy.position), "Enemy spawn avoids cover")
 		await process_frame
-	verify(layouts.size() == 5, "All five layouts appear")
+	# Five cover arrangements plus the jump puzzle (5) and the terrace (6).
+	for layout in 7: verify(layouts.has(layout), "Chamber layout %d appears" % layout)
 
 	await arena()
 	game.player.position = Vector3(0, 0, -0.4)
@@ -82,12 +83,15 @@ func run() -> void:
 	var sentry = game.spawn_enemy(Vector3.ZERO, 1, 0)
 	sentry.attack = 100
 	sentry.begin_attack("shot", 0.65)
-	var locked_aim = sentry.aim_point
-	game.player.position = Vector3(5, 0, 5)
-	await pause_for(0.25)
-	verify(sentry.aim_point == locked_aim, "Ranged aim stays committed after its windup begins")
+	var first_aim = sentry.aim_point
+	await pause_for(0.18)
+	verify(sentry.aim_point == first_aim and not sentry.aim_locked, "Ranged aim holds through the windup")
+	game.player.position = Vector3(3, 0, 5)
+	await pause_for(0.16)
+	verify(sentry.aim_locked and sentry.aim_point.x > 2.0, "Ranged aim locks onto the digger just before firing")
+	game.player.position = Vector3(7, 0, 5)
 	await pause_for(0.65)
-	verify(game.player.hp == 100, "Moving away from the aim line dodges the shot")
+	verify(game.player.hp == 100, "Moving after the lock dodges the shot")
 
 	await arena()
 	game.player.position = Vector3(0, 0, 5)
@@ -164,7 +168,7 @@ func run() -> void:
 
 	await arena()
 	game.cover(game.world, Vector3(0, 1.3, 0), Vector3(2.8, 2.6, 2.8), Color.WHITE)
-	game.navigation.build(game.rooms, game.obstacles)
+	game.navigation.build(game.rooms, game.obstacles, game.links, game.nav_open)
 	game.player.position = Vector3(3.5, 0, 0)
 	var chaser = game.spawn_enemy(Vector3(-3.5, 0, 0), 0, 0)
 	chaser.attack = 100

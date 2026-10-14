@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
+		<title>$GODOT_PROJECT_NAME</title>
+		<!-- Relic Diver's loading screen. Godot fills in the $GODOT_ placeholders on
+		     export (export_presets.cfg, html/custom_html_shell). The fonts are copied
+		     next to the page by tools/package-web.* -->
+		<style>
+@font-face { font-family: "Russo One"; src: url("fonts/RussoOne-Regular.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Barlow Semi Condensed"; src: url("fonts/BarlowSemiCondensed-SemiBold.ttf") format("truetype"); font-weight: 600; font-display: swap; }
+
+html, body, #canvas { margin: 0; padding: 0; border: 0; }
+body { color: #fff9df; background-color: #16357f; overflow: hidden; touch-action: none; }
+#canvas { display: block; }
+#canvas:focus { outline: none; }
+
+#loader {
+	position: absolute; inset: 0; z-index: 2;
+	display: flex; flex-direction: column; align-items: center; justify-content: center;
+	background: #16357f;
+	font-family: "Barlow Semi Condensed", "Arial Narrow", Arial, sans-serif; font-weight: 600;
+	transition: opacity 0.45s ease;
+}
+#loader.done { opacity: 0; pointer-events: none; }
+#loader .pattern { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.9; }
+/* Cobalt livery: a yellow rule and hazard chevrons along the top and bottom edges. */
+#loader .band { position: absolute; left: 0; right: 0; height: 30px; background: #0c2456; border: 0 solid #ffdc68; }
+#loader .band.top { top: 0; border-bottom-width: 3px; }
+#loader .band.bottom { bottom: 0; border-top-width: 3px; }
+#loader .band::after {
+	content: ""; position: absolute; inset: 7px 0;
+	background: repeating-linear-gradient(-55deg, #ffdc68 0 14px, transparent 14px 34px);
+	opacity: 0.85; animation: slide 1.6s linear infinite;
+}
+#loader .band.bottom::after { animation-direction: reverse; }
+@keyframes slide { to { background-position: 41.5px 0; } }
+
+.panel {
+	position: relative; width: min(560px, 86vw); padding: 26px 34px 24px; box-sizing: border-box; text-align: center;
+	background: rgba(12, 33, 90, 0.94); border: 3px solid #b8d7ec; border-radius: 6px;
+	box-shadow: 6px 7px 0 rgba(6, 10, 38, 0.65), inset 0 0 0 3px #0c2456;
+}
+.kicker { margin: 0; font: 15px "Russo One", sans-serif; letter-spacing: 0.08em; color: #7ad6ef; }
+h1 { margin: 2px 0 0; font: 400 clamp(40px, 9vw, 62px)/1 "Russo One", "Arial Black", sans-serif; letter-spacing: 0.02em; text-shadow: 4px 4px 0 #0a1b4d; }
+h1 .relic { color: #ffdc68; }
+h1 .diver { color: #fff9df; }
+.sub { display: inline-block; margin: 10px 0 0; padding: 3px 14px; font: 15px "Russo One", sans-serif; letter-spacing: 0.06em; color: #fff9df; background: #16357f; border: 2px solid #b8d7ec; border-radius: 4px; }
+
+/* Spinner: a lock-on reticle turning around Mega while buster shots orbit. */
+.spinner { width: 148px; height: 148px; margin: 18px auto 14px; display: block; overflow: visible; }
+.spinner .ring { transform-origin: 74px 74px; animation: turn 2.4s linear infinite; }
+.spinner .brackets { transform-origin: 74px 74px; animation: turn 5s linear infinite reverse; }
+.spinner .shots { transform-origin: 74px 74px; animation: turn 1.15s cubic-bezier(0.6, 0.1, 0.4, 0.9) infinite; }
+.spinner .core { transform-origin: 74px 74px; animation: charge 1.15s ease-in-out infinite; }
+@keyframes turn { to { transform: rotate(360deg); } }
+@keyframes charge { 0%, 100% { opacity: 0.35; transform: scale(0.94); } 50% { opacity: 0.8; transform: scale(1.04); } }
+
+/* Bar: the Life gauge from the game, filling pip by pip. */
+.gauge { display: flex; align-items: center; gap: 14px; }
+.gauge .label { font: 15px "Russo One", sans-serif; color: #fff9df; letter-spacing: 0.05em; }
+.track { position: relative; flex: 1; height: 22px; background: #071a44; border: 2px solid #b8d7ec; border-radius: 3px; overflow: hidden; }
+.fill { position: absolute; inset: 2px auto 2px 2px; width: 0; max-width: calc(100% - 4px); background: linear-gradient(#e1f7af 0 28%, #8fe36b 28% 100%); }
+.track::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 13px, #071a44 13px 16px); }
+.track.busy .fill { animation: pulse 0.9s ease-in-out infinite; }
+@keyframes pulse { 50% { filter: brightness(1.25); } }
+#percent { min-width: 3.3em; text-align: right; font: 24px "Russo One", sans-serif; color: #ffdc68; text-shadow: 2px 2px 0 #0a1b4d; }
+#flavor { height: 1.3em; margin: 14px 0 0; font-size: 20px; color: #d3e6f5; transition: opacity 0.3s ease; }
+#flavor.swap { opacity: 0; }
+.fine { position: absolute; bottom: 42px; left: 0; right: 0; margin: 0; text-align: center; font-size: 14px; color: #9fb9d8; }
+
+#notice { display: none; margin-top: 16px; padding: 12px 14px; text-align: left; font-size: 17px; line-height: 1.3; color: #fff9df; background: #12336e; border: 2px solid #ff9565; border-radius: 5px; }
+#loader.failed #notice { display: block; }
+#loader.failed .spinner *, #loader.failed .band::after { animation-play-state: paused; }
+@media (max-height: 520px) { .spinner { width: 96px; height: 96px; margin: 8px auto; } .fine { display: none; } }
+@media (prefers-reduced-motion: reduce) { .spinner *, #loader .band::after, .track.busy .fill { animation: none; } }
+		</style>
+		$GODOT_HEAD_INCLUDE
+	</head>
+	<body>
+		<canvas id="canvas">
+			Your browser does not support the canvas tag.
+		</canvas>
+
+		<noscript>
+			Your browser does not support JavaScript.
+		</noscript>
+
+		<div id="loader" role="status" aria-live="polite">
+			<svg class="pattern" aria-hidden="true">
+				<defs>
+					<pattern id="cassettes" width="256" height="256" patternUnits="userSpaceOnUse">
+						<rect width="256" height="256" fill="#17347b"/>
+						<g transform="rotate(-35 128 128)" stroke="#14295f" stroke-width="5">
+							<rect x="-22" y="12" width="92" height="54" rx="7" fill="#21458a"/>
+							<rect x="94" y="130" width="92" height="54" rx="7" fill="#21458a"/>
+							<rect x="210" y="12" width="92" height="54" rx="7" fill="#21458a"/>
+							<path d="M-14 21H59M102 139H176M218 21H285" stroke="#345a9b" stroke-width="3"/>
+							<path d="M0 42H43M116 160H159M232 42H270" stroke="#142b63" stroke-width="9"/>
+						</g>
+						<g stroke="#102655" stroke-width="5" fill="#294b88"><circle cx="110" cy="42" r="28"/><circle cx="240" cy="174" r="28"/><circle cx="-16" cy="174" r="28"/><circle cx="126" cy="252" r="28"/></g>
+						<g fill="#44629c"><rect x="25" y="95" width="7" height="7"/><rect x="160" y="86" width="7" height="7"/><rect x="43" y="220" width="7" height="7"/><rect x="196" y="224" width="7" height="7"/></g>
+					</pattern>
+				</defs>
+				<rect width="100%" height="100%" fill="url(#cassettes)"/>
+			</svg>
+			<div class="band top"></div>
+			<div class="band bottom"></div>
+
+			<main class="panel">
+				<p class="kicker">MEGA MAN LEGENDS</p>
+				<h1><span class="relic">RELIC</span> <span class="diver">DIVER</span></h1>
+				<p class="sub">THE TIDAL ARCHIVE</p>
+
+				<svg class="spinner" viewBox="0 0 148 148" aria-hidden="true">
+					<defs><clipPath id="face"><circle cx="74" cy="74" r="40"/></clipPath></defs>
+					<circle class="core" cx="74" cy="74" r="47" fill="#7ad6ef"/>
+					<circle cx="74" cy="74" r="42" fill="#0c2456" stroke="#b8d7ec" stroke-width="3"/>
+					<g clip-path="url(#face)">
+						<g transform="translate(26 24) scale(0.75)">
+							<path d="M0 144V117L30 103H97L128 118V144" fill="#347fca" stroke="#112252" stroke-width="5"/>
+							<path d="M32 105L48 95H80L96 105L84 124H43Z" fill="#192f5f"/><path d="M49 101V86H78V103L65 111Z" fill="#d7a272"/>
+							<path d="M27 39L40 21H87L102 38L99 82L85 102L64 111L43 102L29 82Z" fill="#efbf91" stroke="#182443" stroke-width="3"/>
+							<path d="M22 58L19 47L28 33L25 20L42 25L47 8L62 17L77 6L83 20L103 18L99 33L113 39L103 52L86 42L79 54L64 42L51 53L42 44L31 62L27 80L21 69Z" fill="#69412d" stroke="#251e30" stroke-width="4"/>
+							<path d="M32 30L46 33L51 17L57 29L75 16L77 32L94 27L91 38L77 38L68 30L53 40L42 36Z" fill="#875838"/>
+							<path d="M37 60Q47 53 57 59M74 59Q85 53 94 60" fill="none" stroke="#50312a" stroke-width="4"/>
+							<path d="M37 66Q47 59 57 65V80L43 83L37 78ZM74 65Q85 59 94 66V79L83 83L75 79Z" fill="#fff4d6"/>
+							<path d="M47 63H55V80H47ZM77 63H85V80H77Z" fill="#337856"/><path d="M49 64H53V77H49ZM79 64H83V77H79Z" fill="#162b36"/>
+							<path d="M47 64H50V69H47ZM77 64H80V69H77Z" fill="#fff"/>
+							<path d="M37 66Q47 59 57 65M74 65Q85 59 94 66" fill="none" stroke="#352731" stroke-width="3"/>
+							<path d="M63 76L61 86H67M55 94Q65 98 76 93" fill="none" stroke="#af7452" stroke-width="2"/>
+							<path d="M18 128L43 122L84 122L112 129V144H18Z" fill="#6aafe4"/>
+						</g>
+					</g>
+					<circle class="ring" cx="74" cy="74" r="56" fill="none" stroke="#7ad6ef" stroke-width="6" stroke-dasharray="29.3 14.7" stroke-linecap="butt"/>
+					<g class="brackets" fill="none" stroke="#ffdc68" stroke-width="5" stroke-linecap="square">
+						<path d="M10 30V10H30"/><path d="M118 10H138V30"/><path d="M138 118V138H118"/><path d="M30 138H10V118"/>
+					</g>
+					<g class="shots">
+						<circle cx="74" cy="7" r="7" fill="#ffdc68" stroke="#fff9df" stroke-width="2"/>
+						<circle cx="60" cy="9.5" r="4.5" fill="#ffdc68" opacity="0.7"/>
+						<circle cx="49" cy="14" r="3" fill="#ffdc68" opacity="0.4"/>
+					</g>
+				</svg>
+
+				<div class="gauge">
+					<span class="label">LOAD</span>
+					<div class="track" id="track"><div class="fill" id="fill"></div></div>
+					<span id="percent">0%</span>
+				</div>
+				<p id="flavor">Powering up the lift…</p>
+				<div id="notice"></div>
+			</main>
+			<p class="fine">A non-profit fan project. Not affiliated with Capcom.</p>
+		</div>
+
+		<script src="$GODOT_URL"></script>
+		<script>
+const GODOT_CONFIG = $GODOT_CONFIG;
+const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
+const engine = new Engine(GODOT_CONFIG);
+
+(function () {
+	const loader = document.getElementById('loader');
+	const track = document.getElementById('track');
+	const fill = document.getElementById('fill');
+	const percent = document.getElementById('percent');
+	const flavor = document.getElementById('flavor');
+	const notice = document.getElementById('notice');
+
+	const lines = [
+		'Calibrating the buster…',
+		'Waking the ancient machines…',
+		'Polishing refractor shards…',
+		'Roll is tuning the Flutter’s engines…',
+		'Counting zenny. Sorry, scrap.',
+		'Charging the lift capacitors…',
+		'Teaching Reaverbots some manners…',
+		'Data is saving your game. Probably.',
+		'Oiling the Servbots…',
+		'Mapping the ruins…',
+		'Checking for Bonne family pirates…',
+		'Tightening loose buster parts…',
+		'Reading the ancient inscriptions…',
+	];
+	let order = lines.map((_, i) => i).sort(() => Math.random() - 0.5);
+	let turn = 0;
+	let finished = false;
+	const rotate = setInterval(() => {
+		if (finished) return;
+		flavor.classList.add('swap');
+		setTimeout(() => {
+			if (finished) return;
+			flavor.textContent = lines[order[turn++ % order.length]];
+			flavor.classList.remove('swap');
+		}, 300);
+	}, 2600);
+
+	// The number eases toward the real download progress so it never jumps.
+	let target = 0;
+	let shown = 0;
+	function tick() {
+		shown += (target - shown) * 0.2;
+		if (target - shown < 0.05) shown = target;
+		const value = Math.floor(shown);
+		percent.textContent = value + '%';
+		fill.style.width = 'calc(' + shown + '% - 4px)';
+		if (!finished) requestAnimationFrame(tick);
+	}
+	requestAnimationFrame(tick);
+
+	function fail(err) {
+		console.error(err);
+		finished = true;
+		clearInterval(rotate);
+		const text = err instanceof Error ? err.message : typeof err === 'string' ? err : 'An unknown error occurred.';
+		notice.textContent = '';
+		text.split('\n').forEach((line) => {
+			notice.appendChild(document.createTextNode(line));
+			notice.appendChild(document.createElement('br'));
+		});
+		flavor.textContent = 'The dig could not start.';
+		flavor.classList.remove('swap');
+		loader.classList.add('failed');
+	}
+
+	const missing = Engine.getMissingFeatures({ threads: GODOT_THREADS_ENABLED });
+	if (missing.length !== 0) {
+		fail('This browser is missing features the game needs:\n' + missing.join('\n') + '\nOpen the game over https:// in a current desktop browser.');
+		return;
+	}
+	engine.startGame({
+		'onProgress': function (current, total) {
+			if (current > 0 && total > 0) {
+				target = Math.min(100, current / total * 100);
+				// Everything is downloaded; the engine still needs a moment to start.
+				if (current >= total) track.classList.add('busy');
+			}
+		},
+	}).then(() => {
+		target = 100;
+		shown = 100;
+		percent.textContent = '100%';
+		fill.style.width = 'calc(100% - 4px)';
+		finished = true;
+		clearInterval(rotate);
+		loader.classList.add('done');
+		setTimeout(() => loader.remove(), 500);
+	}, fail);
+}());
+		</script>
+	</body>
+</html>

@@ -36,6 +36,10 @@ var route_cooldown = 0.0
 var hit_overlay: StandardMaterial3D
 var meshes: Array[MeshInstance3D] = []
 var overdrive_triggered = false
+var aim_locked = false
+# A guardian shrugs off damage for a moment as it enters overdrive.
+var shield = 0.0
+var guard_shown = -100000
 # Online: the host simulates robots; guests show proxies that follow snapshots.
 var net_id = -1
 var net_pos = Vector3.ZERO
@@ -48,7 +52,7 @@ var my_last_hit = -100000
 func _ready() -> void:
 	collision_layer = 4
 	collision_mask = 1 | 4
-	max_health = [34.0, 27.0, 65.0, 650.0][kind] * (1 + (game.depth - 1) * 0.40)
+	max_health = [55.0, 44.0, 110.0, 1900.0][kind] * (1 + (game.depth - 1) * 0.65)
 	# Bigger parties face sturdier machines (guardians scale the most).
 	max_health *= 1.0 + (game.party_size - 1) * (0.60 if kind == 3 else 0.35)
 	health = max_health
@@ -61,16 +65,48 @@ func _ready() -> void:
 	add_child(col)
 	art = DiverArt.robot(self, kind, game.depth)
 	for node in art.root.find_children("*", "MeshInstance3D", true, false): meshes.append(node)
-	hit_overlay = StandardMaterial3D.new()
-	hit_overlay.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	hit_overlay.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	hit_overlay.albedo_color = Color(1.0, 0.96, 0.73, 0.7)
+	hit_overlay = DiverArt.hit_flash()
 	phase = game.rng.randf() * TAU
-	attack = game.rng.randf_range(0.7, 2)
+	attack = game.rng.randf_range(0.7, 2) * 0.5
 	strafe_sign = -1 if game.rng.randf() < 0.5 else 1
 	health_bar = DiverArt.box(self, Vector3(0, 4.7 if kind == 3 else 2.2, 0), Vector3(1.1, 0.07, 0.08), Color("ed8d68"), false, 0.4)
 	health_bar.visible = false
 	add_to_group("enemies")
+
+# Difficulty: every attack keeps its warning, but deeper floors hit harder
+# (`base + per_floor` for each descent) and wind up and recover sooner.
+func hit(base: float, per_floor: float) -> float:
+	return base + per_floor * game.depth
+
+func pace() -> float:
+	var value = 0.75 - 0.075 * (game.depth - 1)
+	return value * 0.85 if kind == 3 and overdrive_triggered else value
+
+# Sentries and guardians lock their aim just before firing, leading a moving digger.
+func lock_aim() -> void:
+	aim_locked = true
+	var who: DiverPlayer = null
+	var best = 6.0
+	for p in game.all_players():
+		var d = p.global_position.distance_to(aim_point - Vector3.UP)
+		if not p.downed and d < best:
+			best = d
+			who = p
+	if who == null: return
+	var from = global_position + Vector3.UP * (2.6 if kind == 3 else 1.5)
+	var moving: Vector3 = who.velocity if who.is_local else who.net_vel
+	moving.y = 0
+	var flight = from.distance_to(who.global_position) / (17.0 + game.depth * 2)
+	aim_point = who.global_position + Vector3.UP + moving * flight * (0.55 + 0.15 * game.depth)
+	aim_direction = aim_point - global_position - Vector3.UP
+	aim_direction.y = 0
+	aim_direction = aim_direction.normalized()
+	if is_instance_valid(marker):
+		for child in marker.get_children(): child.queue_free()
+		var origin = global_position
+		origin.y += 0.075
+		warning_line(origin, Vector3(aim_point.x, game.floor_height(aim_point) + 0.075, aim_point.z), 0.14, Color("fa775e"))
+		DiverArt.ring(marker, origin, 0.7 if kind == 1 else 1.8, Color("fa775e"), 0.12)
 
 func _physics_process(dt: float) -> void:
 	if dead or not game.world_running() or not is_instance_valid(game.player): return
@@ -87,6 +123,7 @@ func _physics_process(dt: float) -> void:
 	if not active: return
 	slow -= dt
 	flash -= dt
+	shield -= dt
 	attack -= dt
 	route_cooldown -= dt
 	ai_time += dt
@@ -106,7 +143,7 @@ func _physics_process(dt: float) -> void:
 	direction.y = 0
 	direction = direction.normalized()
 	var movement = Vector3.ZERO
-	var speed = [2.8, 2.1, 1.8, 2.1][kind] * (0.40 if slow > 0 else 1)
+	var speed = [4.2, 2.9, 2.6, 2.8][kind] * (1.0 + 0.08 * (game.depth - 1)) * (0.40 if slow > 0 else 1)
 	if kind == 3 and health < max_health * 0.5: speed *= 1.2
 	if state == "windup":
 		state_time -= dt
@@ -114,12 +151,13 @@ func _physics_process(dt: float) -> void:
 		var progress = 1 - maxf(0, state_time) / windup_duration
 		art.root.rotation.x = -0.16 * progress
 		art.root.position.y = -0.10 * progress
+		if not aim_locked and state_time <= 0.22 and planned in ["shot", "fan"]: lock_aim()
 		if is_instance_valid(marker): marker.visible = state_time > 0.20 or int(state_time * 35) % 2 == 0
 		if state_time <= 0: resolve_attack()
 	elif state == "charge":
 		state_time -= dt
 		movement = aim_direction
-		speed = 14.0
+		speed = 17.0
 		check_charge_contact()
 		if state_time <= 0 or is_on_wall(): recover(0.8)
 	elif state == "recover":
@@ -138,7 +176,7 @@ func _physics_process(dt: float) -> void:
 		if kind != 1 and distance < (2.8 if kind == 3 else 1.5): movement = Vector3.ZERO
 		if attack <= 0 and sight:
 			if kind == 1 and distance < 22: begin_attack("shot", 0.65)
-			elif kind == 2 and distance < 8: begin_attack("charge", 0.70)
+			elif kind == 2 and distance < 10: begin_attack("charge", 0.70)
 			elif kind == 0 and distance < 2.0: begin_attack("melee", 0.46)
 			elif kind == 3 and distance < 28:
 				attack_cycle += 1
@@ -164,7 +202,7 @@ func sees(who: Node3D) -> bool:
 
 func check_charge_contact() -> void:
 	if not charge_hit and global_position.distance_to(game.player.global_position) < 1.7 and has_sight():
-		game.player.hurt(18 + game.depth * 2)
+		game.player.hurt(hit(22, 6))
 		charge_hit = true
 
 func unobstructed(from: Vector3, to: Vector3) -> bool:
@@ -172,7 +210,8 @@ func unobstructed(from: Vector3, to: Vector3) -> bool:
 	return get_world_3d().direct_space_state.intersect_ray(ray).is_empty()
 
 func chase_direction(_dt: float, direction: Vector3, sight: bool) -> Vector3:
-	if sight and not is_on_wall(): return direction
+	# A digger up on a terrace is in sight but out of reach: take the ramp.
+	if sight and not is_on_wall() and absf(target.position.y - position.y) < 0.8 and game.floor_height(target.position) == game.floor_height(position): return direction
 	if route_cooldown <= 0 or path.is_empty():
 		route_cooldown = 0.65 + float(get_instance_id() % 5) * 0.06
 		path = game.navigation.route(position, target.position)
@@ -186,12 +225,14 @@ func chase_direction(_dt: float, direction: Vector3, sight: bool) -> Vector3:
 
 func begin_attack(type: String, duration: float) -> void:
 	var aim = (target if is_instance_valid(target) else game.player).global_position + Vector3.UP
+	duration *= pace()
 	game.net.broadcast([DiverNet.M_ATTACK, game.depth, net_id, type, duration, aim])
 	show_attack(type, duration, aim)
 
 func show_attack(type: String, duration: float, point: Vector3) -> void:
 	clear_marker()
 	planned = type
+	aim_locked = false
 	state = "windup"
 	windup_duration = duration
 	state_time = duration
@@ -202,7 +243,9 @@ func show_attack(type: String, duration: float, point: Vector3) -> void:
 	marker = Node3D.new()
 	game.world.add_child(marker)
 	var origin = global_position
-	origin.y = 0.075
+	# Warnings lie on whatever floor the robot or its target stands on.
+	origin.y += 0.075
+	var target_floor = game.floor_height(aim_point) + 0.075
 	var amber = Color("ffb257")
 	var danger = Color("fa775e")
 	strike_points.clear()
@@ -211,15 +254,15 @@ func show_attack(type: String, duration: float, point: Vector3) -> void:
 			var arc = DiverArt.ring(marker, origin, 2.5, amber, 0.15, 2.4)
 			arc.rotation.y = atan2(-aim_direction.x, -aim_direction.z)
 		"charge":
-			warning_line(origin, origin + aim_direction * 7, 3.0, amber)
+			warning_line(origin, origin + aim_direction * 9, 3.0, amber)
 		"shot", "fan":
-			warning_line(origin, Vector3(aim_point.x, 0.075, aim_point.z), 0.08, amber)
+			warning_line(origin, Vector3(aim_point.x, target_floor, aim_point.z), 0.08, amber)
 			DiverArt.ring(marker, origin, 0.7 if kind == 1 else 1.8, amber, 0.12)
 		"slam":
 			DiverArt.ring(marker, origin, 4.7, danger, 0.18)
 			DiverArt.ring(marker, origin + Vector3.UP * 0.015, 2.4, amber, 0.08)
 		"bombard":
-			var at = Vector3(aim_point.x, 0.075, aim_point.z)
+			var at = Vector3(aim_point.x, target_floor, aim_point.z)
 			for offset in [Vector3.ZERO, Vector3(3.8, 0, 1.8), Vector3(-3.8, 0, -1.8)]:
 				strike_points.append(at + offset)
 				DiverArt.ring(marker, at + offset, 2.2, danger, 0.15)
@@ -239,56 +282,56 @@ func resolve_attack() -> void:
 		"melee":
 			var delta = game.player.global_position - global_position
 			delta.y = 0
-			if delta.length() < 2.5 and delta.normalized().dot(aim_direction) > 0.4 and has_sight(): game.player.hurt(12 + game.depth * 2)
+			if delta.length() < 2.5 and delta.normalized().dot(aim_direction) > 0.4 and has_sight(): game.player.hurt(hit(15, 5))
 			game.impact_ring(global_position + Vector3.UP * 0.06, 2.3, Color("ffc779"), 0.16)
 			recover(0.6)
 		"shot": fire_at_point(1); recover(0.95)
 		"fan": fire_at_point(5 + (2 if game.depth == 3 else 0)); recover(0.9 if health > max_health * 0.5 else 0.55)
 		"charge":
 			state = "charge"
-			state_time = 0.48
+			state_time = 0.52
 			charge_hit = false
 			game.sound.play("dash", 0.75, global_position)
 		"slam":
-			blast(global_position, 4.7, 25)
+			blast(global_position, 4.7, hit(26, 7))
 			recover(1.0)
 		"bombard":
-			for point in strike_points: blast(point, 2.2, 20)
+			for point in strike_points: blast(point, 2.2, hit(20, 7))
 			recover(0.85)
 		"cross":
 			var origin = global_position
-			origin.y = 0.08
+			origin.y += 0.08
 			var delta = game.player.global_position - origin
 			delta.y = 0
 			for direction in [aim_direction, aim_direction.rotated(Vector3.UP, PI / 2)]:
 				var from = origin - direction * 11
 				var to = origin + direction * 11
 				game.beam_flash(from, to, 1.5)
-				if absf(delta.dot(direction.cross(Vector3.UP))) < 1.05 and absf(delta.dot(direction)) < 11 and has_sight(): game.player.hurt(25)
+				if absf(delta.dot(direction.cross(Vector3.UP))) < 1.05 and absf(delta.dot(direction)) < 11 and has_sight(): game.player.hurt(hit(26, 7))
 			game.sound.play("slam", 1.0, global_position)
 			recover(1.1)
 	attack = 0.15
 
 func blast(pos: Vector3, radius: float, amount: float) -> void:
-	game.impact_ring(Vector3(pos.x, 0.09, pos.z), radius, Color("ff9568"), 0.35)
+	game.impact_ring(Vector3(pos.x, pos.y + 0.015, pos.z), radius, Color("ff9568"), 0.35)
 	game.burst(pos + Vector3.UP * 0.6, Color("ffca68"), 15)
 	game.sound.play("slam", 1.0, pos)
 	var delta = game.player.global_position - pos
 	delta.y = 0
-	if delta.length() < radius and game.player.position.y < 0.70 and unobstructed(pos + Vector3.UP * 0.8, game.player.global_position + Vector3.UP): game.player.hurt(amount)
+	if delta.length() < radius and absf(game.player.position.y - pos.y) < 0.70 and unobstructed(pos + Vector3.UP * 0.8, game.player.global_position + Vector3.UP): game.player.hurt(amount)
 	if delta.length() < 12: game.player.add_trauma(0.20)
 
 func fire_at_point(number: int) -> void:
 	var origin = global_position + Vector3.UP * (2.6 if kind == 3 else 1.5)
 	var dir = (aim_point - origin).normalized()
 	for i in number:
-		game.spawn_bolt(origin + dir * (1.2 if kind == 3 else 0.7), dir.rotated(Vector3.UP, (i - (number - 1) * 0.5) * 0.14), 18 if kind == 3 else 10, true, false, 0)
+		game.spawn_bolt(origin + dir * (1.2 if kind == 3 else 0.7), dir.rotated(Vector3.UP, (i - (number - 1) * 0.5) * 0.14), hit(16, 5) if kind == 3 else hit(11, 4), true, false, 0)
 	game.muzzle_flash(origin + dir * 0.7, Color("ff9e6c"), 0.32)
 	game.sound.play("enemy", 0.7 if kind == 3 else 1, global_position)
 
 func recover(duration: float) -> void:
 	state = "recover"
-	state_time = duration * (0.8 if kind == 3 and health < max_health * 0.5 else 1.0)
+	state_time = duration * pace() * (0.8 if kind == 3 and health < max_health * 0.5 else 1.0)
 	clear_marker()
 
 func clear_marker() -> void:
@@ -297,6 +340,12 @@ func clear_marker() -> void:
 
 func take_damage(amount: float, effects: bool = true, source: Node3D = null) -> void:
 	if dead: return
+	if shield > 0:
+		flash = 0.1
+		if Time.get_ticks_msec() - guard_shown > 350:
+			guard_shown = Time.get_ticks_msec()
+			game.float_text(global_position + Vector3.UP * 3.5, "GUARD", Color("9fd8ff"))
+		return
 	# Part effects come from whoever fired the shot, local or remote.
 	if not is_instance_valid(source): source = game.player
 	var local_shot = source == game.player
@@ -315,7 +364,8 @@ func take_damage(amount: float, effects: bool = true, source: Node3D = null) -> 
 	if kind == 3 and not overdrive_triggered and health > 0 and health < max_health * 0.5:
 		overdrive_triggered = true
 		recover(1.2)
-		game.announce("OVERDRIVE / " + game.BOSS_NAMES[game.depth - 1], "The guardian is speeding up. Watch its attack warnings.")
+		shield = 1.6
+		game.announce("OVERDRIVE / " + game.BOSS_NAMES[game.depth - 1], "The guardian shields itself, then speeds up. Watch its attack warnings.")
 		game.sound.play("warning", 0.7)
 	game.total_damage += amount
 	show_damage(amount, crit, true)
@@ -400,6 +450,7 @@ func proxy_process(dt: float) -> void:
 			var progress = 1 - maxf(0, state_time) / windup_duration
 			art.root.rotation.x = -0.16 * progress
 			art.root.position.y = -0.10 * progress
+			if not aim_locked and state_time <= 0.22 and planned in ["shot", "fan"]: lock_aim()
 			if is_instance_valid(marker): marker.visible = state_time > 0.20 or int(state_time * 35) % 2 == 0
 			if state_time < -2.0:
 				clear_marker()

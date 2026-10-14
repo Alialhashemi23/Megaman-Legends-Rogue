@@ -23,7 +23,8 @@ func _physics_process(dt: float) -> void:
 	if not game.world_running(): return
 	life -= dt
 	if life <= 0: queue_free(); return
-	var next = global_position + direction * (12 if hostile else 35 if heavy else 46) * dt
+	# Hostile bolts speed up on deeper floors (DiverEnemy.lock_aim leads by the same speed).
+	var next = global_position + direction * (17 + game.depth * 2 if hostile else 35 if heavy else 46) * dt
 	var mask = 11 if hostile else 5
 	var ray = PhysicsRayQueryParameters3D.create(global_position, next, mask)
 	ray.hit_from_inside = true
@@ -43,7 +44,7 @@ func _physics_process(dt: float) -> void:
 					var splash_ray = PhysicsRayQueryParameters3D.create(origin, target, 1)
 					splash_ray.hit_from_inside = true
 					if get_world_3d().direct_space_state.intersect_ray(splash_ray).is_empty(): game.damage_enemy(enemy, amount * 0.5, source)
-			game.impact_ring(Vector3(hit.position.x, 0.08, hit.position.z), 1.2, DiverArt.GOLD, 0.18)
+			game.impact_ring(Vector3(hit.position.x, game.floor_height(hit.position) + 0.08, hit.position.z), 1.2, DiverArt.GOLD, 0.18)
 			game.sound.play("slam", 1.4)
 		game.burst(hit.position, Color("ff8060") if hostile else DiverArt.GOLD, 3)
 		queue_free()

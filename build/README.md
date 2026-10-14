@@ -28,6 +28,10 @@ Mega and Roll now use compact, springy running cycles with distinct contact, pus
 
 Run, backpedal and strafe transitions preserve the current step. Footstep sounds follow the animation contacts, and torso compensation keeps the buster steady while the body moves. Movement, jump and dash controls remain responsive. These are newly authored animations inspired by Legends; the supplied archives contain no original animation clips. The previous character pass is preserved in `backups/v6/`.
 
+## Tron Bonne and Servbot (pass 15)
+
+Tron Bonne and a Servbot are playable alongside Mega and Roll, built from the user's supplied Legends models. **C** (or **Y** on a controller) cycles through all four on the title screen. They share the same statistics, busters, parts and progression for now. See `assets/characters/CREDITS.md`.
+
 ## Character pass 06
 
 The procedural player has been replaced with the supplied original Legends model. Roll is a second playable digger. Choose **Mega** or **Roll** on the title screen, or press **C** to switch the preview. Both share the same statistics, weapons, unlocks, loot and progression; selection remains active across descents.
@@ -131,7 +135,8 @@ There is no countdown or time-based difficulty escalation. Explore at your own p
 ## Content
 
 - Three ruin palettes: Tidal Archive, Garden of Engines, Heart of the Machine.
-- Connected, seeded layouts of 9, 10, and 11 rooms, with branching paths, corridors, cover, and a guardian room.
+- Connected, seeded layouts of 8, 9, and 10 rooms joined by corridors and passages that fork, loop back or dead-end at hidden salvage, with cover and a guardian room.
+- Special chambers: a two-cell Grand Concourse with a colonnade and raised dais, a Stepped Vault jump puzzle with a free cache on its ledge, and a Terrace Hall whose high ground is reached by ramps (robots use the ramps too).
 - Chase robots, floating ranged sentries, charging armored machines, and three guardian attack patterns with overdrive phases.
 - Five room arrangements with different cover, machinery, shelves, tanks, and sightlines.
 - Thirteen stackable relics, three busters, experience levels, scrap, healing wells, paid caches, enemy drops, and salvage vessels.

@@ -66,7 +66,7 @@ var confirm_time = 0.0
 func _ready() -> void:
     mouse_filter = Control.MOUSE_FILTER_IGNORE
     texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    for id in ["volnutt", "roll"]: portraits.append(load("res://assets/ui/%s_portrait.png" % id))
+    for id in DiverCharacter.IDS: portraits.append(load("res://assets/ui/%s_portrait.png" % id))
     name_edit = make_field(16, "Your digger name")
     name_edit.text_submitted.connect(func(_text): commit_name(); get_viewport().gui_release_focus())
     name_edit.focus_exited.connect(commit_name)
@@ -148,7 +148,7 @@ func portrait() -> Texture2D:
     return portraits[game.player.character]
 
 func select_character(index: int) -> void:
-    game.selected_character = clampi(index, 0, 1)
+    game.selected_character = wrapi(index, 0, DiverCharacter.COUNT)
     game.player.set_character(game.selected_character)
     game.player.visual.preview(0)
     game.send_info()
@@ -270,7 +270,7 @@ func _input(event: InputEvent) -> void:
             get_viewport().set_input_as_handled()
             return
     if event.is_action_pressed("switch_digger") and game.mode == "title":
-        select_character(1 - game.selected_character)
+        select_character(game.selected_character + 1)
         game.sound.play("menu_confirm")
         get_viewport().set_input_as_handled()
     elif event.is_action_pressed("nav_accept"):
@@ -291,7 +291,7 @@ func navigate(delta: int, horizontal: bool) -> void:
     elif game.mode in ["archive", "inventory"]: select_part(delta)
     elif game.mode == "title" and horizontal:
         if not hits.is_empty() and hits[clampi(focus_index, 0, hits.size()-1)].action == "character":
-            select_character(1 - game.selected_character)
+            select_character(game.selected_character + 1)
         else:
             var count = 3 if game.meta.kills >= 50 else 2 if game.meta.kills >= 10 else 1
             game.selected_weapon = wrapi(game.selected_weapon + delta, 0, count)
@@ -555,16 +555,16 @@ func draw_title() -> void:
     icon(Vector2(1098, 51), "record", 48)
     text_at(Vector2(1162, 65), "DIG RECORD", 21, WHITE, true)
     text_at(Vector2(1162, 101), "%d digs   /   %d clears" % [game.meta.runs, game.meta.wins], 24, YELLOW)
-    window(Vector2(1020, 414), Vector2(372, 134), Color(0.06, 0.16, 0.40, 0.96))
-    text_at(Vector2(1042, 448), "SELECT DIGGER", 22, WHITE, true)
-    keycap(Vector2(1336, 426), "Y" if pad() else "C", 34)
-    for i in 2:
-        var pos = Vector2(1038 + i * 172, 465)
+    window(Vector2(1020, 348), Vector2(372, 200), Color(0.06, 0.16, 0.40, 0.96))
+    text_at(Vector2(1042, 382), "SELECT DIGGER", 22, WHITE, true)
+    keycap(Vector2(1336, 360), "Y" if pad() else "C", 34)
+    for i in DiverCharacter.COUNT:
+        var pos = Vector2(1038 + (i % 2) * 172, 399 + (i / 2) * 70)
         var selected = game.selected_character == i
         var hot = focus_index == hits.size() or Rect2(pos, Vector2(162, 64)).has_point(pointer)
         window(pos, Vector2(162, 64), SELECT if selected else INK, YELLOW if selected or hot else EDGE)
         draw_texture_rect(portraits[i], Rect2(pos + Vector2(2, 3), Vector2(52, 58)), false)
-        text_at(pos + Vector2(60, 41), "Mega" if i == 0 else "Roll", 25, WHITE, true)
+        text_at(pos + Vector2(60, 41), DiverCharacter.SHORT_NAMES[i].capitalize(), 25 if i < 3 else 21, WHITE, true)
         if hot: cursor(pos + Vector2(-22, 20), 24)
         hits.append({"rect": Rect2(pos, Vector2(162, 64)), "action": "character", "value": i})
     window(Vector2(1020, 574), Vector2(372, 274), Color(0.06, 0.16, 0.40, 0.94))
@@ -699,33 +699,44 @@ func interaction_prompt() -> void:
 
 func map_at(pos: Vector2, side: float) -> void:
     rect(pos, Vector2.ONE * side, Color("0c2456"))
-    var low = Vector2(999, 999)
-    var high = Vector2(-999, -999)
+    # The map is the floor plan to zoom, north up: rooms and corridors sit
+    # where they really are, and the arrow is the digger's exact position.
+    var low = Vector2(INF, INF)
+    var high = Vector2(-INF, -INF)
     for room in game.rooms:
-        low = low.min(Vector2(room.cell))
-        high = high.max(Vector2(room.cell))
-    var span = high - low + Vector2.ONE
-    var cell = minf((side - 24) / span.x, (side - 24) / span.y)
-    var origin = pos + (Vector2.ONE * side - span * cell) * 0.5
+        var middle = Vector2(room.center.x, room.center.z)
+        low = low.min(middle - room.half)
+        high = high.max(middle + room.half)
+    var span = high - low
+    var zoom = (side - 20) / maxf(1.0, maxf(span.x, span.y))
+    var origin = pos + (Vector2.ONE * side - span * zoom) * 0.5 - low * zoom
+    var known = []
+    for i in game.rooms.size(): known.append(game.rooms[i].visited)
+    for link in game.links:
+        if not (game.rooms[link.a].visited or game.rooms[link.b].visited): continue
+        known[link.a] = true
+        known[link.b] = true
+        draw_line(origin + link.from * zoom, origin + link.to * zoom, Color("5077b0"), maxf(2.0, 3.5 * zoom))
     for i in game.rooms.size():
+        if not known[i]: continue
         var room = game.rooms[i]
-        var known = room.visited
-        if not known:
-            for other in game.rooms:
-                if other.visited and (other.cell - room.cell).length() <= 1.01: known = true
-        if not known: continue
-        var center = origin + (Vector2(room.cell) - low + Vector2.ONE * 0.5) * cell
-        for other in game.rooms:
-            if other.visited and (other.cell - room.cell).length() <= 1.01:
-                var to = origin + (Vector2(other.cell) - low + Vector2.ONE * 0.5) * cell
-                draw_line(center, to, Color("5077b0"), 4)
-        var size = cell * 0.58
-        rect(center - Vector2.ONE * size / 2 - Vector2.ONE, Vector2.ONE * (size + 2), YELLOW if i == game.exit_room else EDGE)
-        rect(center - Vector2.ONE * size / 2, Vector2.ONE * size, CYAN if i == game.current_room else Color("668daf") if room.cleared else Color("224779") if room.visited else INK)
-        if i == game.current_room:
-            var triangle = PackedVector2Array([center + Vector2(0, -5), center + Vector2(4, 4), center + Vector2(-4, 4)])
-            draw_colored_polygon(triangle, WHITE)
-        elif i == game.exit_room: draw_circle(center, 2, YELLOW)
+        var corner = origin + (Vector2(room.center.x, room.center.z) - room.half) * zoom
+        var size: Vector2 = room.half * 2 * zoom
+        rect(corner - Vector2.ONE, size + Vector2.ONE * 2, CYAN if i == game.current_room else YELLOW if i == game.exit_room else EDGE)
+        rect(corner, size, Color("3f7fc4") if i == game.current_room else Color("668daf") if room.cleared and room.visited else Color("224779") if room.visited else INK)
+        if i == game.exit_room: draw_circle(corner + size * 0.5, 2.5, YELLOW)
+    var inside = Rect2(pos + Vector2.ONE * 4, Vector2.ONE * (side - 8))
+    for mate in game.remote_players.values():
+        if not is_instance_valid(mate): continue
+        var at = (origin + Vector2(mate.global_position.x, mate.global_position.z) * zoom).clamp(inside.position, inside.end)
+        draw_circle(at, 3.5, INK)
+        draw_circle(at, 2.5, ORANGE if mate.downed else DiverNet.SLOT_COLORS[clampi(mate.slot, 0, 4)])
+    var p = game.player
+    var here = (origin + Vector2(p.global_position.x, p.global_position.z) * zoom).clamp(inside.position, inside.end)
+    var forward = Vector2(-sin(p.yaw), -cos(p.yaw))
+    var right = Vector2(-forward.y, forward.x)
+    draw_colored_polygon(PackedVector2Array([here + forward * 10.5, here - forward * 6.5 + right * 7.2, here - forward * 3, here - forward * 6.5 - right * 7.2]), INK)
+    draw_colored_polygon(PackedVector2Array([here + forward * 8.2, here - forward * 4.9 + right * 5.2, here - forward * 2.2, here - forward * 4.9 - right * 5.2]), WHITE)
 
 func visited_count() -> int:
     var n = 0
@@ -1107,9 +1118,9 @@ func digger_card(pos: Vector2, member_slot: int, member_name: String, character:
     var color: Color = DiverNet.SLOT_COLORS[clampi(member_slot, 0, 4)]
     window(pos, Vector2(672, 92), BLUE if member_slot == net.slot else INK, color, false)
     window(pos + Vector2(10, 8), Vector2(68, 76), BLUE, EDGE, false)
-    draw_texture_rect(portraits[clampi(character, 0, 1)], Rect2(pos + Vector2(13, 10), Vector2(62, 72)), false)
+    draw_texture_rect(portraits[clampi(character, 0, DiverCharacter.COUNT - 1)], Rect2(pos + Vector2(13, 10), Vector2(62, 72)), false)
     text_at(pos + Vector2(94, 38), member_name, 27, color, true, 330)
-    text_at(pos + Vector2(94, 72), "%s  ·  %s" % [DiverCharacter.SHORT_NAMES[clampi(character, 0, 1)].capitalize(), ["Pulse", "Needle", "Siege"][clampi(weapon, 0, 2)] + " Buster"], 22, MUTED, false, 360)
+    text_at(pos + Vector2(94, 72), "%s  ·  %s" % [DiverCharacter.SHORT_NAMES[clampi(character, 0, DiverCharacter.COUNT - 1)].capitalize(), ["Pulse", "Needle", "Siege"][clampi(weapon, 0, 2)] + " Buster"], 22, MUTED, false, 360)
     var x = 576
     if member_slot == net.host_slot:
         badge(pos + Vector2(x, 14), "HOST", 86, YELLOW)
@@ -1136,14 +1147,14 @@ func draw_lobby() -> void:
     place_field(name_edit, Vector2(86, 488), Vector2(516, 44))
     window(Vector2(64, 562), Vector2(560, 196))
     text_at(Vector2(86, 594), "YOUR DIGGER", 20, WHITE, true)
-    for i in 2:
-        var pos = Vector2(86 + i * 176, 606)
+    for i in DiverCharacter.COUNT:
+        var pos = Vector2(86 + i * 131, 606)
         var selected = game.selected_character == i
-        var hot = Rect2(pos, Vector2(164, 60)).has_point(pointer)
-        window(pos, Vector2(164, 60), SELECT if selected else INK, YELLOW if selected or hot else EDGE, false)
+        var hot = Rect2(pos, Vector2(125, 60)).has_point(pointer)
+        window(pos, Vector2(125, 60), SELECT if selected else INK, YELLOW if selected or hot else EDGE, false)
         draw_texture_rect(portraits[i], Rect2(pos + Vector2(4, 3), Vector2(48, 54)), false)
-        text_at(pos + Vector2(62, 39), "Mega" if i == 0 else "Roll", 24, WHITE, true)
-        hits.append({"rect": Rect2(pos, Vector2(164, 60)), "action": "character", "value": i})
+        text_at(pos + Vector2(56, 38), DiverCharacter.SHORT_NAMES[i].capitalize(), 19 if i < 3 else 15, WHITE, true)
+        hits.append({"rect": Rect2(pos, Vector2(125, 60)), "action": "character", "value": i})
     for i in 3:
         var pos = Vector2(86 + i * 176, 680)
         var available = game.meta.kills >= [0, 10, 50][i]
@@ -1212,7 +1223,7 @@ func draw_team() -> void:
         if not is_instance_valid(mate): continue
         var pos = Vector2(28, 486 + row * 80)
         window(pos, Vector2(268, 72), Color(0.05, 0.13, 0.35, 0.88), DiverNet.SLOT_COLORS[clampi(member_slot, 0, 4)], false)
-        draw_texture_rect(portraits[clampi(mate.character, 0, 1)], Rect2(pos + Vector2(6, 5), Vector2(54, 62)), false)
+        draw_texture_rect(portraits[clampi(mate.character, 0, DiverCharacter.COUNT - 1)], Rect2(pos + Vector2(6, 5), Vector2(54, 62)), false)
         text_at(pos + Vector2(70, 27), mate.display_name, 21, DiverNet.SLOT_COLORS[clampi(member_slot, 0, 4)], true, 180)
         if mate.downed:
             text_at(pos + Vector2(70, 58), "DOWN", 21, ORANGE, true)

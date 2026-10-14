@@ -10,6 +10,9 @@ rm -rf build/web && mkdir -p build/web
 # Ship notices beside the game so credits are reachable from the site.
 cp build/LICENSE.md build/GODOT-LICENSE.txt build/CHARACTER-CREDITS.md build/AUDIO-NOTES.md build/web/
 cp -r build/font-licenses build/audio-licenses build/web/
+# The loading screen (web/shell.html) uses the game's fonts before the game has loaded.
+mkdir -p build/web/fonts
+cp assets/fonts/RussoOne-Regular.ttf assets/fonts/BarlowSemiCondensed-SemiBold.ttf build/web/fonts/
 rm -f build/RelicDiver-Web.zip.partial
 (cd build/web && zip -q -9 -r ../RelicDiver-Web.zip.partial .)
 size=$(stat -c %s build/RelicDiver-Web.zip.partial)

@@ -31,8 +31,9 @@ const MIME = {
   ".txt": "text/plain; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".md": "text/plain; charset=utf-8",
+  ".ttf": "font/ttf",
 };
-const COMPRESSIBLE = new Set([".html", ".js", ".wasm", ".pck", ".json", ".svg", ".txt", ".css", ".md"]);
+const COMPRESSIBLE = new Set([".html", ".js", ".wasm", ".pck", ".json", ".svg", ".txt", ".css", ".md", ".ttf"]);
 
 export function createServer({ port = 8080, webRoot = path.join(here, "..", "build", "web"), maxLobbies = 200, log = console.log, runGraceMs, idleGraceMs } = {}) {
   const registry = new LobbyRegistry({ maxLobbies, runGraceMs, idleGraceMs });

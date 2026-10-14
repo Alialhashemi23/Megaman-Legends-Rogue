@@ -1,4 +1,4 @@
-# Relic Diver handoff — 2026-10-13 (pass 11: controller, Options, Leave Dig)
+# Relic Diver handoff — 2026-10-13 (pass 12: live deployment, bigger varied ruins, to-scale map)
 
 ## User intent and constraints
 
@@ -25,7 +25,30 @@ Workspace: `C:\Users\Temp\Documents\Codex\2026-10-13\hey-i-want-to-build-a`
 
 The user hosts locally (a home PC) for now, at **https://megaman.galosengen.dev** (`galosengen.dev` is on Cloudflare) through a Cloudflare Tunnel. The tunnel route points `megaman.galosengen.dev` at `http://relic-diver:8080` (Docker) or `http://localhost:8080` (Host-Online.cmd). The desktop build's default server is `wss://megaman.galosengen.dev/ws`. Host-Online.cmd restarts the server if it stops. A VPS may come later; the setup is identical there.
 
-## Latest completed work: controller, Options, Leave Dig (pass 11)
+## Latest completed work: live deployment, bigger varied ruins, to-scale map (pass 12, 2026-10-13)
+
+Done on the user's Windows PC (`D:\code repos\Megaman-Legends-Rogue`, branch `online-coop`).
+
+- **Deployed:** https://megaman.galosengen.dev is live from this PC via `docker compose` (containers `relic-diver` and `cloudflared`; the tunnel token is in the untracked `.env`). After changing gameplay: `tools\package-web.ps1`, then `docker compose up -d --build relic-diver`. The Web export templates for 4.7.1 are installed in `%APPDATA%\Godot\export_templates\4.7.1.stable`.
+- **User-reported fixes:** a first-hit freeze in the browser (hit flash and damage-number shaders are now warmed in `warm_hit_effects`) and slow long views (each room's floor tiles are one MultiMesh, `DiverArt.tiles`).
+- **User requests:** minimap that tracks exact position with a camera-facing arrow and consistent corridors; forked hallways; more room types (big room, jump puzzle, elevation); rooms at least 50% bigger.
+- **Implementation:** `scripts/ruins.gd` plans and builds floors. Rooms carry `kind`, `half`, `cells`, `height`, `layout` (0-4 cover, 5 Stepped Vault, 6 Terrace Hall, 7 Grand Concourse, 8 passage). `game.links` are the corridors; `game.platforms` gives `floor_height()`; `game.nav_open` re-opens platform tops and ramps for robots. Robots chase directly only when on the same level as their target, otherwise they path (up ramps). `NET_VERSION` 3, `CHECKPOINT_VERSION` 2.
+- **Difficulty (user: "too easy, never hit in ten clears; keep the telegraphs but faster; bosses die instantly"):** all numbers live in `scripts/enemy.gd`: `hit(base, per_floor)` for damage, `pace()` for wind-up and recovery length, `lock_aim()` for sentry and guardian shots that lead the target just before firing, `shield` for the guardian's overdrive guard. Life is set in `_ready`; hostile bolt speed in `bolt.gd`. These are first-pass values awaiting the user's playtest. `NET_VERSION` is now 4.
+- **Loading screen and icon:** `web/shell.html` is the Web export's custom shell (fonts copied by `tools/package-web.*`); `assets/ui/icon.png` is the project icon; the boot splash image is off.
+- **Tron Bonne and Servbot:** the user supplied both model archives (`tools/model-sources/tron.zip`, `servbot.zip`). `build_characters.py` takes a per-rig joint-name map; `DiverCharacter` has `COUNT`, `IDS` and per-character buster colours and scale, and handles the Servbot's single-joint arm. All four share mechanics. The user's planned next steps, not started and with design decisions still open: per-character attacks, a currency and per-character skill trees bought after a run, and deciding how that progress is saved. The Servbot still uses the full-size collision capsule and camera height. `NET_VERSION` is now 5.
+- **Verified:** character 6605/0 with four diggers; combat 7765/0 after the difficulty pass (earlier 7723/0), character 3868/0, UI 47/0, audio 66/0, options 39/0, run persistence 24/0; smoke, combat, movement and persistence modes; `tests/net_test.sh` passes on Windows through Git Bash. Scratch probes (not kept) generated 120 floors with no unreachable rooms or bad spawns, climbed the jump puzzle with real input, and confirmed a robot follows a digger up a ramp. Not yet checked: a human playtest of the new rooms' balance and feel, and `tests/web_e2e.mjs`.
+
+## Next work: agreed with the user, not started
+
+The user agreed to all of the following on 2026-10-13 ("the asks I all agree to"). Build them one at a time, in this order.
+
+1. **Individual attacks per character.** Mega keeps the Pulse Buster as the all-rounder. Roll gets the Needle Buster's rapid fire plus a support ability (faster revives or a repair drone). Tron gets the heavy Siege shots or commands a few Servbots that fight beside her. The Servbot is small and fast with low Life and throws bombs in an arc; give it a smaller collision capsule and a lower camera at the same time. Still to settle with the user: one fixed weapon per character, or a small set to unlock.
+2. **Skill trees and currency.** Zenny, earned per run from depth reached, guardians beaten and leftover scrap, spent in a shop after the results screen on a tree per character. Raise the gates on existing unlocks and add more. Still to settle: permanent power (then rescale difficulty) or sidegrades only. DESIGN.md pillar 5 currently says no permanent starting power, so update it with whatever the user chooses.
+3. **Saving.** Keep browser storage (`user://`, already survives a refresh) and add an export/import save code. Server-side saves only if the user later wants progress to follow players between devices.
+
+Smaller agreed items: a zoomed, scrolling minimap option, and tuning the pass-12 difficulty numbers after the user's playtest.
+
+## Controller, Options, Leave Dig (pass 11)
 
 The user asked for a way to leave a run, controller support and a basic options menu, and said solo mid-run saving isn't needed (runs are short).
 

@@ -15,6 +15,25 @@ preserved as an alternative source. The archives contain skin weights and rigs,
 but no animation clips or separate reuse license. Their availability on an
 archive site does not make the Capcom assets part of this project's MIT license.
 
+## Tron Bonne and Servbot (added later)
+
+The Tron Bonne and Servbot meshes, textures and skeletons are likewise Capcom
+game assets from Mega Man Legends (PlayStation). The user supplied both
+archives, named "PlayStation - Mega Man Legends - Non-Playable Characters -
+Tron Bonne" and "... - Servbot" in the style of The Models Resource; their
+page links and submitter were not recorded. The archives are retained unchanged
+in `tools/model-sources/tron.zip` and `servbot.zip`, with the extracted files
+alongside. Tron's `Tron_Bonne_(Cutscene)` model is used (17 joints: the same
+rig as Mega and Roll with one fewer face joint). The Servbot has 7 joints, one
+per limb. The same terms apply: no animation clips, no reuse license, and not
+part of this project's MIT license.
+
+The converter gives both the same twelve locally authored clips. Tron's left
+hand is replaced by the attached buster like the others. The Servbot has no
+hand geometry to remove; its smaller buster sits on its single arm joint, its
+whole arm aims, and its run adds a side-to-side waddle. The Servbot stands
+1.08 m tall and Tron 1.86 m. All four diggers share the same mechanics for now.
+
 ## Local adaptation
 
 `tools/model-sources/build_characters.py` converts the supplied COLLADA skins to

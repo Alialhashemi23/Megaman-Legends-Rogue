@@ -1,5 +1,40 @@
 # Local build history
 
+## 15 — Tron Bonne and Servbot
+
+- Two more playable diggers from the user's supplied Mega Man Legends models: **Tron Bonne** and a **Servbot**. Pick them on the title screen (C or Y cycles through all four) or in an online lobby.
+- Both use the same twelve authored animations, attached buster, parts and progression as Mega and Roll for now. The Servbot is about half their height and waddles when it runs.
+- Old and new builds can't share a lobby; refresh the page to update.
+
+## 14 — Harder machines, a loading screen and an icon
+
+- **Difficulty** (the user had cleared ten digs without being hit):
+  - Robots have about 60% more Life and gain 65% per descent instead of 40%. Each chamber holds one more.
+  - Every attack hits harder and now scales with depth, including sentry and guardian bolts.
+  - Warnings stay, but wind-ups and recoveries are 25% shorter on B1 and 40% shorter on B3. Robots move faster and hostile bolts fly about 60% faster.
+  - Sentries and guardians lock their aim just before firing and lead a moving digger; the warning line turns red when it locks.
+  - Guardians have about three times the Life, attack faster in overdrive, and shield themselves briefly as overdrive begins so they can't be burst down through it.
+- **Loading screen:** the browser build opens on a Relic Diver page with a lock-on spinner around Mega, a Life-gauge progress bar with a percentage, and rotating flavour text. The Godot logo no longer appears at startup.
+- **Icon:** the browser tab and the Windows build use a Mega portrait.
+- The Broken Foundry's pipes now run overhead instead of across doorways.
+
+## 13 — Bigger, more varied ruins and a proper map
+
+- **Rooms are 50% bigger** (30 m across instead of 20 m, with higher ceilings), and corridors are longer.
+- **Hallways fork.** Floors now include passage junctions: some fork three or four ways, some loop back to rooms you've seen, and some dead-end at hidden salvage vessels. Rooms connect only where there is a real corridor.
+- **New rooms in the pot,** one of each on every floor alongside the five cover arrangements:
+  - **Grand Concourse:** a hall twice the size of a normal room, with a colonnade, a raised dais reached by ramps, and a larger group of machines.
+  - **Stepped Vault:** a jump puzzle. Stepping blocks climb to a high ledge with a free hidden cache and salvage.
+  - **Terrace Hall:** a raised terrace along one wall with a ramp at each end. Robots take the ramps to follow you up.
+- **Ruins map:** now a to-scale plan of the floor. The arrow sits at your exact position and turns with your camera, corridors are drawn where they really run, and teammates show as coloured dots online.
+- Attack warnings and blasts follow the floor a robot or its target stands on, so they work on raised ground.
+- Old and new builds can't share a lobby (the ruins differ); refresh the page to update.
+
+## 12 — Smoother browser play
+
+- The first shot that lands no longer freezes the browser game for a moment: the hit flash, sparks and damage number are prepared while the floor loads.
+- Each room's floor tiles draw as one mesh, so long views down the halls cost roughly 40% fewer draw calls. The ruins look the same.
+
 ## 11 — Controller support, Options and Leave Dig
 
 - Full controller support (Xbox-style names; works with any pad Godot recognises):

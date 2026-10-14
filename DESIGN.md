@@ -26,7 +26,7 @@ Caches offer choices; healing wells create a competing use for scrap. Experience
 
 Keep free aim useful and optional lock-on dependable. Telegraph threats before damage: melee arcs, fixed aim lines, charge lanes, bombardment circles, shockwaves and beam lanes. Cover should consistently block attacks that visually hit it. Jumping and dashing need distinct practical uses.
 
-Layouts should offer navigation choices and recognizable chamber functions, not only empty arenas joined by corridors. The current flat grid, five cover arrangements and three guardian variations establish the playable loop. Future vertical spaces, puzzles and more distinct guardians are possibilities, not already implemented features or settled requirements.
+Layouts should offer navigation choices and recognizable chamber functions, not only empty arenas joined by corridors. Pass 12 (user request): rooms are 50% bigger, hallways fork, loop and dead-end, and each floor mixes the five cover arrangements with a big two-cell hall, a jump-puzzle vault and a terraced room with ramps. Robots stay on the ground floor except where ramps lead up. The user also asked for a to-scale map with an exact, camera-facing position arrow. More puzzles, further vertical spaces and more distinct guardians remain possibilities, not settled requirements.
 
 ## Art and animation direction
 

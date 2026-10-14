@@ -8,7 +8,9 @@ Pass 09 added browser play and online co-op for up to four diggers. The user req
 - **Host-authoritative game.** The lobby's host slot (`hostSlot`, *not* always slot 1) simulates robots, pickups, scrap, rooms, interactables and the run outcome. Guests simulate their own digger and cosmetic copies of everything else.
 - All traffic goes through the relay over WebSocket (TCP, ordered). Peer-to-peer was rejected to avoid NAT/TURN problems.
 
-## Lobby protocol (server protocol 2, game `NET_VERSION` 2)
+## Lobby protocol (server protocol 2, game `NET_VERSION` 4)
+
+`NET_VERSION` 3 (pass 12) marks the new floor generator and 4 the difficulty pass (robot counts and timings): older builds would build different ruins from the same seed, so they can't share a lobby. `CHECKPOINT_VERSION` went to 2 for the same reason.
 
 Text frames are JSON, handled in `server/lobby.js`, `server/server.js` and `scripts/net.gd`.
 - **Client → server:** `hello{name,id,v}`, `list`, `create{name,public,password}`, `join{code,password}`, `resume{code,name,public,password}`, `leave`, `name`, `kick{slot}`, `lock{locked}`, `status{state,depth}`, `ping`.

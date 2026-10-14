@@ -10,7 +10,8 @@ Godot 4.7.1, GDScript, GL Compatibility renderer, GodotPhysics3D. Entry point: p
 | scripts/player.gd | CharacterBody3D movement, camera collision, aiming, lock-on, busters, statistics and footsteps |
 | scripts/character.gd | Imported character scenes, manual animation advance, aim layer and muzzle attachment |
 | scripts/enemy.gd | Robot behavior, attack preparation/recovery, guardians and damage |
-| scripts/navigation.gd | Flat traversable grid and paths around room cover |
+| scripts/ruins.gd | Floor planning (rooms on a 40 m cell grid, passages, corridor links, loops, layouts) and construction of rooms, walls, corridors, raised blocks and ramps |
+| scripts/navigation.gd | 1 m traversable grid built from room rectangles and corridor links; cover and raised stonework are solid except `game.nav_open` (platform tops, ramp centre lines) |
 | scripts/bolt.gd | Swept projectile collisions and splash obstruction |
 | scripts/hud.gd | Scaled UI, menus, equipment, map and input targets |
 | scripts/sound.gd | Audio buses, voices, crossfades, settings and ambience |

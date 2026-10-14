@@ -21,6 +21,11 @@ NAMES = {"Bone000":"Hips", "Bone008":"Pelvis", "Bone001":"Head",
          "Bone009":"LeftUpperLeg", "Bone010":"LeftLowerLeg", "Bone011":"LeftFoot",
          "Bone012":"RightUpperLeg", "Bone013":"RightLowerLeg", "Bone014":"RightFoot",
          "Bone015":"Face", "Bone016":"Eyes", "Bone018":"Mouth"}
+# Tron's cutscene rig matches the others apart from one fewer face joint. The
+# Servbot has one joint per limb: no elbows, knees, hands or feet.
+TRON_NAMES = {**{k:v for k,v in NAMES.items() if k not in ("Bone016","Bone018")}, "Bone017":"Mouth"}
+SERVBOT_NAMES = {"Bone000":"Hips", "Bone001":"Head", "Bone006":"Face", "Bone002":"LeftUpperArm",
+                 "Bone003":"RightUpperArm", "Bone004":"LeftUpperLeg", "Bone005":"RightUpperLeg"}
 CLIPS = {"idle":2.8,"run":.48,"backpedal":.56,"strafe_left":.56,"strafe_right":.56,
          "jump":.6,"fall":.7,"dash":.32,"hurt":.32,"fire":.18,"victory":2.0,"defeat":.8}
 
@@ -52,7 +57,7 @@ HIP_KEYS=[(0,.61),(.12,.32),(.28,-.30),(.40,-.62),(.55,-.44),(.70,.17),(.84,.69)
 KNEE_KEYS=[(0,-.16),(.12,-.32),(.28,-.18),(.40,-.22),(.55,-.95),(.70,-1.10),(.84,-.60),(1,-.16)]
 SOLE_KEYS=[(0,.12),(.12,0),(.28,-.04),(.40,-.26),(.55,-.40),(.70,-.26),(.84,.04),(1,.12)]
 
-def pose(clip, phase, roll=False):
+def pose(clip, phase, style="volnutt"):
     a = phase * math.tau
     q = {name:(0,0,0) for name in NAMES.values()}
     bob = 0
@@ -69,7 +74,7 @@ def pose(clip, phase, roll=False):
     elif clip in ["run","backpedal","strafe_left","strafe_right"]:
         sideways=clip.startswith("strafe")
         lateral=-1 if clip=="strafe_left" else 1
-        lean=.08 if roll else .10
+        lean=.10 if style=="volnutt" else .08
         q["Hips"]=(lean if clip=="run" else -.04 if clip=="backpedal" else .055,
                    -.065*math.cos(a),-.020*math.sin(a))
         q["Pelvis"]=(-q["Hips"][0]+.025,.11*math.cos(a),.045*math.sin(a))
@@ -90,6 +95,10 @@ def pose(clip, phase, roll=False):
             q[side+"UpperArm"]=(arm,.045*math.sin(a),-.11 if side=="Left" else .11)
             q[side+"ForeArm"]=(.28+max(0,arm)*.36,.020*math.sin(a-.4),0)
             q[side+"Hand"]=(.04*math.sin(a-.5),0,0)
+        if style=="servbot":
+            # Stubby single-joint legs: a quick side-to-side waddle sells the run.
+            q["Hips"]=(q["Hips"][0]*.6,q["Hips"][1],.11*math.sin(a))
+            q["Head"]=(-q["Hips"][0]*.5,.05*math.cos(a-.25),-.07*math.sin(a))
         bob=0 # Model-specific sole contact is baked after posing the skeleton.
     elif clip in ["jump","fall"]:
         lift=math.sin(phase*math.pi) if clip=="jump" else .55+.08*math.sin(a)
@@ -173,7 +182,7 @@ class Builder:
         raw+=struct.pack("<II",len(self.bin),0x004e4942)+self.bin
         path.write_bytes(raw)
 
-def convert(stem,dae,png,height):
+def convert(stem,dae,png,height,names=NAMES):
     tree=ET.parse(dae).getroot()
     for node in tree.iter(): node.tag=node.tag.split("}")[-1]
     mesh=tree.find(".//library_geometries/geometry/mesh")
@@ -220,7 +229,7 @@ def convert(stem,dae,png,height):
     sid_to_node={};worlds={};bone_names={}; translations={}; parents={}
     jointroot=tree.find(".//library_visual_scenes/visual_scene/node[@name='Armature']/node")
     def walk(element,parent=None,parent_world=np.zeros(3)):
-        sid=element.get("sid"); name=NAMES[element.get("name")]
+        sid=element.get("sid"); name=names[element.get("name")]
         local=np.array(list(map(float,element.findtext("translate").split())))*axis*scale
         if parent is None: local[1]+=floor
         idx=len(nodes);sid_to_node[sid]=idx;bone_names[name]=idx;translations[name]=local.tolist()
@@ -236,11 +245,12 @@ def convert(stem,dae,png,height):
     # Replace only the left glove with the attached buster; otherwise the
     # original fist protrudes through the cannon's aperture when aiming.
     original_triangle_count=len(triangles)//3
-    hand_sid=next(sid for sid,idx in sid_to_node.items() if nodes[idx]["name"]=="LeftHand")
-    hand_index=joint_sids.index(hand_sid)
-    owners=np.array(joints_per_vertex)[:,0][vertexids].reshape(-1,3)
-    keep=np.repeat(~np.all(owners==hand_index,axis=1),3)
-    triangles=triangles[keep];vertexids=vertexids[keep]
+    hand_sid=next((sid for sid,idx in sid_to_node.items() if nodes[idx]["name"]=="LeftHand"),None)
+    if hand_sid is not None:
+        hand_index=joint_sids.index(hand_sid)
+        owners=np.array(joints_per_vertex)[:,0][vertexids].reshape(-1,3)
+        keep=np.repeat(~np.all(owners==hand_index,axis=1),3)
+        triangles=triangles[keep];vertexids=vertexids[keep]
     p=positions[vertexids]*axis*scale;p[:,1]+=floor
     n=sources[inputs["NORMAL"][1]][triangles[:,inputs["NORMAL"][0]]]*axis
     uv=sources[inputs["TEXCOORD"][1]][triangles[:,inputs["TEXCOORD"][0]]].copy();uv[:,1]=1-uv[:,1]
@@ -269,9 +279,11 @@ def convert(stem,dae,png,height):
     rest_positions=positions*axis*scale
     rest_positions[:,1]+=floor
     feet={}
+    # The lowest joint of each leg carries the sole: a foot, or the whole leg on a Servbot.
+    sole_joints=("LeftFoot","RightFoot") if "LeftFoot" in bone_names else ("LeftUpperLeg","RightUpperLeg")
     for sid in joint_sids:
         name=nodes[sid_to_node[sid]]["name"]
-        if name in ("LeftFoot","RightFoot"):
+        if name in sole_joints:
             owned=np.array(joints_per_vertex)[:,0]==joint_sids.index(sid)
             feet[name]=rest_positions[owned]-worlds[sid]
     def ground_offset(rotations):
@@ -290,7 +302,7 @@ def convert(stem,dae,png,height):
     for clip,duration in CLIPS.items():
         framecount=max(17,round(duration*60)+1)
         phases=np.linspace(0,1,framecount)
-        samples=[pose(clip,float(phase),stem=="roll") for phase in phases]
+        samples=[pose(clip,float(phase),stem) for phase in phases]
         if clip in ("idle","run","backpedal","strafe_left","strafe_right","dash"):
             samples=[(rotations,ground_offset(rotations)) for rotations,_ in samples]
         root_ranges[clip]=[round(min(bob for _,bob in samples),4),round(max(bob for _,bob in samples),4)]
@@ -310,7 +322,7 @@ def convert(stem,dae,png,height):
     b.save(OUT/f"{stem}.glb")
     report={"source":str(dae.relative_to(ROOT)),"source_sha256":hashlib.sha256(dae.read_bytes()).hexdigest(),
             "texture_sha256":hashlib.sha256(png.read_bytes()).hexdigest(),"source_vertices":len(counts),
-            "triangles":len(p)//3,"original_triangles":original_triangle_count,"left_glove_replaced_by_buster":True,
+            "triangles":len(p)//3,"original_triangles":original_triangle_count,"left_glove_replaced_by_buster":hand_sid is not None,
             "bones":len(joint_sids),"height_m":height,"scale":scale,"floor_offset":floor,
             "joint_names":list(bone_names),"clips":CLIPS,"root_offset_ranges":root_ranges,"source_weight_sums_valid":True}
     print(stem,json.dumps(report,indent=2))
@@ -320,4 +332,6 @@ if __name__=="__main__":
     reports={}
     reports["volnutt"]=convert("volnutt",SOURCE/"volnutt/Megaman.dae",SOURCE/"volnutt/Megaman.png",1.95)
     reports["roll"]=convert("roll",SOURCE/"roll/Roll_(Cutscene).dae",SOURCE/"roll/Roll_(Cutscene).png",1.88)
+    reports["tron"]=convert("tron",SOURCE/"tron/Tron_Bonne_(Cutscene).dae",SOURCE/"tron/Tron_Bonne_(Cutscene).png",1.86,TRON_NAMES)
+    reports["servbot"]=convert("servbot",SOURCE/"servbot/ServBot.dae",SOURCE/"servbot/ServBot.png",1.08,SERVBOT_NAMES)
     (SOURCE/"conversion-report.json").write_text(json.dumps(reports,indent=2))

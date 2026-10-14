@@ -18,7 +18,7 @@ const ITEMS = {
 const WEAPONS = ["PULSE BUSTER", "NEEDLE BUSTER", "SIEGE BUSTER"]
 const DEPTH_NAMES = ["THE TIDAL ARCHIVE", "GARDEN OF ENGINES", "HEART OF THE MACHINE"]
 const BOSS_NAMES = ["ARCHIVE KEEPER", "VERDANT ENGINE", "CORE WARDEN"]
-const ROOM_NAMES = ["PILLAR GALLERY", "RELAY CHAMBER", "SALVAGE ARCHIVE", "COOLANT WORKS", "BROKEN FOUNDRY"]
+const ROOM_NAMES = ["PILLAR GALLERY", "RELAY CHAMBER", "SALVAGE ARCHIVE", "COOLANT WORKS", "BROKEN FOUNDRY", "STEPPED VAULT", "TERRACE HALL", "GRAND CONCOURSE", "PASSAGE"]
 var mode = "title"
 var world: Node3D
 var player: DiverPlayer
@@ -33,6 +33,12 @@ var particles: Array = []
 var floaters: Array = []
 var effects: Array = []
 var obstacles: Array = []
+# Corridors between rooms, raised stonework (for floor heights) and the parts of
+# it robots may walk on. See scripts/ruins.gd.
+var links: Array = []
+var platforms: Array = []
+var nav_open: Array = []
+var ruins = DiverRuins.new()
 var navigation = DiverNavigation.new()
 var hit_confirm = 0.0
 var kill_confirm = 0.0
@@ -79,6 +85,7 @@ var test_stage = 0
 var combat_test = false
 var movement_test = false
 var movement_origin = Vector3.ZERO
+var movement_heading = Vector3.FORWARD
 var test_enemy: DiverEnemy
 const SAVE_PATH = "res://save/archive.json"
 const WEB_SAVE_PATH = "user://archive.json"
@@ -190,6 +197,11 @@ func _ready() -> void:
 		smoke_test = true
 		movement_test = true
 		start_run(49381)
+		# Head for the landing's first door, whichever wall it is on.
+		var door: Vector2i = DiverRuins.DIRECTIONS[ruins.doors_of(0)[0].side]
+		movement_heading = Vector3(door.x, 0, door.y)
+		player.position = Vector3(0, 0.12, 0)
+		player.yaw = atan2(-door.x, -door.y)
 		movement_origin = player.position
 		var key = InputEventKey.new()
 		key.physical_keycode = KEY_W
@@ -293,32 +305,12 @@ func build_floor(keep_player: bool, arrive: bool = true) -> void:
 	hit_confirm = 0
 	kill_confirm = 0
 	guardian_dead = false
-	var cells: Array[Vector2i] = [Vector2i.ZERO]
-	var directions = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
-	while cells.size() < 8 + depth:
-		var anchor: Vector2i = cells[rng.randi_range(0, cells.size() - 1)]
-		var cell: Vector2i = anchor + directions[rng.randi_range(0, 3)]
-		if not cells.has(cell): cells.append(cell)
-	for i in cells.size():
-		var center = Vector3(cells[i].x * 26, 0, cells[i].y * 26)
-		rooms.append({"cell": cells[i], "center": center, "visited": i == 0, "cleared": i == 0, "distance": 999, "type": "chamber", "layout": (i + depth - 2) % 5})
-	rooms[0].distance = 0
-	var queue = [0]
-	while not queue.is_empty():
-		var idx = queue.pop_front()
-		for d in directions:
-			var neighbor = cells.find(cells[idx] + d)
-			if neighbor >= 0 and rooms[neighbor].distance > rooms[idx].distance + 1:
-				rooms[neighbor].distance = rooms[idx].distance + 1
-				queue.append(neighbor)
-	exit_room = 1
-	for i in range(1, rooms.size()):
-		if rooms[i].distance >= rooms[exit_room].distance: exit_room = i
-	rooms[0].type = "landing"
-	rooms[exit_room].type = "guardian"
-	for i in rooms.size():
-		build_room(i, cells, directions)
-	navigation.build(rooms, obstacles)
+	platforms.clear()
+	nav_open.clear()
+	ruins.game = self
+	ruins.plan()
+	ruins.build()
+	navigation.build(rooms, obstacles, links, nav_open)
 	if keep_player:
 		player = old_player
 		world.add_child(player)
@@ -340,153 +332,52 @@ func build_floor(keep_player: bool, arrive: bool = true) -> void:
 	player.pitch = -0.20
 	player.update_camera(1)
 	current_room = 0
-	create_interactable(Vector3(-3, 0, -3), "cache", "PART CACHE", 0, 0)
-	create_interactable(rooms[exit_room].center + Vector3(0, 0, -5.8), "lift", "EXTRACTION" if depth == 3 else "DESCENT LIFT", 0, exit_room)
+	create_interactable(Vector3(-4.5, 0, -4.5), "cache", "PART CACHE", 0, 0)
+	create_interactable(rooms[exit_room].center + Vector3(0, 0, -9), "lift", "EXTRACTION" if depth == 3 else "DESCENT LIFT", 0, exit_room)
 	for i in range(1, rooms.size()):
+		var room: Dictionary = rooms[i]
 		if i == exit_room:
-			spawn_enemy(rooms[i].center, 3, i)
-			for n in depth: spawn_enemy(rooms[i].center + Vector3(-5 + n * 4, 0, -2), 1, i)
+			spawn_enemy(room.center, 3, i)
+			for n in depth: spawn_enemy(room.center + Vector3(-5 + n * 4, 0, -2), 1, i)
+		elif room.kind == "hall":
+			# Dead-end passages hide a little salvage.
+			for at in room.pots: create_interactable(at, "pot", "SALVAGE VESSEL", 0, i)
 		else:
-			var count = 2 + depth + rng.randi_range(0, 2) + (party_size - 1)
+			var count = 3 + depth + rng.randi_range(0, 2) + (party_size - 1)
+			if room.kind == "grand": count += 2 + depth
 			for n in count:
-				var spawn = rooms[i].center
+				var spawn: Vector3 = room.center
 				for attempt in 64:
-					spawn = rooms[i].center + Vector3(rng.randf_range(-6.5, 6.5), 0, rng.randf_range(-6.5, 6.5))
-					if navigation.open_at(spawn): break
+					spawn = room.center + Vector3(rng.randf_range(-room.half.x + 4, room.half.x - 4), 0, rng.randf_range(-room.half.y + 4, room.half.y - 4))
+					if navigation.open_at(spawn) and floor_height(spawn) == 0: break
 				spawn_enemy(spawn, rng.randi_range(0, mini(2, depth)), i)
-			create_interactable(rooms[i].center + Vector3(4, 0, -3), "cache", "PART CACHE", 10 + depth * 3 + rng.randi_range(0, 5), i)
-			if i % 3 == 1: create_interactable(rooms[i].center + Vector3(-4, 0, 3), "spring", "REPAIR WELL", 12 + depth * 2, i)
-			for n in 2: create_interactable(rooms[i].center + Vector3(-7 + n * 14, 0, 6), "pot", "SALVAGE VESSEL", 0, i)
+			create_interactable(room.cache_at, "cache", "PART CACHE", 10 + depth * 3 + rng.randi_range(0, 5), i)
+			# The ledge above a jump puzzle holds a free part for whoever makes the climb.
+			if room.bonus_at != null: create_interactable(room.bonus_at, "cache", "HIDDEN CACHE", 0, i)
+			if i % 3 == 1: create_interactable(room.well_at, "spring", "REPAIR WELL", 12 + depth * 2, i)
+			for at in room.pots: create_interactable(at, "pot", "SALVAGE VESSEL", 0, i)
 	remote_players.clear()
 	if net.active() and mode != "title": spawn_remote_players()
+	warm_hit_effects()
 
-func build_room(index: int, cells: Array[Vector2i], directions: Array) -> void:
-	var room = rooms[index]
-	var root = Node3D.new()
-	world.add_child(root)
-	root.position = room.center
-	var palettes = [["b7c9c4", "ddd7bc", "667d78"], ["a5b6a4", "b8c5ac", "527f78"], ["a4aebb", "b7bfd1", "465f7b"]]
-	var palette = palettes[depth - 1]
-	var basefloor = DiverArt.box(root, Vector3(0, -0.35, 0), Vector3(20, 0.7, 20), Color(palette[0]), true)
-	basefloor.material_override = DiverArt.painted("ruin_floor", Color(palette[0]), 0.5)
-	DiverArt.box(root, Vector3(0, 4.95, 0), Vector3(20.4, 0.3, 20.4), Color("687776"), true)
-	for beam_pos in [-5, 0, 5]:
-		DiverArt.box(root, Vector3(beam_pos, 4.70, 0), Vector3(0.25, 0.20, 20), Color("435d5c"))
-		DiverArt.box(root, Vector3(0, 4.70, beam_pos), Vector3(20, 0.20, 0.25), Color("435d5c"))
-	for light_pos in [Vector3(-6, 3.2, -5), Vector3(6, 3.2, 5)]:
-		var lamp = OmniLight3D.new()
-		root.add_child(lamp)
-		lamp.position = light_pos
-		lamp.omni_range = 14
-		lamp.light_color = Color("ffdfa6")
-		lamp.light_energy = 0.85
-		DiverArt.cylinder(root, light_pos + Vector3(0, 0.8, 0), 0.20, 0.20, DiverArt.INK)
-		DiverArt.orb(root, light_pos + Vector3(0, 0.6, 0), 0.16, DiverArt.GOLD, 0.6)
-	# Insets and a restrained tile grid give the room an authored archaeological feel.
-	for x in range(-8, 10, 2):
-		for z in range(-8, 10, 2):
-			var col = Color(palette[0]).lightened(rng.randi_range(-1, 3) * 0.015)
-			var tile = DiverArt.box(root, Vector3(x - 0.0, 0.005, z), Vector3(1.94, 0.018, 1.94), col)
-			tile.material_override = DiverArt.stone_material(col)
-	DiverArt.metal(root, Vector3(0, 0.03, 0), Vector3(6, 0.04, 6), Color(palette[1]))
-	# Inlaid circuit paths guide the eye toward the exits.
-	for sign_dir in [-1, 1]:
-		DiverArt.box(root, Vector3(sign_dir * 3.3, 0.025, 0), Vector3(0.09, 0.025, 14), Color("638d83"))
-		DiverArt.box(root, Vector3(0, 0.025, sign_dir * 3.3), Vector3(14, 0.025, 0.09), Color("638d83"))
-	for d in directions:
-		var connected = cells.has(room.cell + d)
-		var wallpos = Vector3(d.x * 10, 2.4, d.y * 10)
-		var horizontal = d.x == 0
-		if connected:
-			for sign_dir in [-1, 1]:
-				var offset = Vector3(sign_dir * 6.3, 0, 0) if horizontal else Vector3(0, 0, sign_dir * 6.3)
-				var size = Vector3(7.4, 4.8, 0.7) if horizontal else Vector3(0.7, 4.8, 7.4)
-				DiverArt.wall(root, wallpos + offset, size, Color(palette[1]), true)
-			for side in [-1, 1]:
-				var p = Vector3(side * 2.9, 2.4, d.y * 9.8) if horizontal else Vector3(d.x * 9.8, 2.4, side * 2.9)
-				DiverArt.metal(root, p, Vector3(0.5, 4.8, 0.5), Color(palette[1]))
-				DiverArt.box(root, p + Vector3(0, -0.4, 0), Vector3(0.52, 0.65, 0.52), DiverArt.TEAL, false, 0.2)
-			DiverArt.metal(root, Vector3(d.x * 10, 4.25, d.y * 10), Vector3(6.3, 1.1, 0.8) if horizontal else Vector3(0.8, 1.1, 6.3), Color(palette[1]))
-			# Build each corridor once, but join both rooms without gaps.
-			if d.x > 0 or d.y > 0:
-				var p = Vector3(d.x * 13, -0.35, d.y * 13)
-				var corridor = DiverArt.box(root, p, Vector3(6, 0.7, 6), Color(palette[0]), true)
-				corridor.material_override = DiverArt.painted("ruin_floor", Color(palette[0]), 0.5)
-				DiverArt.box(root, Vector3(d.x * 13, 4.95, d.y * 13), Vector3(6.2, 0.3, 6.2), Color("687776"), true)
-				for side in [-1, 1]:
-					var wp = Vector3(13, 2.4, side * 3.1) if not horizontal else Vector3(side * 3.1, 2.4, 13)
-					DiverArt.wall(root, wp, Vector3(6, 4.8, 0.4) if not horizontal else Vector3(0.4, 4.8, 6), Color(palette[1]), true)
-				DiverArt.box(root, Vector3(d.x * 13, 0.03, d.y * 13), Vector3(4.8, 0.04, 0.12) if horizontal else Vector3(0.12, 0.04, 4.8), DiverArt.TEAL, false, 0.6)
-		else:
-			DiverArt.wall(root, wallpos, Vector3(20.5, 4.8, 0.7) if horizontal else Vector3(0.7, 4.8, 20.5), Color(palette[1]), true)
-			for offset in [-6, 0, 6]:
-				var p = Vector3(offset, 1.8, d.y * 9.6) if horizontal else Vector3(d.x * 9.6, 1.8, offset)
-				DiverArt.metal(root, p, Vector3(1.5, 1.2, 0.12) if horizontal else Vector3(0.12, 1.2, 1.5), Color(palette[1]))
-				DiverArt.box(root, p + Vector3(0, 0.1, 0), Vector3(0.16, 0.8, 0.16), DiverArt.TEAL, false, 1)
-	if index != 0 and index != exit_room: furnish_room(root, rooms[index].layout, palette)
-	if index == 0:
-		DiverArt.cylinder(root, Vector3(0, 0.08, 3), 2, 0.12, DiverArt.INK)
-		DiverArt.label(root, Vector3(0, 3.1, -6), "ARCHIVE  /  %02d" % depth, DiverArt.TEAL, 50)
-		for x in [-7, 7]:
-			DiverArt.cylinder(root, Vector3(x, 1.2, -7), 0.7, 2.4, Color(palette[1]))
-			DiverArt.orb(root, Vector3(x, 2.6, -7), 0.32, DiverArt.GOLD, 1)
-	if index == exit_room:
-		DiverArt.label(root, Vector3(0, 4.1, -6.5), BOSS_NAMES[depth - 1], DiverArt.GOLD, 42)
-		for x in [-7, 7]:
-			DiverArt.wall(root, Vector3(x, 2.4, -7), Vector3(2, 4.8, 2), Color(palette[1]), true)
-			obstacles.append(Rect2(Vector2(root.position.x + x - 1, root.position.z - 8), Vector2(2, 2)))
-			DiverArt.box(root, Vector3(x, 3, -5.9), Vector3(0.6, 3.2, 0.1), DiverArt.GOLD, false, 1)
-	# A few low fragments and painted vegetation, kept off the main routes.
-	for n in 5:
-		var p = Vector3(rng.randf_range(-8.9, 8.9), 0.12, -8.5 if n % 2 == 0 else 8.5)
-		DiverArt.box(root, p, Vector3(rng.randf_range(0.3, 0.8), 0.24, 0.5), Color(palette[1]))
-		if depth == 2:
-			DiverArt.box(root, p + Vector3.UP * 0.3, Vector3(0.10, 0.6, 0.4), Color("83b897"))
+# Draw the first hit's flash, sparks and damage number once, too small to see,
+# so browsers compile those shaders while the floor loads rather than freezing
+# on the first shot that lands.
+func warm_hit_effects() -> void:
+	if not is_instance_valid(player) or not is_instance_valid(player.camera): return
+	var warm = Node3D.new()
+	player.camera.add_child(warm)
+	warm.position = Vector3(0, 0, -3)
+	warm.scale = Vector3.ONE * 0.002
+	var spark = DiverArt.box(warm, Vector3.ZERO, Vector3.ONE, Color("ffca68"), false, 0.3)
+	spark.material_overlay = DiverArt.hit_flash()
+	DiverArt.label(warm, Vector3.ZERO, "0123456789!", Color("c3f5ee"), 34)
+	get_tree().create_timer(0.5).timeout.connect(warm.queue_free)
 
 func cover(root: Node3D, pos: Vector3, size: Vector3, tint: Color, masonry: bool = false) -> void:
 	var mesh = DiverArt.wall(root, pos, size, tint, true) if masonry else DiverArt.box(root, pos, size, tint, true)
 	if not masonry: mesh.material_override = DiverArt.painted("ruin_metal", tint, 0.5)
 	obstacles.append(Rect2(Vector2(root.position.x + pos.x - size.x / 2, root.position.z + pos.z - size.z / 2), Vector2(size.x, size.z)))
-
-func furnish_room(root: Node3D, layout: int, palette: Array) -> void:
-	var stone = Color(palette[1])
-	var metal = Color("a8c6bd")
-	match layout:
-		0:
-			for x in [-6.2, 6.2]:
-				for z in [-6.2, 6.2]:
-					cover(root, Vector3(x, 2.4, z), Vector3(1.5, 4.8, 1.5), stone, true)
-					DiverArt.box(root, Vector3(x, 0.25, z), Vector3(2, 0.5, 2), Color(palette[2]))
-					DiverArt.box(root, Vector3(x, 2.6, z), Vector3(1.55, 0.18, 1.55), DiverArt.GOLD, false, 0.15)
-		1:
-			cover(root, Vector3(0, 1.3, 0), Vector3(2.8, 2.6, 2.8), metal)
-			DiverArt.cylinder(root, Vector3(0, 2.9, 0), 0.8, 0.45, DiverArt.INK)
-			DiverArt.orb(root, Vector3(0, 3.45, 0), 0.48, DiverArt.TEAL, 0.55)
-			for x in [-5.5, 5.5]:
-				cover(root, Vector3(x, 0.8, 1.0), Vector3(2, 1.6, 2), metal)
-				DiverArt.ring(root, Vector3(x, 1.61, 1), 0.65, DiverArt.GOLD, 0.06)
-			for side in [-1, 1]: DiverArt.box(root, Vector3(side * 2.5, 0.04, 0), Vector3(1.7, 0.02, 0.12), DiverArt.TEAL, false, 0.2)
-		2:
-			for x in [-5.6, 5.6]:
-				for z in [-5, 0, 5]:
-					cover(root, Vector3(x, 0.95, z), Vector3(1.6, 1.9, 2.4), metal)
-					for slot in [-0.7, 0, 0.7]:
-						DiverArt.box(root, Vector3(x - signf(x) * 0.83, 1.3, z + slot), Vector3(0.04, 0.3, 0.35), DiverArt.GOLD, false, 0.10)
-		3:
-			for x in [-5.2, 5.2]:
-				cover(root, Vector3(x, 1.2, 0), Vector3(2.8, 2.4, 2.8), metal)
-				DiverArt.cylinder(root, Vector3(x, 2.55, 0), 1.42, 0.25, DiverArt.INK)
-				DiverArt.cylinder(root, Vector3(x, 2.70, 0), 1.2, 0.08, Color("88d4b5"), 0.2)
-				for z in [-1.3, 1.3]: DiverArt.box(root, Vector3(x, 1.25, z), Vector3(1.6, 0.22, 0.08), DiverArt.TEAL, false, 0.2)
-			DiverArt.box(root, Vector3(0, 0.035, -5.2), Vector3(14, 0.03, 0.5), Color("73bca7"), false, 0.15)
-			DiverArt.box(root, Vector3(0, 0.035, 5.2), Vector3(14, 0.03, 0.5), Color("73bca7"), false, 0.15)
-		4:
-			for side in [-1, 1]:
-				cover(root, Vector3(side * 3.8, 0.65, side * 4.3), Vector3(2.6, 1.3, 2), metal)
-				cover(root, Vector3(side * 6.8, 1.4, -side * 5), Vector3(1.6, 2.8, 1.6), stone, true)
-				var pipe = DiverArt.cylinder(root, Vector3(side * 8.5, 1.3, 0), 0.42, 9, Color("8b9b83"))
-				pipe.rotation.x = PI / 2
-			DiverArt.box(root, Vector3(0, 0.045, 0), Vector3(5, 0.035, 3), Color("6e8077"))
 
 func spawn_enemy(pos: Vector3, kind: int, room_id: int) -> DiverEnemy:
 	var e = DiverEnemy.new()
@@ -689,15 +580,15 @@ func guard_page(on: bool) -> void:
 func update_world(dt: float) -> void:
 	nearest = {}
 	var best = 3.0
-	for i in rooms.size():
-		var delta = player.position - rooms[i].center
-		if absf(delta.x) < 10 and absf(delta.z) < 10:
-			if current_room != i:
-				current_room = i
-				if not rooms[i].visited:
-					rooms[i].visited = true
-					notify(BOSS_NAMES[depth - 1] if i == exit_room else ROOM_NAMES[rooms[i].layout], "Guardian signal detected." if i == exit_room else "Chamber %02d · Ancient machines are waking." % (i + 1))
-			break
+	var here = room_index_at(player.position)
+	if here >= 0 and current_room != here:
+		current_room = here
+		if not rooms[here].visited:
+			rooms[here].visited = true
+			# Passages are quiet; chambers announce themselves.
+			if rooms[here].kind != "hall":
+				var hint = {5: "Climb the blocks to reach the hidden cache.", 6: "Take the ramps for the high ground.", 7: "A vast hall. Many machines are waking."}.get(int(rooms[here].layout), "Chamber %02d · Ancient machines are waking." % (here + 1))
+				notify(BOSS_NAMES[depth - 1] if here == exit_room else ROOM_NAMES[rooms[here].layout], "Guardian signal detected." if here == exit_room else hint)
 	# The host decides when any occupied chamber is secured.
 	if not net.is_guest():
 		for room_index in occupied_rooms():
@@ -1058,19 +949,28 @@ func preview_combat(tier: int) -> void:
 func preview_rooms() -> void:
 	mode = "model_preview"
 	rng.seed = 49381
-	depth = 1
+	# The deepest floor has enough chambers to show every arrangement.
+	depth = 3
 	build_floor(false)
 	await get_tree().physics_frame
-	for layout in 5:
+	for layout in 9:
 		for room in rooms:
-			if room.type == "chamber" and room.layout == layout:
-				player.camera.position = room.center + Vector3(7.9, 3.8, 7.9)
-				player.camera.look_at(room.center + Vector3(0, 1.0, 0))
+			if room.kind in ["chamber", "grand", "hall"] and room.layout == layout:
+				player.camera.fov = 80
+				player.camera.position = room.center + Vector3(room.half.x - 1.5, room.height - 1.2, room.half.y - 1.5)
+				player.camera.look_at(room.center + Vector3(0, 0.5, 0))
 				await RenderingServer.frame_post_draw
 				get_viewport().get_texture().get_image().save_png("res://screenshots/room-%d.png" % layout)
 				break
 	print("ROOM_GALLERY_SAVED")
 	get_tree().quit()
+
+# Rooms that aren't passages: the landing, chambers, the big hall and the guardian.
+func chamber_count() -> int:
+	var count = 0
+	for room in rooms:
+		if room.kind != "hall": count += 1
+	return count
 
 func run_smoke(dt: float) -> void:
 	test_clock += dt
@@ -1078,7 +978,7 @@ func run_smoke(dt: float) -> void:
 	test_clock = 0
 	match test_stage:
 		0:
-			assert(rooms.size() == 9)
+			assert(chamber_count() == 8)
 			for r in rooms: assert(r.distance < 999)
 			assert(exit_room > 0)
 			player.add_item("lens")
@@ -1111,7 +1011,7 @@ func run_smoke(dt: float) -> void:
 			interact()
 			assert(depth == 2 and player.level == 2 and player.count("lens") >= 2)
 		3:
-			assert(rooms.size() == 10)
+			assert(chamber_count() == 9)
 			guardian_dead = true
 			nearest = interactables[1]
 			interact()
@@ -1138,7 +1038,7 @@ func run_combat_test(dt: float) -> void:
 		player.shoot()
 		test_stage = 1
 	if test_stage == 1 and test_clock > 2.5:
-		assert(kills > 0 or test_enemy.health < 15, "Combat should apply sustained damage")
+		assert(kills > 0 or test_enemy.health < test_enemy.max_health * 0.45, "Combat should apply sustained damage")
 		player.lock_target = null
 		player.invincible = 0
 		player.hp = 100
@@ -1171,7 +1071,7 @@ func validate_persistence() -> void:
 func run_movement_test(dt: float) -> void:
 	test_clock += dt
 	if test_clock > 3.7:
-		assert(player.position.z < -17, "Player should pass through the doorway into the corridor")
+		assert((player.position - movement_origin).dot(movement_heading) > 17, "Player should pass through the doorway into the corridor")
 		assert(player.position.y > -0.1, "The connected floors must support the player")
 		var key = InputEventKey.new()
 		key.physical_keycode = KEY_W
@@ -1192,7 +1092,7 @@ func run_movement_test(dt: float) -> void:
 # a local checkpoint while the host also stores one on the server.
 
 const QUICK_CHAT = ["Help!", "Over here!", "Nice!", "Wait up!"]
-const CHECKPOINT_VERSION = 1
+const CHECKPOINT_VERSION = 2
 
 func all_players() -> Array:
 	var result = [player] if is_instance_valid(player) else []
@@ -1203,8 +1103,15 @@ func all_players() -> Array:
 func room_index_at(pos: Vector3) -> int:
 	for i in rooms.size():
 		var delta = pos - rooms[i].center
-		if absf(delta.x) < 10 and absf(delta.z) < 10: return i
+		if absf(delta.x) < rooms[i].half.x and absf(delta.z) < rooms[i].half.y: return i
 	return -1
+
+# Height of the raised stonework under a point (0 on the open floor and ramps).
+func floor_height(pos: Vector3) -> float:
+	var height = 0.0
+	for platform in platforms:
+		if platform.rect.has_point(Vector2(pos.x, pos.z)): height = maxf(height, platform.y)
+	return height
 
 func occupied_rooms() -> Array:
 	var result = []
@@ -1216,7 +1123,7 @@ func occupied_rooms() -> Array:
 func room_has_player(room_id: int, from: Vector3) -> bool:
 	for p in all_players():
 		var index = current_room if p == player else room_index_at(p.position)
-		if index == room_id and p.global_position.distance_to(from) < 27: return true
+		if index == room_id and p.global_position.distance_to(from) < 40: return true
 	return false
 
 # Robots chase the closest standing digger who isn't busy choosing a part.
@@ -1448,7 +1355,7 @@ func restore_checkpoint(cp: Dictionary) -> void:
 	if cp.get("roster") is Dictionary: roster = (cp.roster as Dictionary).duplicate(true)
 	var selected = cp.get("selected", [selected_character, selected_weapon])
 	if selected is Array and selected.size() == 2:
-		selected_character = clampi(int(selected[0]), 0, 1)
+		selected_character = clampi(int(selected[0]), 0, DiverCharacter.COUNT - 1)
 		selected_weapon = clampi(int(selected[1]), 0, 2)
 	apply_world_state(cp.world, false)
 	var mine = roster.get(net.player_id, cp.build if not cp.online or str(cp.build.get("id", "")) == net.player_id else {})
@@ -1506,7 +1413,7 @@ func create_remote_player(member_slot: int) -> DiverPlayer:
 	proxy.slot = member_slot
 	proxy.player_id = net.member_id(member_slot)
 	proxy.display_name = net.member_name(member_slot)
-	proxy.character = clampi(int(info.get("character", 0)), 0, 1)
+	proxy.character = clampi(int(info.get("character", 0)), 0, DiverCharacter.COUNT - 1)
 	proxy.weapon = clampi(int(info.get("weapon", 0)), 0, 2)
 	proxy.items = (info.get("items", {}) as Dictionary).duplicate() if info.get("items") is Dictionary else {}
 	proxy.level = int(info.get("level", 1))

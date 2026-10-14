@@ -26,6 +26,31 @@ static func painted(kind: String, tint: Color = Color.WHITE, world_scale: float 
 static func stone_material(color: Color) -> StandardMaterial3D:
 	return painted("ruin_floor", color)
 
+# A whole room's floor tiles as one draw call: browsers pay for every separate
+# mesh, and a dig shows hundreds of tiles down its halls.
+static func tiles(parent: Node3D, positions: Array, tints: Array, size: Vector3) -> MultiMeshInstance3D:
+	if not texture_materials.has("tiles"):
+		var m = painted("ruin_floor").duplicate() as StandardMaterial3D
+		m.vertex_color_use_as_albedo = true
+		m.vertex_color_is_srgb = true
+		texture_materials["tiles"] = m
+	var shape = BoxMesh.new()
+	shape.size = size
+	var multi = MultiMesh.new()
+	multi.transform_format = MultiMesh.TRANSFORM_3D
+	multi.use_colors = true
+	multi.mesh = shape
+	multi.instance_count = positions.size()
+	for i in positions.size():
+		multi.set_instance_transform(i, Transform3D(Basis.IDENTITY, positions[i]))
+		multi.set_instance_color(i, tints[i])
+	var node = MultiMeshInstance3D.new()
+	node.multimesh = multi
+	node.material_override = texture_materials["tiles"]
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(node)
+	return node
+
 static func wall(parent: Node3D, pos: Vector3, size: Vector3, tint: Color, solid: bool = true) -> MeshInstance3D:
 	var mesh = box(parent, pos, size, tint, solid)
 	mesh.material_override = painted("ruin_wall", tint, 0.5)
@@ -128,6 +153,15 @@ static func material(color: Color, glow: float = 0.0) -> StandardMaterial3D:
 		m.emission = color
 		m.emission_energy_multiplier = glow
 	materials[key] = m
+	return m
+
+static func hit_flash() -> StandardMaterial3D:
+	if materials.has("hit_flash"): return materials["hit_flash"]
+	var m = StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.albedo_color = Color(1.0, 0.96, 0.73, 0.7)
+	materials["hit_flash"] = m
 	return m
 
 static func box(parent: Node3D, pos: Vector3, size: Vector3, color: Color, solid: bool = false, glow: float = 0.0) -> MeshInstance3D:

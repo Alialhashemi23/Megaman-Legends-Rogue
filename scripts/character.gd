@@ -1,9 +1,15 @@
 extends Node3D
 class_name DiverCharacter
 
-const SCENES = [preload("res://assets/characters/volnutt.glb"), preload("res://assets/characters/roll.glb")]
-const DISPLAY_NAMES = ["Mega Man Volnutt", "Roll Caskett"]
-const SHORT_NAMES = ["MEGA", "ROLL"]
+const SCENES = [preload("res://assets/characters/volnutt.glb"), preload("res://assets/characters/roll.glb"), preload("res://assets/characters/tron.glb"), preload("res://assets/characters/servbot.glb")]
+const DISPLAY_NAMES = ["Mega Man Volnutt", "Roll Caskett", "Tron Bonne", "Servbot"]
+const SHORT_NAMES = ["MEGA", "ROLL", "TRON", "SERVBOT"]
+const IDS = ["volnutt", "roll", "tron", "servbot"]
+const COUNT = 4
+# Buster casing colour, armour tint and size for each digger's arm.
+const BUSTER_COLORS = [Color("235acb"), Color("c73350"), Color("b02a86"), Color("2c3fa8")]
+const BUSTER_TINTS = [Color.WHITE, Color("ffb1ab"), Color("ffa3e0"), Color("c9d2ff")]
+const BUSTER_SCALES = [1.0, 1.0, 1.0, 0.62]
 const LOCOMOTION = ["run", "backpedal", "strafe_left", "strafe_right"]
 var character = 0
 var model: Node3D
@@ -24,7 +30,8 @@ var equipped_weapon = -1
 var foot_contact = false
 
 func _ready() -> void:
-	model = SCENES[clampi(character, 0, 1)].instantiate()
+	character = clampi(character, 0, COUNT - 1)
+	model = SCENES[character].instantiate()
 	add_child(model)
 	for node in model.find_children("*", "Skeleton3D", true, false): skeleton = node
 	for node in model.find_children("*", "AnimationPlayer", true, false): animator = node
@@ -51,9 +58,9 @@ func build_buster() -> void:
 	weapon_mount = Node3D.new()
 	weapon_mount.name = "BusterMount"
 	skeleton.add_child(weapon_mount)
-	var blue = Color("235acb") if character == 0 else Color("c73350")
+	var blue: Color = BUSTER_COLORS[character]
 	var cuff = DiverArt.cylinder(weapon_mount, Vector3(0, -0.14, 0), 0.132, 0.21, blue)
-	cuff.material_override = DiverArt.painted("blue_armor", Color.WHITE if character == 0 else Color("ffb1ab"))
+	cuff.material_override = DiverArt.painted("blue_armor", BUSTER_TINTS[character])
 	DiverArt.cylinder(weapon_mount, Vector3(0, -0.29, 0), 0.12, 0.22, blue)
 	DiverArt.cylinder(weapon_mount, Vector3(0, -0.408, 0), 0.125, 0.033, Color("183059"))
 	var aperture = DiverArt.cylinder(weapon_mount, Vector3(0, -0.429, 0), 0.081, 0.012, Color("55def2"))
@@ -108,16 +115,19 @@ func layer_aim(dt: float, aiming: bool, aim_pitch: float, recoil: float) -> void
 	arm_weight = move_toward(arm_weight, 1.0 if aiming or shot_time > 0 else 0.0, dt * 8)
 	# Keep locomotion in the legs, layer aim and recoil in the buster arm.
 	var upper = joints.LeftUpperArm
-	var forearm = joints.LeftForeArm
 	var torso = skeleton.get_bone_global_pose(skeleton.get_bone_parent(upper)).basis.get_rotation_quaternion()
-	var upper_target = torso.inverse() * Quaternion.from_euler(Vector3(PI / 2 + aim_pitch - 0.36 - recoil * .13, 0, -.035))
-	var forearm_target = Quaternion(Vector3.RIGHT, .36 + recoil * .04)
+	# A Servbot's arm is a single joint, so the whole arm points down the aim line.
+	var elbow = .36 if joints.has("LeftForeArm") else 0.0
+	var upper_target = torso.inverse() * Quaternion.from_euler(Vector3(PI / 2 + aim_pitch - elbow - recoil * .13, 0, -.035))
 	skeleton.set_bone_pose_rotation(upper, skeleton.get_bone_pose_rotation(upper).slerp(upper_target, arm_weight))
-	skeleton.set_bone_pose_rotation(forearm, skeleton.get_bone_pose_rotation(forearm).slerp(forearm_target, arm_weight))
+	if joints.has("LeftForeArm"):
+		var forearm = joints.LeftForeArm
+		var forearm_target = Quaternion(Vector3.RIGHT, elbow + recoil * .04)
+		skeleton.set_bone_pose_rotation(forearm, skeleton.get_bone_pose_rotation(forearm).slerp(forearm_target, arm_weight))
 	update_mount()
 
 func update_mount() -> void:
-	weapon_mount.transform = skeleton.get_bone_global_pose(joints.LeftForeArm)
+	weapon_mount.transform = skeleton.get_bone_global_pose(joints.get("LeftForeArm", joints.LeftUpperArm)).scaled_local(Vector3.ONE * BUSTER_SCALES[character])
 
 func fire() -> void:
 	shot_time = 0.30

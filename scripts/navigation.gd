@@ -3,13 +3,16 @@ class_name DiverNavigation
 
 var grid = AStarGrid2D.new()
 
-func build(rooms: Array, obstacles: Array) -> void:
+# Rooms and corridors are open floor; obstacles (cover and raised stonework)
+# are solid, except the `open_areas` robots may walk on: platform tops and ramps.
+func build(rooms: Array, obstacles: Array, links: Array = [], open_areas: Array = []) -> void:
 	var low = Vector2i(9999, 9999)
 	var high = Vector2i(-9999, -9999)
 	for room in rooms:
 		var c = cell(room.center)
-		low = Vector2i(mini(low.x, c.x - 12), mini(low.y, c.y - 12))
-		high = Vector2i(maxi(high.x, c.x + 12), maxi(high.y, c.y + 12))
+		var reach = Vector2i(int(room.half.x) + 2, int(room.half.y) + 2)
+		low = Vector2i(mini(low.x, c.x - reach.x), mini(low.y, c.y - reach.y))
+		high = Vector2i(maxi(high.x, c.x + reach.x), maxi(high.y, c.y + reach.y))
 	grid.region = Rect2i(low, high - low + Vector2i.ONE)
 	grid.cell_size = Vector2.ONE
 	grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
@@ -18,23 +21,27 @@ func build(rooms: Array, obstacles: Array) -> void:
 	grid.update()
 	grid.fill_solid_region(grid.region, true)
 	for room in rooms:
-		var c = cell(room.center)
-		grid.fill_solid_region(Rect2i(c - Vector2i(9, 9), Vector2i(19, 19)), false)
-		for direction in [Vector2i.RIGHT, Vector2i.LEFT, Vector2i.UP, Vector2i.DOWN]:
-			var neighbor = false
-			for other in rooms:
-				if other.cell == room.cell + direction: neighbor = true; break
-			if not neighbor: continue
-			for offset in range(10, 17):
-				for side in range(-2, 3):
-					var point = c + direction * offset + Vector2i(-direction.y, direction.x) * side
-					if grid.is_in_boundsv(point): grid.set_point_solid(point, false)
+		var inner = Vector2i(int(room.half.x) - 1, int(room.half.y) - 1)
+		grid.fill_solid_region(Rect2i(cell(room.center) - inner, inner * 2 + Vector2i.ONE), false)
+	# Corridors, reaching a little way into the rooms they join.
+	for link in links:
+		var d: Vector2i = link.dir
+		var start = Vector2i(roundi(link.from.x), roundi(link.from.y)) - d * 2
+		var steps = roundi(link.from.distance_to(link.to)) + 4
+		for offset in range(0, steps + 1):
+			for side in range(-2, 3):
+				var point = start + d * offset + Vector2i(-d.y, d.x) * side
+				if grid.is_in_boundsv(point): grid.set_point_solid(point, false)
 	for obstacle in obstacles:
-		var bounds: Rect2 = obstacle.grow(0.65)
-		for x in range(int(floor(bounds.position.x)), int(ceil(bounds.end.x)) + 1):
-			for z in range(int(floor(bounds.position.y)), int(ceil(bounds.end.y)) + 1):
-				var p = Vector2i(x, z)
-				if grid.is_in_boundsv(p) and bounds.has_point(Vector2(x, z)): grid.set_point_solid(p, true)
+		mark(obstacle.grow(0.65), true)
+	for area in open_areas:
+		mark(area, false)
+
+func mark(bounds: Rect2, solid: bool) -> void:
+	for x in range(int(floor(bounds.position.x)), int(ceil(bounds.end.x)) + 1):
+		for z in range(int(floor(bounds.position.y)), int(ceil(bounds.end.y)) + 1):
+			var p = Vector2i(x, z)
+			if grid.is_in_boundsv(p) and bounds.grow(0.001).has_point(Vector2(x, z)): grid.set_point_solid(p, solid)
 
 func cell(pos: Vector3) -> Vector2i:
 	return Vector2i(roundi(pos.x), roundi(pos.z))

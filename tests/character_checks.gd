@@ -33,20 +33,26 @@ func run() -> void:
 	press(KEY_C)
 	verify(game.selected_character == 1 and game.player.character == 1, "C selects Roll and updates the preview")
 	press(KEY_C)
+	verify(game.selected_character == 2 and game.player.character == 2, "C moves on to Tron")
+	press(KEY_C)
+	verify(game.selected_character == 3 and game.player.character == 3, "C moves on to the Servbot")
+	press(KEY_C)
 	verify(game.selected_character == 0 and game.player.character == 0, "C returns to Mega")
-	for index in 2:
+	for index in DiverCharacter.COUNT:
+		# Tron's cutscene rig has one fewer face joint; a Servbot has one joint per limb.
+		var joint_count = [18, 18, 17, 7][index]
 		game.selected_character = index
 		game.start_run(49381)
 		for enemy in game.enemies: enemy.set_physics_process(false)
 		game.player.set_physics_process(false)
 		var visual: DiverCharacter = game.player.visual
 		verify(game.player.character == index, "Selected digger carries into a new run")
-		verify(visual.skeleton.get_bone_count() == 18, "Original skeleton has 18 joints")
+		verify(visual.skeleton.get_bone_count() == joint_count, "Original skeleton keeps all its joints")
 		verify(visual.animator.get_animation_list().size() >= 12, "Twelve authored clips are imported")
 		var meshes = visual.model.find_children("*", "MeshInstance3D", true, false).filter(func(m): return m.skin != null)
 		verify(meshes.size() == 1 and meshes[0].skin != null, "Original body uses a skinned mesh")
 		var mesh: MeshInstance3D = meshes[0]
-		verify(mesh.skin.get_bind_count() == 18, "Skin retains all original binds")
+		verify(mesh.skin.get_bind_count() == joint_count, "Skin retains all original binds")
 		var arrays = mesh.mesh.surface_get_arrays(0)
 		var weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
 		for vertex in range(0, weights.size(), 4):
@@ -65,14 +71,16 @@ func run() -> void:
 		verify(absf(visual.skeleton.get_bone_pose_rotation(visual.joints.LeftUpperLeg).get_euler().x) > .05, "Running moves the skinned leg bones")
 		game.player.shoot()
 		verify(visual.current_clip == "run", "Firing preserves running animation")
-		var barrel = visual.weapon_mount.global_basis * Vector3.DOWN
+		var barrel = (visual.weapon_mount.global_basis * Vector3.DOWN).normalized()
 		verify(barrel.dot(Vector3(0, sin(-.2), -cos(-.2))) > .97, "Buster points along intended pitch")
-		verify(visual.muzzle.global_position.z < game.player.position.z - .3, "Projectile muzzle sits beyond the body")
+		# A Servbot's arm is short, so its muzzle sits closer in.
+		verify(visual.muzzle.global_position.z < game.player.position.z - [.3, .3, .3, .15][index], "Projectile muzzle sits beyond the body")
 		verify(visual.muzzle.global_position.x < game.player.position.x, "Muzzle follows left arm")
 		for i in 80: visual.animate(1.0/60, Vector2.ZERO, true, 0, false, false, 0, 0)
-		var relaxed = visual.skeleton.get_bone_pose_rotation(visual.joints.LeftForeArm)
+		var arm_joint = visual.joints.get("LeftForeArm", visual.joints.LeftUpperArm)
+		var relaxed = visual.skeleton.get_bone_pose_rotation(arm_joint)
 		visual.animator.advance(0)
-		verify(relaxed.angle_to(visual.skeleton.get_bone_pose_rotation(visual.joints.LeftForeArm)) < .001 and absf(relaxed.get_euler().x) < .2, "Aim releases to the authored relaxed elbow without accumulating overrides")
+		verify(relaxed.angle_to(visual.skeleton.get_bone_pose_rotation(arm_joint)) < .001 and absf(relaxed.get_euler().x) < .2, "Aim releases to the authored relaxed arm without accumulating overrides")
 		# Changing direction keeps the current left/right step instead of restarting.
 		visual.select_clip("run", true)
 		visual.animator.advance(.18)
@@ -87,7 +95,7 @@ func run() -> void:
 		for vertex in vertices.size():
 			var bind_index = bones[vertex * 4]
 			var name = mesh.skin.get_bind_name(bind_index)
-			if str(name).ends_with("Foot"):
+			if str(name).ends_with("Foot" if visual.joints.has("LeftFoot") else "UpperLeg"):
 				sole_vertices.append([vertex, bind_index, visual.skeleton.find_bone(name)])
 		verify(not sole_vertices.is_empty(), "Boot geometry is available for contact checks")
 		for locomotion in DiverCharacter.LOCOMOTION:
@@ -106,7 +114,7 @@ func run() -> void:
 		for frame in 180:
 			visual.animate(1.0/60, Vector2.UP, true, 0, false, true, -.2, 0)
 			if visual.foot_contact: contacts += 1
-			var running_barrel = visual.weapon_mount.basis * Vector3.DOWN
+			var running_barrel = (visual.weapon_mount.basis * Vector3.DOWN).normalized()
 			verify(running_barrel.dot(Vector3(0, sin(-.2), -cos(-.2))) > .97, "Buster stays steady throughout running")
 		verify(contacts >= 12 and contacts <= 13, "Footsteps follow the two contacts in each run cycle")
 		visual.animate(.1, Vector2.LEFT, true, 0, false, false, 0, 0)

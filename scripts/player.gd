@@ -76,7 +76,7 @@ func _ready() -> void:
 	update_camera(1.0)
 
 func set_character(index: int) -> void:
-	character = clampi(index, 0, 1)
+	character = clampi(index, 0, DiverCharacter.COUNT - 1)
 	var facing = visual.rotation.y if is_instance_valid(visual) else yaw
 	if is_instance_valid(visual):
 		remove_child(visual)
