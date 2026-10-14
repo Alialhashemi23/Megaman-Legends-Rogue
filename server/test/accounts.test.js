@@ -281,6 +281,8 @@ describe("accounts", { skip: !ADMIN_URL && "TEST_DATABASE_URL is not set" }, () 
     const b = await player("Kit");
     r = await call("/api/v1/migrate-guest", { token: b.token, body: { op_id: op(), profile: guest, confirm } });
     assert.equal(r.status, 400, "and to the account");
+    r = await call("/api/v1/migrate-guest", { token: a.token, body: { op_id: op(), profile: guest, confirm: confirm + "x" } });
+    assert.equal(r.status, 400, "the token must match exactly");
     r = await call("/api/v1/migrate-guest", { token: a.token, body: { op_id: op(), profile: guest, confirm } });
     assert.equal(r.status, 200);
     assert.equal(r.json.profile.zenny, 340);

@@ -169,7 +169,7 @@ export function createStore({ pool, secret, now = () => Date.now() }) {
     }
     const match = typeof body.confirm === "string" && body.confirm.match(/^mig_(\d+)\.[A-Za-z0-9_-]+$/);
     const expected = match && migrationToken(account.id, profile, Number(match[1]));
-    if (!match || Number(match[1]) < now() || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(body.confirm.padEnd(expected.length).slice(0, expected.length)))) throw new ApiError(400, "validation", "The confirmation expired or doesn't match this profile. Preview it again.");
+    if (!match || Number(match[1]) < now() || body.confirm.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(body.confirm))) throw new ApiError(400, "validation", "The confirmation expired or doesn't match this profile. Preview it again.");
     return operation(account, body.op_id, "migrate", { profile, confirm: body.confirm }, async (db, locked) => {
       if (!isEmpty(locked.data)) throw new ApiError(409, "not_empty", "This account already has progress, so a guest profile can't be added to it.");
       const adopted = addDiscoveries(profile, Object.keys(locked.data.discovered));
