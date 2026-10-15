@@ -1,5 +1,13 @@
 # Local build history
 
+## 22 — Owner dashboard and account readiness fixes
+
+- Read-only owner dashboard at `/admin`: live players and lobbies, daily/weekly/monthly active accounts, registrations, logins by method, account digs, digger usage, platforms, versions and sync health, plus player search and detail. Owner only, with an authenticator app; emails masked in lists. Detailed records kept 30 days, activity 90 days, daily summaries 12 months; no IP addresses or device fingerprints.
+- Account digs report foreground play time every two minutes (an estimate; never queued with progress).
+- Android: choosing Guest while a saved sign-in is still being restored offline keeps the sign-in; restores retry by themselves; a bad server profile no longer leaves a half signed-in state; a browser that fails to open keeps the update prompt.
+- Android test APK code 4, version 0.18.1. Game protocol 7, checkpoint 3, profile 2 unchanged.
+- Checks: server 41/41 (6 dashboard), account 37, Android 49, UI 47, resume 24, smoke.
+
 ## 21 — Android accounts and startup updates (local, not deployed)
 
 - Android device-code sign-in, origin-isolated Keystore-encrypted sessions, startup recovery, suspension-safe outbox/checkpoints and wall-clock device-code expiry. No persistent plaintext tokens.

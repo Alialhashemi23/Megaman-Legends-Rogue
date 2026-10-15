@@ -1,7 +1,7 @@
 # Owner dashboard (phase 6)
 
-Read-only `/admin` page for the game's owner. Branch `feature/owner-dashboard`
-from `main`; **not merged, not deployed**. Contract details are in
+Read-only `/admin` page for the game's owner. Merged into `main` on
+2026-10-14 with the owner's approval; not yet deployed. Contract details are in
 [ACCOUNT-API.md](../ACCOUNT-API.md); operator setup in
 [ACCOUNTS-OPS.md](../ACCOUNTS-OPS.md). Screenshots (fixture data only):
 `screenshots/admin-*.png`.
@@ -78,8 +78,8 @@ so queued retries can't recreate it. No history exists before deployment.
 
 ## Before it goes live (owner decisions)
 
-1. Merge after review; refresh web ZIP, Windows pack/ZIP and the APK so the
-   game sends play time (older builds still work; they just don't report it).
+1. Done: merged; web ZIP, Windows pack/ZIP and APK build 4 refreshed (older
+   builds still work; they just don't report play time).
 2. Deploying runs the `migrate` job (auth tables gain `twoFactor` and
    `twoFactorEnabled`; migration 002 adds the dashboard tables). Back up first.
 3. On `/account`, set up the authenticator and store the backup codes in the
