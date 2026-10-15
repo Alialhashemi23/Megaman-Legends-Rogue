@@ -15,7 +15,7 @@ var profile: Dictionary = {}
 var revision = 0
 var last_sync = 0.0
 var outbox: Array = []
-var foreground_seconds = 0.0 # Phase 6 hook; no telemetry endpoint exists yet.
+var foreground_seconds = 0.0 # Foreground dig time not yet reported to /api/v1/activity.
 var token = ""
 var device: Dictionary = {}
 var device_remaining = 0.0
@@ -68,6 +68,7 @@ func _notification(what: int) -> void:
 	if game == null: return
 	if what == NOTIFICATION_APPLICATION_PAUSED:
 		backgrounded = true
+		report_activity()
 		persist_pending()
 		if game.in_run(): game.save_checkpoint()
 	elif what == NOTIFICATION_APPLICATION_RESUMED:
@@ -311,6 +312,13 @@ func operation_done(code: int, data: Dictionary, headers: PackedStringArray) -> 
 	changed.emit()
 	flush()
 
+# Best effort and never queued in the outbox: a lost report only lowers an estimate.
+func report_activity() -> void:
+	var seconds = int(foreground_seconds)
+	if not signed_in() or seconds < 1: return
+	foreground_seconds -= seconds
+	request("/api/v1/activity", {"seconds": mini(seconds, 3600), "platform": platform_id(), "game_version": DiverNet.NET_VERSION}, func(_code, _data, _headers): pass)
+
 func retry() -> void:
 	retry_wait = 0
 	refresh()
@@ -481,6 +489,7 @@ func sign_out() -> void:
 	last_result_run = ""
 	pending_run_callback = Callable()
 	takeover_needed = false
+	foreground_seconds = 0
 	state = "guest"
 	status = "Offline"
 	game.activate_guest()
@@ -523,7 +532,9 @@ func confirm_migration() -> void:
 func _process(dt: float) -> void:
 	if game == null: return
 	if backgrounded: return
-	if game.in_run() and DisplayServer.window_is_focused(): foreground_seconds += dt
+	if game.in_run() and DisplayServer.window_is_focused() and signed_in() and game.profile_source == "account": foreground_seconds += dt
+	# Play-time estimate for the owner dashboard: every two minutes in a dig, and when it ends.
+	if foreground_seconds >= 120 or (foreground_seconds >= 1 and not game.in_run()): report_activity()
 	if retry_wait > 0:
 		retry_wait -= dt
 		if retry_wait <= 0:

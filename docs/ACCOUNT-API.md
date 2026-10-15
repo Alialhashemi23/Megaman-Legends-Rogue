@@ -169,6 +169,20 @@ The `confirm` token is bound to this account and to the exact profile (it is an 
 
 Single-use, 60 s. The game sends it in the relay's `hello` (`{"t": "hello", "name": …, "id": …, "v": …, "ticket": "lt_…"}`); the relay consumes it and identifies the player as `acct:<account id>` instead of `id`. A bad, expired or reused ticket gets `{"t": "error", "code": "bad_ticket"}` and the connection stays a guest. Rejoining a live lobby from another device with the same account replaces the old connection, as rejoining with the same guest id does today.
 
+### `POST /api/v1/activity` (play-time estimate, phase 6)
+
+```json
+{"seconds": 120, "platform": "android", "game_version": 7} → 200 {"seconds": 120}
+```
+
+Foreground seconds spent in an account dig since the last report (1–3600; the server counts at most 300 per report and 86,400 per day). The game sends it every two minutes in a dig, when the dig ends and when the app is backgrounded. It is not an outbox operation and is never retried; it also marks the account active for that UTC day. A self-reported estimate for the owner dashboard, not proof of play. Additive to v1: older clients simply don't send it.
+
+## Owner dashboard (`/admin`, phase 6)
+
+Read-only `GET` routes, never for game clients: `/api/admin/me`, `/api/admin/stats?from=YYYY-MM-DD&to=YYYY-MM-DD` (UTC, at most 366 days, default the last 30), `/api/admin/users?q=&page=` (25 per page, masked emails) and `/api/admin/users/{acc_id}` (full email and detail). They need a browser cookie session (bearer tokens get `403 forbidden`), the `admin` role, a verified email, an enabled authenticator app and an authenticator check on that same session within 12 hours. Errors: `401 unauthorized`; `403 forbidden` (not the owner); `403 mfa_setup_required`; `403 mfa_required` (enter a code via `/api/auth/two-factor/verify-totp` or `verify-backup-code`). Signing out deletes the session and its check. Data rules and retention: [handoff/OWNER-DASHBOARD.md](handoff/OWNER-DASHBOARD.md).
+
+Accounts with an authenticator get `{"twoFactorRedirect": true}` from `/api/auth/sign-in/email` and finish with a code on the same `/account` page. Device-code approval for Windows/Android is unchanged (the browser approving it is already signed in).
+
 ## Rate limits
 
 Better Auth limits its own routes (sign-in and sign-up are strictest). `/api/v1` allows 60 requests per minute per account (heartbeats included) and 20 per minute per IP before sign-in; over that, `429` with `Retry-After`.

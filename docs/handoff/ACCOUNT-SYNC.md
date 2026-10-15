@@ -79,7 +79,7 @@ Bad tickets fall back to guests with a notice. Protocol 7 and checkpoint version
 3 remain unchanged; account checkpoint fields are optional. Local checkpoints
 guard account ownership and recover that digger's issued run id. Heartbeats run
 every 120 seconds; losing the lease still allows results. `foreground_seconds`
-is the phase 6 activity hook and sends no invented endpoint.
+is reported to `POST /api/v1/activity` (phase 6 branch; see OWNER-DASHBOARD.md).
 
 ## Checks
 

@@ -30,7 +30,8 @@ How to turn on player accounts for the self-hosted server, back them up, and mov
    docker compose -f docker-compose.yml -f docker-compose.accounts.yml exec relic-diver node server/admin-role.js acc_XXXX
    docker compose -f docker-compose.yml -f docker-compose.accounts.yml exec relic-diver node server/admin-role.js --list
    ```
-   `--revoke` removes it and signs that account out everywhere. No web page or API can grant the role. **Before the owner dashboard (roadmap phase 6) goes public, admin sign-in also needs two-factor authentication; that isn't built yet.**
+   `--revoke` removes it and signs that account out everywhere. No web page or API can grant the role.
+   **Owner dashboard (phase 6):** once you're admin, open `/account`, choose *Set up authenticator for the owner dashboard*, enter your password, add the setup key to an authenticator app, save the backup codes in your password manager, and confirm a code. Then open `/admin`. Each browser session asks for a code again after 12 hours. Losing both the app and the backup codes means an operator must clear your authenticator in the database (`delete from "twoFactor" where "userId" = …; update "user" set "twoFactorEnabled" = false where id = …`).
 6. **Rehearse a restore** (below) once before telling players their progress is saved.
 
 To test locally first, add `MAIL_URL=smtp://mailpit:1025`, use `--profile dev-mail`, and read the emails at http://localhost:8025.
