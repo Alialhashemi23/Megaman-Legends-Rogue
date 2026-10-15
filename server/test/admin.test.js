@@ -286,6 +286,22 @@ describe("owner dashboard", { skip: !ADMIN_URL && "TEST_DATABASE_URL is not set"
     assert.equal((await call("/api/admin/users/" + eve.id, { cookie: owner.cookie })).status, 404);
   });
 
+  // Production starts accounts without a test clock (server.js); the dashboard must work that way too.
+  test("the dashboard works with the default clock", async () => {
+    const owner = await makeOwner();
+    const real = await createAccounts({ pool, secret: SECRET, origin: base, mailSink: mail, rateLimit: false, log: () => {} });
+    const second = createServer({ port: 0, webRoot, log: () => {}, accounts: real });
+    const secondPort = await second.listen();
+    try {
+      for (const route of ["/api/admin/me", "/api/admin/stats", "/api/admin/users"]) {
+        const r = await fetch(`http://127.0.0.1:${secondPort}${route}`, { headers: { Cookie: owner.cookie } });
+        assert.equal(r.status, 200, `${route} ${await r.text()}`);
+      }
+    } finally {
+      await second.close();
+    }
+  });
+
   test("live counts come from the relay", async () => {
     const owner = await makeOwner();
     const { WebSocket } = await import("ws");

@@ -17,7 +17,7 @@ const MAX_BODY = 16 * 1024;
 const ADMIN_MFA_MS = 12 * 60 * 60 * 1000;
 const MAX_STATS_DAYS = 366;
 
-export async function createAccounts({ databaseUrl, pool: givenPool, secret, origin, mailUrl, mailFrom, mailSink, rateLimit = true, apiLimits = { ip: 120, account: 60 }, now, log = console.log }) {
+export async function createAccounts({ databaseUrl, pool: givenPool, secret, origin, mailUrl, mailFrom, mailSink, rateLimit = true, apiLimits = { ip: 120, account: 60 }, now = () => Date.now(), log = console.log }) {
   if (!secret || secret.length < 32) throw new Error("BETTER_AUTH_SECRET must be at least 32 characters.");
   if (!origin || !/^https?:\/\/[^/]+$/.test(origin)) throw new Error("PUBLIC_ORIGIN must be an origin like https://example.com.");
   const pool = givenPool || createPool(databaseUrl);
