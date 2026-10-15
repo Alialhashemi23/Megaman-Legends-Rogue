@@ -70,7 +70,10 @@ so queued retries can't recreate it. No history exists before deployment.
   replays not double-counted, refresh separate from sign-in, failed sign-in,
   date validation; masked list vs detail; retention with a fake clock keeping
   summaries and replay deduplication; user deletion; live relay counts.
-- Full server suite with disposable PostgreSQL: **41/41**.
+- Full server suite with disposable PostgreSQL: **42/42**. The first live deploy
+  returned 503 on `/api/admin/*` because `createAccounts` had no default clock
+  (tests always injected one); fixed and redeployed 2026-10-14, with a test that
+  starts the dashboard without a clock as production does.
 - `tests/account_checks.gd`: **37/0** (3 new: play-time report, outside the
   outbox, none without confirmed sign-in). `tests/android_checks.gd` 44/0.
 - `server/test/admin-preview.mjs` renders desktop/narrow/player/code screens in
