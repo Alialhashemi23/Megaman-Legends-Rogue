@@ -44,7 +44,7 @@ sound: outbox ordering/idempotent retry, pause persistence, device-code
 wall-clock expiry, server-change guard while an account is active, update
 metadata validation. Owner checklist: `docs/handoff/RETROID-CHECKLIST.md`.
 
-Phase 6 (from `feature/owner-dashboard`, owner-authorized): see
+Both were pushed and **deployed live on 2026-10-14** with explicit owner approval (backup first; migrations applied; owner granted admin). APKs stay local/unpublished. Phase 6 (from `feature/owner-dashboard`, owner-authorized): see
 `docs/handoff/OWNER-DASHBOARD.md`. APK build 4 (`0.18.1`) carries both; keep
 the build-3 APK (`build/RelicDiver-android-3.apk`) as the "old" install for the
 Retroid upgrade test.

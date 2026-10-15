@@ -1,7 +1,7 @@
 # Owner dashboard (phase 6)
 
 Read-only `/admin` page for the game's owner. Merged into `main` on
-2026-10-14 with the owner's approval; not yet deployed. Contract details are in
+2026-10-14 and deployed the same day with the owner's approval. Contract details are in
 [ACCOUNT-API.md](../ACCOUNT-API.md); operator setup in
 [ACCOUNTS-OPS.md](../ACCOUNTS-OPS.md). Screenshots (fixture data only):
 `screenshots/admin-*.png`.
@@ -80,10 +80,16 @@ so queued retries can't recreate it. No history exists before deployment.
 
 1. Done: merged; web ZIP, Windows pack/ZIP and APK build 4 refreshed (older
    builds still work; they just don't report play time).
-2. Deploying runs the `migrate` job (auth tables gain `twoFactor` and
-   `twoFactorEnabled`; migration 002 adds the dashboard tables). Back up first.
-3. On `/account`, set up the authenticator and store the backup codes in the
-   password manager, then open `/admin`.
+2. Done 2026-10-14: on-demand backup `daily/relic-20261015-021600.dump.enc`,
+   then `docker compose up -d --build`; `migrate` created `twoFactor`, added
+   `twoFactorEnabled` and applied `002_owner_dashboard`. Live checks: healthz,
+   `index.pck` SHA matches `build/web`, `/admin` 200, `/api/admin/me` 401
+   anonymous, account page serves the authenticator step, Android update
+   routes still 404 (not published). The owner's verified account was granted
+   admin with `server/admin-role.js`.
+3. **Owner still to do:** on `/account`, set up the authenticator and store the
+   backup codes in the password manager, then open `/admin`. Counts start from
+   this deployment.
 
 Not done: no historical backfill, no CSV export, no alerting. Admin MFA rate
 limiting relies on Better Auth's two-factor limits (3 per 10 s) plus the API's
