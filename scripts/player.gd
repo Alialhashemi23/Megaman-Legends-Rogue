@@ -102,19 +102,24 @@ func set_character(index: int) -> void:
 func count(id: String) -> int:
 	return int(items.get(id, 0))
 
+# Permanent Workshop multiplier on the digger's starting Life.
+func life_bonus() -> float:
+	return (DiverProgression.BONUS.frame if "frame" in skills else 1.0) * (DiverProgression.BONUS.cell if "cell" in skills else 1.0)
+
 func max_hp() -> float:
 	var starting_life = 65.0 if character == 3 else 100.0
-	return base_health - 100.0 + starting_life * (DiverProgression.BONUS.frame if "frame" in skills else 1.0) + 20 * count("heart")
+	return base_health - 100.0 + starting_life * life_bonus() + 20 * count("heart")
 
 func damage() -> float:
-	return base_damage * (1.0 + 0.16 * count("lens"))
+	return base_damage * (1.0 + 0.16 * count("lens")) * (DiverProgression.BONUS.barrel if "barrel" in skills else 1.0)
 
 func speed() -> float:
 	return base_speed * (1.18 if character == 3 else 1.0) * (DiverProgression.BONUS.mobility if "mobility" in skills else 1.0) * (1.0 + 0.09 * count("boots"))
 
 func fire_delay() -> float:
 	var base = [0.25, 0.13, 0.65, 0.75][weapon]
-	return base / (fire_multiplier * (DiverProgression.BONUS.mastery if "mastery" in skills else 1.0) * (1.0 + 0.14 * count("spring")))
+	var workshop = (DiverProgression.BONUS.mastery if "mastery" in skills else 1.0) * (DiverProgression.BONUS.loader if "loader" in skills else 1.0)
+	return base / (fire_multiplier * workshop * (1.0 + 0.14 * count("spring")))
 
 func _physics_process(dt: float) -> void:
 	if not game.world_running(): return
@@ -151,11 +156,11 @@ func _physics_process(dt: float) -> void:
 	if controls and Input.is_action_pressed("dash") and dash_cooldown <= 0:
 		dash_direction = move if move.length() > 0 else Vector3(0, 0, -1).rotated(Vector3.UP, yaw)
 		dash_time = 0.19
-		dash_cooldown = maxf(0.65, 1.35 - count("boots") * 0.06)
+		dash_cooldown = maxf(0.65, 1.35 - count("boots") * 0.06) - (DiverProgression.BONUS.servos if "servos" in skills else 0.0)
 		invincible = 0.26
 		game.sound.play("dash")
 		if character == 1 and "ability" in skills and repair_cooldown <= 0:
-			heal(DiverProgression.BONUS.repair_life)
+			heal(DiverProgression.BONUS.repair_life_2 if "ability2" in skills else DiverProgression.BONUS.repair_life)
 			repair_cooldown = DiverProgression.BONUS.repair_delay
 			game.burst(global_position + Vector3.UP, Color("9cde70"), 6)
 		if count("frost") > 0: game.frost_burst(position, 2 + count("frost"))
@@ -273,7 +278,8 @@ func shoot() -> void:
 		direction = (target - start) / flight + Vector3.UP * 10.0 * flight
 	var amount = damage() * ([1.0, 0.55, 2.4, 2.0][weapon])
 	shot_count += 1
-	if character == 0 and "ability" in skills and shot_count % int(DiverProgression.BONUS.pulse_interval) == 0: amount *= DiverProgression.BONUS.pulse_power
+	var interval = int(DiverProgression.BONUS.pulse_interval_2 if "ability2" in skills else DiverProgression.BONUS.pulse_interval)
+	if character == 0 and "ability" in skills and shot_count % interval == 0: amount *= DiverProgression.BONUS.pulse_power
 	game.spawn_bolt(start, direction, amount, false, weapon >= 2, 1 if weapon == 3 else 0, self)
 	game.build_changed()
 	if count("echo") > 0 and game.rng.randf() < minf(0.8, 0.12 * count("echo")):
@@ -289,7 +295,7 @@ func hurt(amount: float) -> void:
 	amount *= 1.0 / (1 + count("shell") * 0.18)
 	hp = maxf(0, hp - amount)
 	visual.hurt()
-	invincible = 0.65
+	invincible = 0.65 + (DiverProgression.BONUS.plating if "plating" in skills else 0.0)
 	game.hurt_flash = 0.5
 	add_trauma(0.22)
 	game.sound.play("hurt")
@@ -359,7 +365,7 @@ func apply_state(pos: Vector3, vel: Vector3, new_yaw: float, new_pitch: float, i
 	move_input = input
 	net_flags = flags
 	hp = life
-	base_health = life_max - 20 * count("heart") - (65.0 if character == 3 else 100.0) * (DiverProgression.BONUS.frame if "frame" in skills else 1.0) + 100.0
+	base_health = life_max - 20 * count("heart") - (65.0 if character == 3 else 100.0) * life_bonus() + 100.0
 	revive = revive_amount
 	var was_down = downed
 	downed = flags & FLAG_DOWN != 0

@@ -5,17 +5,30 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { NODES, PART_GATES, OLD_GATES, PROFILE_VERSION, reward, validateProfile, validateOutcome, applyOutcome, buy, fresh, isEmpty } from "../accounts/rules.js";
+import { NODES, LINKS, START, PART_GATES, OLD_GATES, PROFILE_VERSION, connected, reward, validateProfile, validateOutcome, applyOutcome, buy, fresh, isEmpty } from "../accounts/rules.js";
 
 const scripts = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "scripts");
 const progression = fs.readFileSync(path.join(scripts, "progression.gd"), "utf8");
 const game = fs.readFileSync(path.join(scripts, "game.gd"), "utf8");
 
-test("skill nodes, costs and prerequisites match progression.gd", () => {
-  const gd = [...progression.matchAll(/\{"id": "(\w+)", "name": "[^"]*", "cost": (\d+), "requires": "(\w*)"/g)].map((m) => ({ id: m[1], cost: Number(m[2]), requires: m[3] }));
+test("grid nodes, costs and links match progression.gd", () => {
+  const gd = [...progression.matchAll(/\{"id": "(\w+)", "name": "[^"]*", "cost": (\d+),/g)].map((m) => ({ id: m[1], cost: Number(m[2]) }));
   assert.deepEqual(gd, NODES);
+  assert.deepEqual(JSON.parse(progression.match(/const LINKS = (\[.*\])/)[1]), LINKS);
+  assert.match(progression, new RegExp(`const START = "${START}"`));
   assert.match(progression, new RegExp(`const VERSION = ${PROFILE_VERSION}\\b`));
-  assert.match(progression, /id != "mastery" or "ability" in skills/, "mastery still needs the signature circuit");
+});
+
+test("every grid is one connected piece and old v2 trees stay valid", () => {
+  const ids = NODES.map((n) => n.id);
+  assert.ok(connected(ids), "the whole grid is reachable, so 100% is possible");
+  for (const [a, b] of LINKS) assert.ok(ids.includes(a) && ids.includes(b));
+  for (const tree of [["frame"], ["frame", "mobility"], ["frame", "salvage", "ability"], ["frame", "mobility", "salvage", "ability", "mastery"], ["frame", "salvage", "mobility"]])
+    assert.ok(validateProfile({ version: 2, trees: { 0: tree } }), `v2 tree ${tree} survives`);
+  let profile = { ...fresh(), zenny: 100000 };
+  for (const id of ids) profile = buy(profile, 2, id).profile;
+  assert.equal(profile.trees["2"].length, NODES.length, "the listed order buys the full grid");
+  assert.equal(profile.zenny, 100000 - NODES.reduce((n, e) => n + e.cost, 0));
 });
 
 test("part unlock gates match game.gd ITEMS and the legacy gates", () => {
@@ -34,17 +47,17 @@ test("Zenny reward matches the formula in progression.gd", () => {
 
 test("profile validation follows the game's rules", () => {
   assert.deepEqual(validateProfile({ version: 2 }), fresh());
-  assert.equal(validateProfile({ version: 3 }), null, "future versions are refused");
+  assert.equal(validateProfile({ version: 4 }), null, "future versions are refused");
   assert.equal(validateProfile({ version: 2, wins: 2, runs: 1 }), null, "more wins than runs");
   assert.equal(validateProfile({ version: 2, deepest: 4 }), null);
   assert.equal(validateProfile({ version: 2, zenny: 1.5 }), null);
   assert.equal(validateProfile({ version: 2, trees: { 0: ["mobility"] } }), null, "missing prerequisite");
-  assert.equal(validateProfile({ version: 2, trees: { 0: ["frame", "mobility", "mastery"] } }), null, "mastery without the circuit");
+  assert.equal(validateProfile({ version: 2, trees: { 0: ["frame", "mobility", "mastery"] } }), null, "mastery is not linked to mobility");
   assert.equal(validateProfile({ version: 2, trees: { 4: ["frame"] } }), null, "no fifth digger");
   assert.equal(validateProfile({ version: 2, legacy_unlocks: ["lens"] }), null, "lens was never gated");
   const v1 = validateProfile({ version: 1, kills: 30, runs: 3 });
   assert.deepEqual(v1.legacy_unlocks.sort(), ["coil", "echo", "ember", "prism"], "v1 profiles keep what they had earned");
-  assert.equal(v1.version, 2);
+  assert.equal(v1.version, 3);
   assert.ok(isEmpty(fresh()) && !isEmpty({ ...fresh(), runs: 1 }));
 });
 
@@ -73,7 +86,7 @@ test("run outcomes are bounded and applied like finish_run()", () => {
 
 test("purchases check prerequisites and balance", () => {
   const rich = { ...fresh(), zenny: 1000 };
-  assert.ok(buy(rich, 0, "mobility").error, "prerequisite");
+  assert.ok(buy(rich, 0, "mobility").error, "must link to an owned node");
   const one = buy(rich, 0, "frame").profile;
   assert.deepEqual([one.zenny, one.trees["0"]], [900, ["frame"]]);
   assert.ok(buy(one, 0, "frame").error, "already owned");
@@ -81,4 +94,7 @@ test("purchases check prerequisites and balance", () => {
   assert.ok(buy(one, 4, "frame").error, "no fifth digger");
   assert.ok(buy(one, 0, "nope").error, "unknown node");
   assert.equal(buy(one, 1, "frame").profile.trees["1"][0], "frame", "trees are per digger");
+  assert.equal(buy({ ...one, version: 2 }, 0, "plating").profile.version, 3, "buying upgrades the stored profile version");
+  assert.ok(buy(one, 0, "barrel").error, "barrel links from plating or salvage, not frame");
+  assert.ok(buy(buy(one, 0, "salvage").profile, 0, "barrel").profile, "a second route reaches the same node");
 });

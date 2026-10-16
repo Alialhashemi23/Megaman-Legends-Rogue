@@ -3,15 +3,25 @@
 // results and purchases itself, so these must match the game exactly;
 // test/rules.test.js parses the GDScript and fails if they drift apart.
 
-export const PROFILE_VERSION = 2;
+export const PROFILE_VERSION = 3;
 export const CHARACTERS = 4;
+// Workshop grid (DiverProgression.NODES/LINKS): buy a node linked to one you own.
+export const START = "frame";
 export const NODES = [
-  { id: "frame", cost: 100, requires: "" },
-  { id: "mobility", cost: 140, requires: "frame" },
-  { id: "salvage", cost: 180, requires: "frame" },
-  { id: "ability", cost: 260, requires: "salvage" },
-  { id: "mastery", cost: 400, requires: "mobility" },
+  { id: "frame", cost: 100 },
+  { id: "mobility", cost: 140 },
+  { id: "salvage", cost: 180 },
+  { id: "plating", cost: 160 },
+  { id: "servos", cost: 200 },
+  { id: "barrel", cost: 220 },
+  { id: "ability", cost: 260 },
+  { id: "magnet", cost: 220 },
+  { id: "mastery", cost: 400 },
+  { id: "loader", cost: 340 },
+  { id: "ability2", cost: 480 },
+  { id: "cell", cost: 420 },
 ];
+export const LINKS = [["frame", "mobility"], ["frame", "salvage"], ["frame", "plating"], ["plating", "servos"], ["plating", "barrel"], ["servos", "mobility"], ["barrel", "salvage"], ["mobility", "magnet"], ["salvage", "ability"], ["magnet", "mastery"], ["ability", "mastery"], ["magnet", "loader"], ["mastery", "cell"], ["ability", "ability2"], ["loader", "cell"], ["ability2", "cell"]];
 // Lifetime-kill gates for parts (ITEMS[*].unlock in game.gd).
 export const PART_GATES = { lens: 0, spring: 0, heart: 0, boots: 0, shell: 0, moss: 0, ember: 40, coil: 40, prism: 100, echo: 100, split: 220, frost: 220, clover: 220 };
 // Gates from profile v1, kept as legacy unlocks when migrating.
@@ -23,6 +33,18 @@ export function fresh() {
 }
 
 export const node = (id) => NODES.find((entry) => entry.id === id) || null;
+export const neighbors = (id) => LINKS.flatMap(([a, b]) => (a === id ? [b] : b === id ? [a] : []));
+export const reachable = (owned, id) => id === START || neighbors(id).some((other) => owned.includes(other));
+
+// A valid tree is empty, or a connected set of nodes containing the start.
+export function connected(owned) {
+  if (owned.length === 0) return true;
+  if (!owned.includes(START)) return false;
+  const seen = new Set([START]);
+  const queue = [START];
+  while (queue.length) for (const other of neighbors(queue.shift())) if (owned.includes(other) && !seen.has(other)) { seen.add(other); queue.push(other); }
+  return seen.size === owned.length;
+}
 const isNumber = (value) => typeof value === "number" && Number.isFinite(value);
 const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 
@@ -54,11 +76,7 @@ export function validateProfile(data) {
       if (typeof id !== "string" || !node(id) || seen.includes(id)) return null;
       seen.push(id);
     }
-    for (const id of seen) {
-      const entry = node(id);
-      if (entry.requires && !seen.includes(entry.requires)) return null;
-      if (id === "mastery" && !seen.includes("ability")) return null;
-    }
+    if (!connected(seen)) return null;
     result.trees[character] = seen;
   }
   const legacy = data.legacy_unlocks ?? [];
@@ -107,6 +125,7 @@ export function validateOutcome(outcome) {
 // finish_run() for a finished dig, retire_saved_dig() for an abandoned one.
 export function applyOutcome(profile, outcome) {
   const next = structuredClone(profile);
+  next.version = PROFILE_VERSION;
   const before = next.kills;
   next.kills = Math.min(LIMIT, next.kills + outcome.kills);
   let zenny = 0;
@@ -130,10 +149,10 @@ export function buy(profile, character, id) {
   if (!Number.isInteger(character) || character < 0 || character >= CHARACTERS || !entry) return { error: "Unknown digger or skill." };
   const owned = profile.trees[String(character)] || [];
   if (owned.includes(id)) return { error: "Already owned." };
-  if (entry.requires && !owned.includes(entry.requires)) return { error: "A required skill is missing." };
-  if (id === "mastery" && !owned.includes("ability")) return { error: "Signature Circuit is required first." };
+  if (!reachable(owned, id)) return { error: "Buy a linked skill first." };
   if (profile.zenny < entry.cost) return { error: "Not enough Zenny." };
   const next = structuredClone(profile);
+  next.version = PROFILE_VERSION;
   next.zenny -= entry.cost;
   next.trees[String(character)] = [...owned, id];
   return { profile: next };

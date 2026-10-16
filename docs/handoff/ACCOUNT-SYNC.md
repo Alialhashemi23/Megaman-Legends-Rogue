@@ -58,6 +58,10 @@ cannot roll a newer wallet backwards. A 401 keeps pending operations and asks
 for sign-in. Network/5xx/429 failures back off; terminal 4xx errors surface and
 remove only the refused operation. Pending rewards are visible and unspendable.
 Revision conflicts adopt server progress and require a new explicit purchase.
+Profile 3 (polish P4): purchases follow the Workshop grid rule (buy a node linked
+to an owned one; trees must stay connected through `frame`). `buy()` and
+`applyOutcome()` stamp stored profiles to version 3. Stored v2 data needs no
+database migration because every v2 tree is a valid connected grid tree.
 
 ## Menus, invites and co-op
 

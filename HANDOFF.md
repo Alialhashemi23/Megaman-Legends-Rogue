@@ -1,5 +1,21 @@
 # Relic Diver handoff
 
+## Polish P4 Workshop grids — 2026-10-15 (build 26)
+
+`DiverProgression.NODES/LINKS/START` define one 12-circuit grid layout per
+digger (profile 3). A node is buyable when linked to an owned node; a tree is
+valid when connected through `frame`. The original five ids keep their effects,
+so v2 trees validate unchanged. New effects live in `player.gd` (Life, damage,
+attack speed, dash, protection, signature II), `bolt.gd` (blast radius) and
+`game.gd` (pickup reach). The server mirror is in `server/accounts/rules.js`;
+`server/test/rules.test.js` parses the GDScript and fails on drift. NET_VERSION
+is 8. The UI is `hud.gd` `draw_grid()` / `workshop_navigate()` / `grid_step()`.
+
+Specializations (P5) should attach to the grid's branch ends (Quick Loader and
+Signature II sides) as new linked nodes, plus the per-dig equip selection.
+Old Android APKs (protocol 7, profile 2) cannot read v3 account profiles or
+join new lobbies until rebuilt. Prices and values are tuning proposals.
+
 ## Polish P3 music — 2026-10-15 (owner-approved; build 25)
 
 All seven cues were re-arranged around their unchanged melodies: per-cue

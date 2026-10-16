@@ -64,6 +64,13 @@ var workshop_return = "title"
 var workshop_character = 0
 var workshop_message = ""
 var workshop_focus_pending = false
+# Workshop grid view: centre in grid cells, zoom step, mouse-drag state.
+const GRID_RECT = Rect2(394, 366, 982, 414)
+const GRID_CELL = Vector2(96, 50)
+const GRID_ZOOMS = [0.8, 1.0, 1.35]
+var grid_center = Vector2(0, 1.25)
+var grid_zoom_step = 1
+var grid_dragging = false
 var save_edit: LineEdit
 var save_message = "Export a code to keep a backup outside this browser."
 var pending_import: Dictionary = {}
@@ -174,18 +181,94 @@ func select_workshop_character(index: int) -> void:
     pointer = Vector2(-100, -100)
     workshop_focus_pending = true
 
+# Entry focus: the first node you can buy, else the next node you could reach.
 func workshop_first_node() -> int:
-    var owned = DiverProgression.owned(game.meta, workshop_character)
-    var first_unowned = -1
+    var skills = DiverProgression.owned(game.meta, workshop_character)
+    var fallback = -1
     for i in DiverProgression.NODES.size():
         var id = DiverProgression.NODES[i].id
-        if id not in owned and first_unowned < 0: first_unowned = i
         if DiverProgression.can_buy(game.meta, workshop_character, id): return i
-    # Keep the skills inspectable even when nothing is affordable or all are fitted.
-    return maxi(0, first_unowned)
+        if fallback < 0 and id not in skills and DiverProgression.reachable(skills, id): fallback = i
+    return maxi(0, fallback)
 
-# The Workshop is three rows: digger headers, the skill column and the bottom
-# buttons. Each keeps its own Left/Right meaning; Up/Down moves between them.
+func grid_zoom() -> float:
+    return GRID_ZOOMS[grid_zoom_step]
+
+func grid_point(i: int) -> Vector2:
+    var at: Array = DiverProgression.NODES[i].pos
+    return GRID_RECT.get_center() + (Vector2(at[0], at[1]) - grid_center) * GRID_CELL * grid_zoom()
+
+# Pan just enough to keep a node inside the grid frame.
+func grid_reveal(i: int) -> void:
+    var inner = Rect2(GRID_RECT.position + Vector2(56, 40), GRID_RECT.size - Vector2(112, 96))
+    var at = grid_point(i)
+    var shift = Vector2(minf(0, at.x - inner.position.x) + maxf(0, at.x - inner.end.x), minf(0, at.y - inner.position.y) + maxf(0, at.y - inner.end.y))
+    grid_center += shift / (GRID_CELL * grid_zoom())
+
+# Overview framing: the whole grid sits below the progress/zoom strip.
+func grid_recenter() -> void:
+    grid_center = Vector2(0, 1.25)
+
+func grid_zoom_by(step: int) -> void:
+    grid_zoom_step = clampi(grid_zoom_step + step, 0, GRID_ZOOMS.size() - 1)
+    if grid_zoom_step <= 1: grid_recenter()
+    var node = focus_index - DiverCharacter.COUNT
+    if node >= 0 and node < DiverProgression.NODES.size(): grid_reveal(node)
+
+# Nearest node in a direction, inside a cone so diagonals feel natural.
+func grid_step(from: int, direction: Vector2) -> int:
+    var origin: Array = DiverProgression.NODES[from].pos
+    var best = -1
+    var best_score = INF
+    for i in DiverProgression.NODES.size():
+        var at: Array = DiverProgression.NODES[i].pos
+        var offset = Vector2(at[0] - origin[0], at[1] - origin[1])
+        var along = offset.dot(direction)
+        var across = absf(offset.cross(direction))
+        if i == from or along <= 0.1 or across > along * 1.25: continue
+        var score = along + across * 2.0
+        if score < best_score:
+            best_score = score
+            best = i
+    return best
+
+func grid_state(i: int) -> String:
+    var id = DiverProgression.NODES[i].id
+    var skills = DiverProgression.owned(game.meta, workshop_character)
+    if id in skills: return "owned"
+    if not DiverProgression.reachable(skills, id): return "locked"
+    if int(game.meta.zenny) < DiverProgression.NODES[i].cost: return "short"
+    if game.profile_source == "account" and game.account.status != "Synced": return "syncing"
+    return "available"
+
+func grid_detail(entry: Dictionary) -> String:
+    match entry.id:
+        "salvage": return "Adds %s to this digger's drop pool." % game.ITEMS[DiverProgression.RESEARCH[workshop_character]].name
+        "ability": return DiverProgression.ABILITIES[workshop_character]
+        "ability2": return DiverProgression.ABILITIES_2[workshop_character]
+    return entry.desc
+
+func grid_icon(entry: Dictionary) -> String:
+    match entry.icon:
+        "research": return DiverProgression.RESEARCH[workshop_character]
+        "weapon": return ["pulse", "needle", "siege", "scrap"][workshop_character]
+    return entry.icon
+
+func buy_grid_node(i: int) -> void:
+    var entry = DiverProgression.NODES[i]
+    match grid_state(i):
+        "owned": workshop_message = "%s is already fitted." % entry.name
+        "locked": workshop_message = "Buy a linked circuit first to reach %s." % entry.name
+        "short": workshop_message = "%s needs %d more Zenny." % [entry.name, entry.cost - int(game.meta.zenny)]
+        "syncing": workshop_message = "Waiting for your account to sync before buying."
+        _:
+            if game.buy_skill(workshop_character, entry.id):
+                workshop_message = "Purchase queued. Waiting for server confirmation." if game.profile_source == "account" else "Fitted %s." % entry.name
+            else: workshop_message = "Purchase unavailable: check connection, Zenny and links."
+
+# The Workshop is three rows: digger headers, the circuit grid and the bottom
+# buttons. Inside the grid each direction moves to the nearest node that way;
+# leaving the grid's top or bottom reaches the other rows.
 func workshop_navigate(delta: int, horizontal: bool) -> void:
     var tabs: Array[int] = []
     var nodes: Array[int] = []
@@ -193,33 +276,36 @@ func workshop_navigate(delta: int, horizontal: bool) -> void:
     for i in hits.size():
         match hits[i].action:
             "tree_character": tabs.append(i)
-            "buy_skill": nodes.append(i)
+            "grid_node": nodes.append(i)
+            "grid_zoom", "grid_center": pass
             _: row.append(i)
     if tabs.is_empty() or nodes.is_empty() or row.is_empty(): return
     var primary = row[mini(1, row.size() - 1)]
+    var enter = func(node: int) -> void:
+        focus_index = nodes[node]
+        grid_reveal(node)
     if focus_index in tabs:
         if horizontal:
             # Preview the neighbouring digger without leaving the header row.
             workshop_character = wrapi(tabs.find(focus_index) + delta, 0, tabs.size())
             workshop_message = ""
             focus_index = tabs[workshop_character]
-        else: focus_index = nodes[workshop_first_node()] if delta > 0 else primary
+        elif delta > 0: enter.call(workshop_first_node())
+        else: focus_index = primary
     elif focus_index in nodes:
-        if horizontal: select_workshop_character(workshop_character + delta)
-        else:
-            var next = nodes.find(focus_index) + delta
-            focus_index = tabs[workshop_character] if next < 0 else primary if next >= nodes.size() else nodes[next]
+        var next = grid_step(nodes.find(focus_index), Vector2(delta, 0) if horizontal else Vector2(0, delta))
+        if next >= 0: enter.call(next)
+        elif not horizontal: focus_index = tabs[workshop_character] if delta < 0 else primary
     elif focus_index in row:
         if horizontal: focus_index = row[clampi(row.find(focus_index) + delta, 0, row.size() - 1)]
-        else: focus_index = nodes[nodes.size() - 1] if delta < 0 else tabs[workshop_character]
-    else: focus_index = nodes[workshop_first_node()]
-
-func workshop_label(entry: Dictionary, skills: Array, available: bool) -> String:
-    if entry.id in skills: return "Fitted"
-    if available: return "%d Z / Buy" % entry.cost
-    if (entry.requires != "" and entry.requires not in skills) or (entry.id == "mastery" and "ability" not in skills): return "%d Z / Locked" % entry.cost
-    if int(game.meta.zenny) < entry.cost: return "Need %d Z" % entry.cost
-    return "%d Z / Syncing" % entry.cost
+        elif delta < 0:
+            # Come back up into the bottom of the grid.
+            var lowest = 0
+            for i in DiverProgression.NODES.size():
+                if DiverProgression.NODES[i].pos[1] > DiverProgression.NODES[lowest].pos[1]: lowest = i
+            enter.call(lowest)
+        else: focus_index = tabs[workshop_character]
+    else: enter.call(workshop_first_node())
 
 func title_account_copy() -> Dictionary:
     var a = game.account
@@ -320,6 +406,9 @@ func button(pos: Vector2, size: Vector2, title: String, action: String, value: i
 func _input(event: InputEvent) -> void:
     if event is InputEventMouseMotion:
         pointer = (event.position - ui_offset) / ui_scale
+        if grid_dragging and game.mode == "workshop":
+            grid_center -= event.relative / ui_scale / (GRID_CELL * grid_zoom())
+            return
         if game.mode != "play":
             for i in hits.size():
                 if hits[i].rect.has_point(pointer):
@@ -328,7 +417,18 @@ func _input(event: InputEvent) -> void:
                     if hits[i].action == "inspect": selected_item = hits[i].value
                     if hits[i].action == "choice": choice_preview = hits[i].value
                     break
+    if event is InputEventMouseButton and not event.pressed and event.button_index == MOUSE_BUTTON_LEFT: grid_dragging = false
     if event is InputEventMouseButton and event.pressed and game.mode != "play":
+        var at = (event.position - ui_offset) / ui_scale
+        if game.mode == "workshop" and GRID_RECT.has_point(at) and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+            grid_zoom_by(1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else -1)
+            get_viewport().set_input_as_handled()
+            return
+        if game.mode == "workshop" and event.button_index == MOUSE_BUTTON_LEFT and GRID_RECT.has_point(at) and hits.all(func(hit): return not hit.rect.has_point(at)):
+            # Drag empty grid space to pan; nodes and buttons still click.
+            grid_dragging = true
+            get_viewport().set_input_as_handled()
+            return
         if event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN] and game.mode in ["inventory", "archive"]:
             select_part(-1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1)
             get_viewport().set_input_as_handled()
@@ -349,6 +449,11 @@ func _input(event: InputEvent) -> void:
     if event is InputEventJoypadMotion or not event.is_pressed() or event.is_echo(): return
     if not game.mode in MENU_MODES or editing(): return
     if event is InputEventMouseButton: return
+    if game.mode == "workshop" and ((event is InputEventKey and event.keycode == KEY_Z) or (event is InputEventJoypadButton and event.button_index == JOY_BUTTON_X)):
+        grid_zoom_by(1 if grid_zoom_step < GRID_ZOOMS.size() - 1 else -GRID_ZOOMS.size())
+        game.sound.play("menu_move")
+        get_viewport().set_input_as_handled()
+        return
     if game.mode == "workshop" and event is InputEventJoypadButton:
         if event.button_index in [JOY_BUTTON_LEFT_SHOULDER, JOY_BUTTON_RIGHT_SHOULDER]:
             select_workshop_character(workshop_character + (-1 if event.button_index == JOY_BUTTON_LEFT_SHOULDER else 1))
@@ -508,10 +613,11 @@ func activate(action: String, value: int = 0) -> void:
                 workshop_message = ""
             game.mode = "workshop"
         "tree_character": select_workshop_character(value)
-        "buy_skill":
-            var id = DiverProgression.NODES[value].id
-            var accepted = game.buy_skill(workshop_character, id)
-            workshop_message = ("Purchase queued. Waiting for server confirmation." if game.profile_source == "account" else "Purchased " + DiverProgression.NODES[value].name) if accepted else "Purchase unavailable: check connection, Zenny and prerequisites."
+        "grid_node": buy_grid_node(value)
+        "grid_zoom": grid_zoom_by(value)
+        "grid_center":
+            grid_zoom_step = 1
+            grid_recenter()
         "save_codes":
             game.mode = "save_codes"
             save_edit.text = ""
@@ -1476,7 +1582,6 @@ func draw_workshop() -> void:
     page_title("THE WORKSHOP", "Permanent circuits / Each digger has their own tree. Parts and levels reset each dig.")
     text_at(Vector2(1090, 232), "%d ZENNY" % game.meta.zenny, 30, YELLOW, true)
     if game.profile_source == "account": text_at(Vector2(64, 262), "%s / +%d pending" % [game.account.status, game.account.pending_zenny()], 21, CYAN)
-    text_at(Vector2(824, 262), "LB / RB: Digger   Up / Down: Skills" if pad() else "Left / Right: Digger   Up / Down: Skills", 20, MUTED, false, 552)
     var first_node = workshop_first_node() if workshop_focus_pending else -1
     if workshop_focus_pending: focus_index = -1
     for i in DiverCharacter.COUNT:
@@ -1488,27 +1593,120 @@ func draw_workshop() -> void:
         draw_texture_rect(portraits[i], Rect2(tab.position + Vector2(6, 4), Vector2(48, 54)), false)
         text_at(tab.position + Vector2(64, 41), DiverCharacter.DISPLAY_NAMES[i], 26, YELLOW if chosen else WHITE, false, 236)
         hits.append({"rect": tab, "action": "tree_character", "value": i})
-    window(Vector2(64, 366), Vector2(300, 414))
-    draw_texture_rect(portraits[workshop_character], Rect2(92, 388, 244, 282), false)
-    paragraph(Vector2(86, 712), DiverPlayer.ATTACK_DETAILS[workshop_character], 260, 23, CYAN, 3)
-    var skills = DiverProgression.owned(game.meta, workshop_character)
-    for i in DiverProgression.NODES.size():
-        var entry = DiverProgression.NODES[i]
-        var pos = Vector2(394, 366 + i * 82)
-        var owned = entry.id in skills
-        var available = DiverProgression.can_buy(game.meta, workshop_character, entry.id) and (game.profile_source == "guest" or game.account.status == "Synced")
-        window(pos, Vector2(982, 72), SELECT if owned else PANEL, GREEN if owned else EDGE, false)
-        text_at(pos + Vector2(18, 28), entry.name, 24, YELLOW if owned else WHITE, true)
-        var detail = DiverProgression.ABILITIES[workshop_character] if entry.id == "ability" else "Adds %s to this digger's drop pool." % game.ITEMS[DiverProgression.RESEARCH[workshop_character]].name if entry.id == "salvage" else entry.desc
-        text_at(pos + Vector2(18, 56), detail, 21, MUTED, false, 715)
-        var label = workshop_label(entry, skills, available)
-        if workshop_focus_pending and i == first_node: focus_index = hits.size()
-        button(pos + Vector2(748, 12), Vector2(216, 48), label, "buy_skill", i)
+    draw_grid(first_node)
     workshop_focus_pending = false
-    text_at(Vector2(394, 802), workshop_message if workshop_message != "" else "Frame > Mobility + Research > Signature Circuit > Master Mechanic", 22, CYAN)
+    var hint = "LB / RB: Digger   D-pad / Stick: Circuits   X: Zoom" if pad() else "C: Digger   Arrows: Circuits   Z / Wheel: Zoom   Drag: Pan"
+    text_at(Vector2(394, 812), workshop_message if workshop_message != "" else hint, 21, CYAN, false, 982)
     button(Vector2(64, 828), Vector2(300, 56), "Save Codes / Backup", "save_codes")
     button(Vector2(394, 828), Vector2(460, 56), "Return to Lobby" if game.net.active() else "Start Another Dig", "lobby_room" if game.net.active() else "start", 0, true)
     button(Vector2(884, 828), Vector2(492, 56), "Back", workshop_return)
+
+# Liang-Barsky: the part of a segment inside the grid frame, or [] if none.
+func clip_segment(a: Vector2, b: Vector2, box: Rect2) -> Array:
+    var t0 = 0.0
+    var t1 = 1.0
+    var d = b - a
+    for edge in [[-d.x, a.x - box.position.x], [d.x, box.end.x - a.x], [-d.y, a.y - box.position.y], [d.y, box.end.y - a.y]]:
+        if absf(edge[0]) < 1e-6:
+            if edge[1] < 0: return []
+            continue
+        var t = edge[1] / edge[0]
+        if edge[0] < 0: t0 = maxf(t0, t)
+        else: t1 = minf(t1, t)
+        if t0 > t1: return []
+    return [a + d * t0, a + d * t1]
+
+func octagon(center: Vector2, radius: float) -> PackedVector2Array:
+    var points = PackedVector2Array()
+    for k in 9: points.append(center + Vector2.from_angle(PI / 8 + k * TAU / 8) * radius)
+    return points
+
+func draw_grid(first_node: int) -> void:
+    var skills = DiverProgression.owned(game.meta, workshop_character)
+    var nodes = DiverProgression.NODES
+    window(GRID_RECT.position, GRID_RECT.size, INK, EDGE)
+    var zoom = grid_zoom()
+    # Faint machined backing lines every cell.
+    var spacing = GRID_CELL * zoom
+    var origin = GRID_RECT.get_center() - grid_center * spacing
+    # Resolve the entry focus (and any pan it needs) before drawing anything.
+    if workshop_focus_pending and first_node >= 0:
+        grid_reveal(first_node)
+        origin = GRID_RECT.get_center() - grid_center * spacing
+    for k in range(-14, 15):
+        var x = origin.x + k * spacing.x
+        var y = origin.y + k * spacing.y
+        if x > GRID_RECT.position.x + 4 and x < GRID_RECT.end.x - 4: draw_line(Vector2(x, GRID_RECT.position.y + 4), Vector2(x, GRID_RECT.end.y - 4), Color(0.45, 0.6, 0.95, 0.07), 1)
+        if y > GRID_RECT.position.y + 4 and y < GRID_RECT.end.y - 4: draw_line(Vector2(GRID_RECT.position.x + 4, y), Vector2(GRID_RECT.end.x - 4, y), Color(0.45, 0.6, 0.95, 0.07), 1)
+    var frame = GRID_RECT.grow(-6)
+    for link in DiverProgression.LINKS:
+        var a = -1
+        var b = -1
+        for i in nodes.size():
+            if nodes[i].id == link[0]: a = i
+            if nodes[i].id == link[1]: b = i
+        var both = link[0] in skills and link[1] in skills
+        var one = link[0] in skills or link[1] in skills
+        var segment = clip_segment(grid_point(a), grid_point(b), frame)
+        if segment.is_empty(): continue
+        draw_line(segment[0], segment[1], Color("0a1233"), (12 if both else 9) * zoom)
+        draw_line(segment[0], segment[1], GREEN if both else CYAN if one else Color(EDGE, 0.30), (6 if both else 4 if one else 3) * zoom)
+    var radius = 27.0 * zoom
+    var pulse = 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.006)
+    for i in nodes.size():
+        var entry = nodes[i]
+        if workshop_focus_pending and i == first_node: focus_index = hits.size()
+        var at = grid_point(i)
+        var state = grid_state(i)
+        var visible = frame.grow(-radius).has_point(at)
+        var area = Rect2(at - Vector2.ONE * (radius + 6), Vector2.ONE * (radius + 6) * 2)
+        var hot = focus_index == hits.size() or (visible and area.has_point(pointer))
+        hits.append({"rect": area if visible else Rect2(), "action": "grid_node", "value": i})
+        if not visible: continue
+        var fill = {"owned": SELECT, "available": PANEL, "short": PANEL, "syncing": PANEL, "locked": Color("0c1538")}[state]
+        var border = {"owned": GREEN, "available": YELLOW.lerp(WHITE, pulse * 0.5), "short": EDGE, "syncing": EDGE, "locked": Color(EDGE, 0.35)}[state]
+        if hot: draw_colored_polygon(octagon(at, radius + 8), Color(YELLOW, 0.35))
+        draw_colored_polygon(octagon(at, radius), fill)
+        draw_polyline(octagon(at, radius), YELLOW if hot else border, 3.5 if hot or state == "owned" else 2.5)
+        var side = radius * 1.25
+        icon(at - Vector2.ONE * side / 2, grid_icon(entry), side, Color(1, 1, 1, 0.38) if state == "locked" else Color.WHITE)
+        if state == "owned":
+            draw_colored_polygon(octagon(at + Vector2(radius * 0.72, radius * 0.72), 9 * zoom), GREEN)
+        elif zoom >= 1.0 or hot:
+            var price = "%d" % entry.cost
+            var color = YELLOW if state == "available" else ORANGE if state == "short" else MUTED
+            text_at(at + Vector2(-heading.get_string_size(price, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x / 2, radius + 19), price, 17, color, true)
+        if hot: cursor(at + Vector2(-radius - 34, -15), 28)
+    # Completion and view controls along the top of the frame.
+    var count = skills.size()
+    window(GRID_RECT.position + Vector2(10, 10), Vector2(170, 84), INK, Color(EDGE, 0.5), false)
+    text_at(GRID_RECT.position + Vector2(24, 38), "%s GRID" % DiverCharacter.SHORT_NAMES[workshop_character].to_upper(), 20, WHITE, true)
+    var bar = Rect2(GRID_RECT.position + Vector2(24, 48), Vector2(142, 10))
+    draw_rect(bar, Color("0c1538"))
+    draw_rect(Rect2(bar.position, Vector2(bar.size.x * count / nodes.size(), bar.size.y)), GREEN if count == nodes.size() else CYAN)
+    draw_rect(bar, EDGE, false, 1.5)
+    text_at(GRID_RECT.position + Vector2(24, 82), "%d / %d  ·  %d%%" % [count, nodes.size(), roundi(100.0 * count / nodes.size())], 19, MUTED)
+    small_button(GRID_RECT.position + Vector2(GRID_RECT.size.x - 214, 12), Vector2(40, 34), "−", "grid_zoom", -1)
+    small_button(GRID_RECT.position + Vector2(GRID_RECT.size.x - 168, 12), Vector2(40, 34), "+", "grid_zoom", 1)
+    small_button(GRID_RECT.position + Vector2(GRID_RECT.size.x - 122, 12), Vector2(108, 34), "Recenter", "grid_center")
+    # Details for the focused circuit (or the first useful one).
+    var shown = focus_index - DiverCharacter.COUNT
+    if shown < 0 or shown >= nodes.size(): shown = workshop_first_node()
+    var entry = nodes[shown]
+    var state = grid_state(shown)
+    window(Vector2(64, 366), Vector2(300, 414))
+    window(Vector2(82, 384), Vector2(72, 72), SELECT if state == "owned" else PANEL, GREEN if state == "owned" else EDGE, false)
+    icon(Vector2(86, 388), grid_icon(entry), 64, Color(1, 1, 1, 0.45) if state == "locked" else Color.WHITE)
+    paragraph(Vector2(168, 410), entry.name, 180, 23, YELLOW if state == "owned" else WHITE, 2)
+    var tag = {"owned": "FITTED", "available": "AVAILABLE", "short": "NEED ZENNY", "syncing": "SYNCING", "locked": "NOT LINKED"}[state]
+    badge(Vector2(82, 470), tag, 160, {"owned": GREEN, "available": YELLOW, "short": ORANGE, "syncing": CYAN, "locked": MUTED}[state])
+    text_at(Vector2(256, 493), "" if state == "owned" else "%d Z" % entry.cost, 22, YELLOW, true)
+    paragraph(Vector2(84, 534), grid_detail(entry), 262, 21, MUTED, 5)
+    var linked = []
+    for other in DiverProgression.neighbors(entry.id): linked.append(DiverProgression.node(other).name)
+    paragraph(Vector2(84, 668), "Links: " + ", ".join(linked), 262, 19, CYAN, 3)
+    var action = {"owned": "Already fitted.", "available": ("A" if pad() else "Enter / click") + ": buy", "short": "Earn Zenny in digs.", "syncing": "Waiting for sync.", "locked": "Buy a linked circuit first."}[state]
+    text_at(Vector2(84, 764), action, 20, YELLOW if state == "available" else MUTED, false, 262)
 
 func draw_save_codes() -> void:
     if waiting_for_paste:

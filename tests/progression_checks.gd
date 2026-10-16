@@ -68,8 +68,8 @@ func run() -> void:
 			bomb._physics_process(0.05)
 			verify(bomb.flight_velocity.y < before, "Bomb follows gravity")
 		game.mode = "workshop"
-		game.meta.zenny = 2000
-		verify(not game.buy_skill(character, "mastery"), "Mastery requires both branches")
+		game.meta.zenny = 4000
+		verify(not game.buy_skill(character, "mastery"), "Unlinked nodes cannot be bought")
 		for entry in DiverProgression.NODES:
 			var wallet = game.meta.zenny
 			verify(game.buy_skill(character, entry.id), "Valid node is purchased")
@@ -79,11 +79,15 @@ func run() -> void:
 		game.start_run(777)
 		p = game.player
 		p.set_physics_process(false)
-		verify(p.skills.size() == 5, "Purchased skills apply on next run")
+		verify(p.skills.size() == DiverProgression.NODES.size(), "The full grid applies on next run")
+		var bonus = DiverProgression.BONUS
+		verify(is_equal_approx(p.life_bonus(), bonus.frame * bonus.cell), "Frame and Reserve Cell both raise Life")
+		verify(is_equal_approx(p.damage(), p.base_damage * bonus.barrel), "Tuned Barrel raises damage")
+		verify(is_equal_approx(p.fire_delay(), [0.25, 0.13, 0.65, 0.75][p.weapon] / (p.fire_multiplier * bonus.mastery * bonus.loader)), "Mastery and Quick Loader both raise attack speed")
 		var build = game.build_state()
 		p.skills.clear()
 		game.apply_build(build)
-		verify(p.skills.size() == 5 and p.weapon == character, "Skills restore through co-op build format")
+		verify(p.skills.size() == DiverProgression.NODES.size() and p.weapon == character, "Skills restore through co-op build format")
 		verify(not game.buy_skill(character, "frame"), "Purchases blocked during a dig")
 	# Roll's support is decided on the downed player's client.
 	game.player.downed = true
@@ -120,6 +124,11 @@ func run() -> void:
 		verify(DiverProgression.validate(bad).is_empty(), "Negative counters refused")
 		bad[key] = "100"
 		verify(DiverProgression.validate(bad).is_empty(), "Wrong counter types refused")
+	# Profile 2 trees keep every purchase under the grid rules (no refunds, no losses).
+	var old_profile = {"version": 2, "zenny": 55, "trees": {"0": ["frame", "mobility", "salvage", "ability", "mastery"], "1": ["frame", "salvage"]}}
+	var migrated_grid = DiverProgression.validate(old_profile)
+	verify(migrated_grid.version == DiverProgression.VERSION and migrated_grid.zenny == 55 and migrated_grid.trees == old_profile.trees, "Old Workshop purchases carry into the grid unchanged")
+	verify(DiverProgression.validate({"version": 3, "trees": {"0": ["frame", "barrel"]}}).is_empty(), "Grid trees must stay connected")
 	var bad = game.meta.duplicate(true)
 	bad.trees = {"0": ["mastery"]}
 	verify(DiverProgression.validate(bad).is_empty(), "Invalid prerequisites refused")
@@ -148,19 +157,13 @@ func run() -> void:
 	game.hud.queue_redraw()
 	await process_frame
 	await process_frame
-	verify(game.mode == "workshop" and game.hud.hits.size() == 12, "Workshop provides diggers, nodes and navigation")
-	# Entry and digger switches focus a skill node, never the digger tabs.
 	var tabs = DiverCharacter.COUNT
+	var grid_count = DiverProgression.NODES.size()
+	verify(game.mode == "workshop" and game.hud.hits.size() == tabs + grid_count + 3 + 3, "Workshop provides diggers, grid nodes, view controls and navigation")
 	var first = game.hud.workshop_first_node()
 	verify(game.hud.focus_index == tabs + first, "Workshop entry focuses the first useful node")
 	verify(DiverProgression.can_buy(game.meta, game.hud.workshop_character, DiverProgression.NODES[first].id), "Focused node is affordable when one is")
 	var start_character = game.hud.workshop_character
-	game.hud.navigate(1, true)
-	game.hud.queue_redraw()
-	await process_frame
-	await process_frame
-	verify(game.hud.workshop_character == wrapi(start_character + 1, 0, tabs), "Right switches Workshop digger")
-	verify(game.hud.focus_index == tabs + game.hud.workshop_first_node(), "Switching digger refocuses its tree")
 	var shoulder = InputEventJoypadButton.new()
 	shoulder.button_index = JOY_BUTTON_LEFT_SHOULDER
 	shoulder.pressed = true
@@ -168,34 +171,54 @@ func run() -> void:
 	game.hud.queue_redraw()
 	await process_frame
 	await process_frame
-	verify(game.hud.workshop_character == start_character, "LB switches Workshop digger back")
-	# D-pad treats headers, skills and bottom buttons as separate rows.
-	var action_at = func() -> String: return game.hud.hits[game.hud.focus_index].action
-	await dpad(JOY_BUTTON_DPAD_UP)
-	verify(action_at.call() == "tree_character" and game.hud.focus_index == start_character, "Up from the top skill reaches the selected digger header")
-	await dpad(JOY_BUTTON_DPAD_RIGHT)
-	var previewed = wrapi(start_character + 1, 0, tabs)
-	verify(game.hud.workshop_character == previewed and game.hud.focus_index == previewed, "Right on headers moves to and shows the next digger")
-	await dpad(JOY_BUTTON_DPAD_DOWN)
-	verify(action_at.call() == "buy_skill" and game.hud.workshop_character == previewed, "Down from a header enters that digger's skills")
-	for i in DiverProgression.NODES.size() - (game.hud.focus_index - tabs): await dpad(JOY_BUTTON_DPAD_DOWN)
-	verify(action_at.call() == "start", "Down past the last skill reaches Start Another Dig")
-	await dpad(JOY_BUTTON_DPAD_LEFT)
-	verify(action_at.call() == "save_codes" and game.hud.workshop_character == previewed, "Left on the bottom row moves between buttons, not diggers")
-	await dpad(JOY_BUTTON_DPAD_UP)
-	verify(game.hud.focus_index == tabs + DiverProgression.NODES.size() - 1, "Up from the bottom row returns to the last skill")
-	await dpad(JOY_BUTTON_DPAD_DOWN)
-	await dpad(JOY_BUTTON_DPAD_DOWN)
-	verify(action_at.call() == "tree_character" and game.hud.focus_index == previewed, "Down from the bottom row wraps to the selected header")
+	verify(game.hud.workshop_character == wrapi(start_character - 1, 0, tabs), "LB switches Workshop digger")
+	verify(game.hud.focus_index == tabs + game.hud.workshop_first_node(), "Switching digger refocuses its grid")
 	game.hud.select_workshop_character(start_character)
+	game.hud.queue_redraw()
+	await process_frame
+	await process_frame
+	# Directional moves follow the grid layout from the start node.
+	var index_of = func(id: String) -> int:
+		for i in grid_count:
+			if DiverProgression.NODES[i].id == id: return i
+		return -1
+	var focused = func() -> String:
+		var hit = game.hud.hits[game.hud.focus_index]
+		return DiverProgression.NODES[hit.value].id if hit.action == "grid_node" else hit.action
+	game.hud.focus_index = tabs + index_of.call("frame")
+	var route = [[JOY_BUTTON_DPAD_RIGHT, "salvage"], [JOY_BUTTON_DPAD_LEFT, "frame"], [JOY_BUTTON_DPAD_LEFT, "mobility"], [JOY_BUTTON_DPAD_UP, "servos"], [JOY_BUTTON_DPAD_UP, "tree_character"], [JOY_BUTTON_DPAD_DOWN, "grid_node"]]
+	for step in route:
+		await dpad(step[0])
+		verify(focused.call() == step[1] or (step[1] == "grid_node" and game.hud.hits[game.hud.focus_index].action == "grid_node"), "D-pad reaches %s (got %s)" % [step[1], focused.call()])
+	game.hud.focus_index = tabs + index_of.call("frame")
+	for step in [[JOY_BUTTON_DPAD_DOWN, "mastery"], [JOY_BUTTON_DPAD_DOWN, "cell"], [JOY_BUTTON_DPAD_DOWN, "start"], [JOY_BUTTON_DPAD_LEFT, "save_codes"], [JOY_BUTTON_DPAD_UP, "loader"], [JOY_BUTTON_DPAD_RIGHT, "cell"]]:
+		await dpad(step[0])
+		verify(focused.call() == step[1], "D-pad reaches %s (got %s)" % [step[1], focused.call()])
+	verify(game.hud.workshop_character == start_character, "Moving around the grid never switches digger")
+	# Zoom keeps the focused node on screen; recenter restores the overview.
+	await dpad(JOY_BUTTON_X)
+	verify(game.hud.grid_zoom_step == 2 and game.hud.GRID_RECT.has_point(game.hud.grid_point(game.hud.focus_index - tabs)), "Zooming in keeps the focused node visible")
+	game.hud.activate("grid_center")
+	verify(game.hud.grid_zoom_step == 1 and game.hud.grid_center == Vector2(0, 1.25), "Recenter restores the overview")
+	# Accepting a node buys it only when it is linked and affordable.
 	var wallet = game.meta.zenny
+	var probe = 3 - start_character if start_character != 3 else 0
+	game.hud.select_workshop_character(probe)
+	game.meta.trees.erase(str(probe))
+	game.meta.zenny = 1000
+	game.hud.activate("grid_node", index_of.call("mobility"))
+	verify(not "mobility" in DiverProgression.owned(game.meta, probe) and game.hud.workshop_message.begins_with("Buy a linked"), "Unlinked node explains the missing link")
+	game.hud.activate("grid_node", index_of.call("frame"))
+	game.hud.activate("grid_node", index_of.call("mobility"))
+	verify(DiverProgression.owned(game.meta, probe) == ["frame", "mobility"] and game.meta.zenny == 760, "Linked nodes are bought from the grid")
 	game.meta.zenny = 0
 	game.hud.select_workshop_character(start_character)
 	game.hud.queue_redraw()
 	await process_frame
 	await process_frame
 	var fitted = DiverProgression.owned(game.meta, start_character)
-	verify(game.hud.focus_index >= tabs and not DiverProgression.NODES[game.hud.focus_index - tabs].id in fitted or fitted.size() == DiverProgression.NODES.size(), "Unaffordable tree focuses first unfitted node")
+	var shown = game.hud.focus_index - tabs
+	verify(shown >= 0 and shown < grid_count and (not DiverProgression.NODES[shown].id in fitted or fitted.size() == grid_count), "Unaffordable grid focuses the next unfitted node")
 	game.meta.zenny = wallet
 	# Title account copy ignores stale profile requests from an old generation.
 	var account = game.account

@@ -58,7 +58,8 @@ func _physics_process(dt: float) -> void:
 		game.beam_flash(global_position - direction.normalized() * (0.8 if heavy else 0.45), global_position, 0.04, DiverArt.GOLD if heavy else Color("8bf0dc"))
 
 func splash_radius() -> float:
-	return DiverProgression.BONUS.splash_radius if is_instance_valid(source) and source.character in [2, 3] and "ability" in source.skills else 3.5
+	if not is_instance_valid(source) or source.character not in [2, 3] or "ability" not in source.skills: return 3.5
+	return DiverProgression.BONUS.splash_radius_2 if "ability2" in source.skills else DiverProgression.BONUS.splash_radius
 
 func explode(origin: Vector3, collider: Object) -> void:
 	for enemy in game.enemies.duplicate():

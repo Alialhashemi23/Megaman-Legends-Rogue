@@ -16,7 +16,7 @@ func verify(ok: bool, label: String) -> void:
 
 func run() -> void:
 	var base = "https://game.example"
-	var release = {"versionCode": 10, "versionName": "0.18.0", "gameProtocol": 7, "minimumOnlineVersionCode": 2, "downloadUrl": base + "/downloads/android/", "bytes": 50000000, "sha256": "a".repeat(64), "signingFingerprint": "b".repeat(64), "notes": "New build"}
+	var release = {"versionCode": 10, "versionName": "0.18.0", "gameProtocol": DiverNet.NET_VERSION, "minimumOnlineVersionCode": 2, "downloadUrl": base + "/downloads/android/", "bytes": 50000000, "sha256": "a".repeat(64), "signingFingerprint": "b".repeat(64), "notes": "New build"}
 	verify(DiverAndroidUpdates.valid(release, base), "Valid release metadata")
 	for field in ["versionCode", "gameProtocol", "minimumOnlineVersionCode", "bytes"]:
 		for value in [0, -1, 1.5, "10", 2147483648]:

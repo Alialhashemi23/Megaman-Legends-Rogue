@@ -2,17 +2,32 @@ extends RefCounted
 class_name DiverProgression
 
 # One tuning table for every permanent purchase. Keys are scoped per digger.
-const VERSION = 2
-const BONUS = {"frame": 1.08, "mobility": 1.04, "mastery": 1.05, "pulse_interval": 5, "pulse_power": 1.6, "repair_life": 8.0, "repair_delay": 8.0, "splash_radius": 4.5}
+# Profile 3: the Workshop is a connected grid (polish P4). The five original
+# nodes keep their ids and effects; their links keep every v2 tree valid.
+const VERSION = 3
+const BONUS = {"frame": 1.08, "cell": 1.06, "mobility": 1.04, "mastery": 1.05, "loader": 1.05, "barrel": 1.06, "servos": 0.12, "plating": 0.2, "magnet": 1.4, "pulse_interval": 5, "pulse_interval_2": 4, "pulse_power": 1.6, "repair_life": 8.0, "repair_life_2": 12.0, "repair_delay": 8.0, "splash_radius": 4.5, "splash_radius_2": 5.2}
+# Every digger has their own grid with this layout. `pos` is in grid cells
+# (x right, y down). A node can be bought once any linked node is owned;
+# START is always buyable. Order lists a valid purchase sequence.
+const START = "frame"
 const NODES = [
-	{"id": "frame", "name": "Reinforced Frame", "cost": 100, "requires": "", "desc": "+8% base Life. Parts still reset each dig."},
-	{"id": "mobility", "name": "Lightweight Joints", "cost": 140, "requires": "frame", "desc": "+4% running speed."},
-	{"id": "salvage", "name": "Salvage Research", "cost": 180, "requires": "frame", "desc": "Add a signature part to this digger's drop pool early."},
-	{"id": "ability", "name": "Signature Circuit", "cost": 260, "requires": "salvage", "desc": "Develop this digger's signature ability."},
-	{"id": "mastery", "name": "Master Mechanic", "cost": 400, "requires": "mobility", "desc": "+5% attack speed. Requires Signature Circuit too."}
+	{"id": "frame", "name": "Reinforced Frame", "cost": 100, "pos": [0, 0], "icon": "heart", "desc": "+8% base Life. Parts still reset each dig."},
+	{"id": "mobility", "name": "Lightweight Joints", "cost": 140, "pos": [-2, 0], "icon": "boots", "desc": "+4% running speed."},
+	{"id": "salvage", "name": "Salvage Research", "cost": 180, "pos": [2, 0], "icon": "research", "desc": "Add a signature part to this digger's drop pool early."},
+	{"id": "plating", "name": "Shock Plating", "cost": 160, "pos": [0, -2], "icon": "shell", "desc": "Stay protected 0.2 s longer after taking a hit."},
+	{"id": "servos", "name": "Dash Servos", "cost": 200, "pos": [-2, -2], "icon": "dash", "desc": "Dash recharges 0.12 s sooner."},
+	{"id": "barrel", "name": "Tuned Barrel", "cost": 220, "pos": [2, -2], "icon": "lens", "desc": "+6% buster damage."},
+	{"id": "ability", "name": "Signature Circuit", "cost": 260, "pos": [2, 2], "icon": "weapon", "desc": "Develop this digger's signature ability."},
+	{"id": "magnet", "name": "Scrap Magnet", "cost": 220, "pos": [-2, 2], "icon": "cache", "desc": "Scrap and pickups drift to you from 40% farther away."},
+	{"id": "mastery", "name": "Master Mechanic", "cost": 400, "pos": [0, 2], "icon": "wrench", "desc": "+5% attack speed."},
+	{"id": "loader", "name": "Quick Loader", "cost": 340, "pos": [-2, 4], "icon": "spring", "desc": "+5% attack speed."},
+	{"id": "ability2", "name": "Signature Circuit II", "cost": 480, "pos": [2, 4], "icon": "weapon", "desc": "Strengthen this digger's signature ability."},
+	{"id": "cell", "name": "Reserve Cell", "cost": 420, "pos": [0, 4], "icon": "life", "desc": "+6% base Life."}
 ]
+const LINKS = [["frame", "mobility"], ["frame", "salvage"], ["frame", "plating"], ["plating", "servos"], ["plating", "barrel"], ["servos", "mobility"], ["barrel", "salvage"], ["mobility", "magnet"], ["salvage", "ability"], ["magnet", "mastery"], ["ability", "mastery"], ["magnet", "loader"], ["mastery", "cell"], ["ability", "ability2"], ["loader", "cell"], ["ability2", "cell"]]
 const RESEARCH = ["echo", "coil", "ember", "split"]
 const ABILITIES = ["Every fifth Pulse shot deals 60% more damage.", "Dashing repairs 8 Life, once every 8 seconds.", "Siege splash radius expands from 3.5 m to 4.5 m.", "Bomb blast radius expands from 3.5 m to 4.5 m."]
+const ABILITIES_2 = ["Every fourth Pulse shot is charged instead of every fifth.", "Dash repairs grow from 8 to 12 Life.", "Siege splash radius grows from 4.5 m to 5.2 m.", "Bomb blast radius grows from 4.5 m to 5.2 m."]
 const OLD_GATES = {"ember": 10, "coil": 10, "prism": 25, "echo": 25, "split": 50, "frost": 50, "clover": 50}
 
 static func fresh() -> Dictionary:
@@ -26,11 +41,41 @@ static func node(id: String) -> Dictionary:
 static func owned(meta: Dictionary, character: int) -> Array:
 	return meta.get("trees", {}).get(str(character), []).duplicate()
 
+static func neighbors(id: String) -> Array:
+	var result = []
+	for link in LINKS:
+		if link[0] == id: result.append(link[1])
+		elif link[1] == id: result.append(link[0])
+	return result
+
+# Reachable: the start node, or linked to something already owned.
+static func reachable(skills: Array, id: String) -> bool:
+	if id == START: return true
+	for other in neighbors(id):
+		if other in skills: return true
+	return false
+
+# A valid tree is empty, or a connected set of nodes containing the start.
+static func connected(skills: Array) -> bool:
+	if skills.is_empty(): return true
+	if START not in skills: return false
+	var seen = [START]
+	var queue = [START]
+	while not queue.is_empty():
+		for other in neighbors(queue.pop_front()):
+			if other in skills and other not in seen:
+				seen.append(other)
+				queue.append(other)
+	return seen.size() == skills.size()
+
 static func can_buy(meta: Dictionary, character: int, id: String) -> bool:
 	var entry = node(id)
 	if character < 0 or character >= 4 or entry.is_empty(): return false
 	var skills = owned(meta, character)
-	return id not in skills and int(meta.get("zenny", 0)) >= entry.cost and (entry.requires == "" or entry.requires in skills) and (id != "mastery" or "ability" in skills)
+	return id not in skills and int(meta.get("zenny", 0)) >= entry.cost and reachable(skills, id)
+
+static func completion(meta: Dictionary, character: int) -> float:
+	return float(owned(meta, character).size()) / NODES.size()
 
 static func reward(depth: int, guardians: int, scrap: int) -> int:
 	return clampi(depth, 1, 3) * 25 + clampi(guardians, 0, 3) * 60 + clampi(scrap, 0, 1000000) / 5
@@ -62,10 +107,7 @@ static func validate(data: Variant) -> Dictionary:
 		for id in trees[character]:
 			if not id is String or node(id).is_empty() or id in seen: return {}
 			seen.append(id)
-		for id in seen:
-			var entry = node(id)
-			if entry.requires != "" and entry.requires not in seen: return {}
-			if id == "mastery" and "ability" not in seen: return {}
+		if not connected(seen): return {}
 		result.trees[character] = seen
 	var legacy = data.get("legacy_unlocks", [])
 	if not legacy is Array or legacy.size() > OLD_GATES.size(): return {}

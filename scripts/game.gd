@@ -676,7 +676,9 @@ func update_world(dt: float) -> void:
 			if d < dist:
 				dist = d
 				collector = candidate
-		if collector and dist < (2.8 if p.kind == "relic" else 5.5):
+		var reach = 2.8 if p.kind == "relic" else 5.5
+		if collector and "magnet" in collector.skills: reach *= DiverProgression.BONUS.magnet
+		if collector and dist < reach:
 			p.node.position = p.node.position.move_toward(collector.position + Vector3.UP * 0.7, dt * 10)
 		else: p.node.position.y = p.base_y + sin(p.age * 3) * 0.10
 		if collector and dist < 1.2 and not net.is_guest():

@@ -104,7 +104,7 @@ Every dig starts at level one with no parts. Run levels, upgrades and fitted par
 
 **Zenny** is awarded once at the end of a dig: **25 × depth reached + 60 × guardians defeated + floor(leftover scrap / 5)**.
 
-**Workshop** (title or results screen): each digger has five nodes. Reinforced Frame (+8% base Life) opens Lightweight Joints (+4% speed) and Salvage Research (early access to a themed part); research opens the Signature Circuit (a character ability); Master Mechanic (+5% attack speed) needs both branches. Costs are 100 / 140 / 180 / 260 / 400 Zenny and take effect next dig.
+**Workshop** (title or results screen): each digger has their own 12-circuit grid. Reinforced Frame is the start; after that, buy any circuit linked to one you already own, so you choose the route while every circuit stays reachable. The grid has Lightweight Joints (+4% speed), Salvage Research (early access to a themed part), Shock Plating (+0.2 s protection after a hit), Dash Servos (dash recharges 0.12 s sooner), Tuned Barrel (+6% damage), Scrap Magnet (pickups drift from 40% farther), the Signature Circuit and Signature Circuit II (the digger's ability, then a stronger version), Master Mechanic and Quick Loader (+5% attack speed each) and Reserve Cell (+6% base Life). Costs run from 100 to 480 Zenny (3,120 for a full grid), and purchases take effect next dig. Use arrows / D-pad to move, Enter / A to buy, Z / X or the mouse wheel to zoom, and drag to pan; C / Y or LB / RB switch digger.
 
 **Part unlocks** come from lifetime machine kills:
 

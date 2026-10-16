@@ -1,5 +1,14 @@
 # Local build history
 
+## 26 — Polish P4 Workshop circuit grids
+
+- The Workshop list is now a connected 12-circuit grid per digger. Buy Reinforced Frame, then any circuit linked to one you own. Routes branch and rejoin, and every circuit is reachable, so each grid can reach 100%.
+- Seven new modest circuits: Shock Plating, Dash Servos, Tuned Barrel, Scrap Magnet, Quick Loader, Reserve Cell and Signature Circuit II (Mega: every fourth Pulse shot is charged; Roll: dash repairs 12 Life; Tron and Servbot: 5.2 m blasts). A full grid costs 3,120 Zenny. Prices and values are tuning proposals.
+- Old purchases carry over unchanged, with no refunds or charges. The original five circuits keep their ids and effects, and their links keep every earlier tree valid. Guest saves, save codes and account profiles all upgrade to profile 3.
+- The grid has owned/available/short/not-linked states, a details panel with links and cost, a completion bar, zoom and recenter buttons, mouse drag/wheel and keyboard/controller navigation. Arrows/D-pad move to the nearest circuit in that direction, and Up/Down at the edges reach the digger headers and the bottom buttons.
+- The account server applies the same grid rules to purchases (`server/accounts/rules.js`, checked against the game's copy by tests). Co-op protocol 8, so mixed old/new builds cannot share a lobby. Checkpoint format unchanged.
+- Checks: progression 260 (grid routes, purchases, migration, effects, zoom), UI 47, options 39, account 37, Android 49, character, combat, co-op 40, resume 24, audio 66, smoke/movement/persistence/combat; server 43 including account API purchases against PostgreSQL.
+
 ## 25 — Polish P3 music
 
 - All seven cues re-arranged around their unchanged melodies and chords. Each cue now builds through intro, full band, call-and-response and climax sections.

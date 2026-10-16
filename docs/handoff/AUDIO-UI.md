@@ -29,6 +29,18 @@ with a long name) and Workshop were rendered at 1440×900 and 960×600 with no
 overlaps. Not covered: real controllers and Retroid, or a live browser
 first-load session check.
 
+## Polish P4 Workshop grid UI — shipped in build 26 (2026-10-15)
+
+The skill list became a pannable/zoomable circuit grid (`draw_grid()`), with
+the details panel on the left and completion/zoom/recenter controls inside the
+frame. Rows are still headers / grid / bottom buttons. Inside the grid
+`grid_step()` picks the nearest node in the pressed direction (within a cone),
+falling through to the headers or bottom buttons at the top and bottom edges.
+LB/RB and C/Y switch digger; Z / controller X cycles zoom; the mouse wheel zooms;
+dragging empty grid space pans; hovering inspects; clicking or accepting buys.
+Off-screen nodes keep controller focus but have empty hit rectangles, so they
+never steal mouse hover. Rendered at 1440×900 and 960×600.
+
 ## Polish P3 music — shipped in build 25 (2026-10-15)
 
 The owner approved the re-arranged soundtrack after listening to before/after
