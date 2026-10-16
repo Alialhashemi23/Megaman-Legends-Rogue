@@ -3,7 +3,7 @@
 #   tools\package-android.ps1 -Release   release build, needs your own release keystore
 #   tools\package-android.ps1 -Emulator  x86_64 debug build for the Android emulator (not for devices)
 #
-# Toolchain (see docs/handoff/ANDROID.md): JDK 17, Android SDK with platform 35,
+# Toolchain (see the README's developer notes): JDK 17, Android SDK with platform 35,
 # build-tools 35.0.1, NDK 28.1.13356709 and CMake 3.10.2, plus Godot's 4.7.1
 # Android export templates. Signing keys and passwords never live in the repo:
 # they come from environment variables or the toolchain folder.
@@ -17,7 +17,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $jdk = Get-ChildItem -LiteralPath (Join-Path $Toolchain 'jdk') -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $jdk) { throw "No JDK 17 under $Toolchain\jdk. See docs/handoff/ANDROID.md." }
+if (-not $jdk) { throw "No JDK 17 under $Toolchain\jdk. Install it there or set RELIC_ANDROID_TOOLCHAIN." }
 $sdk = Join-Path $Toolchain 'sdk'
 foreach ($need in @('platform-tools\adb.exe', 'build-tools\35.0.1', 'platforms\android-35', 'ndk\28.1.13356709')) {
     if (-not (Test-Path -LiteralPath (Join-Path $sdk $need))) { throw "Android SDK is missing $need under $sdk." }
@@ -58,7 +58,7 @@ if ($Release) {
     }
     $mode = '--export-release'
 } else {
-    if (-not (Test-Path -LiteralPath $debugStore)) { throw "No debug keystore at $debugStore. Create one with keytool (docs/handoff/ANDROID.md)." }
+    if (-not (Test-Path -LiteralPath $debugStore)) { throw "No debug keystore at $debugStore. Create one with keytool (alias androiddebugkey, password android)." }
     $env:GODOT_ANDROID_KEYSTORE_DEBUG_PATH = $debugStore
     $env:GODOT_ANDROID_KEYSTORE_DEBUG_USER = 'androiddebugkey'
     $env:GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD = 'android'

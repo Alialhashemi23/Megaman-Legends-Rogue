@@ -52,14 +52,14 @@ Pass 11 (user request): controller support for play and menus, a basic Options m
 
 This is a playable prototype with a complete run loop, not a finished game. Authored story, a surface hub, environmental puzzles, extensive vertical traversal and unique boss meshes are not implemented. Their exact designs have not been approved. Do not claim them as complete or invent requirements for them.
 
-The next priorities should follow human playtesting: movement feel, camera visibility, target readability, useful drops, exploration density, guardian fairness and sound balance. Preserve the direction above when changing implementation. See docs/handoff/PLAYTEST-ROADMAP.md for a practical review order.
+The next priorities should follow human playtesting: movement feel, camera visibility, target readability, useful drops, exploration density, guardian fairness and sound balance. Preserve the direction above when changing implementation.
 
-## Planned account progress, admin and Android support (2026-10-14)
+## Account progress, admin and Android support
 
 The user wants account logins so permanent records, unlocks, Zenny and Workshop purchases follow the player across machines, a read-only owner dashboard for user/login/game statistics, and a native Android APK for Retroid Pocket 5 with browser/Windows cross-play, shared account progress and startup update checks. Preserve run-reset rules and Legends presentation on every platform. Collect limited operational/game metadata, not advertising analytics or device fingerprints.
 
-These features are planned, not implemented. Confirmed choices: self-hosted Node + PostgreSQL + Better Auth on Ubuntu initially, email/password with open registration, online account run starts/purchases and retry after disconnect, separate offline guests, read-only admin powers and browser-download APK updates. Permanent progress remains separate from active-dig checkpoints; solo mid-run saving stays omitted. Co-op also gains a party-shared map, deferred cache choices and chest icons. Requirements, phase order and acceptance criteria are in [docs/handoff/ROADMAP.md](docs/handoff/ROADMAP.md).
+These are implemented. Choices made: self-hosted Node + PostgreSQL + Better Auth on Ubuntu initially, email/password with open registration, online account run starts/purchases and retry after disconnect, separate offline guests, read-only admin powers and browser-download APK updates. Permanent progress remains separate from active-dig checkpoints; solo mid-run saving stays omitted. Co-op also gains a party-shared map, deferred cache choices and chest icons.
 
 ## Repository and distribution intent
 
-The user initially requested local-only work, then explicitly authorized committing this project and its handoff documents to https://github.com/Alialhashemi23/Megaman-Legends-Rogue. That authorization covers this repository. The user then requested browser play with online co-op on their own domain, published from their machines through a Cloudflare Tunnel; the project ships the server and deployment files, and the user runs the deployment. It still does not request public releases, monetization or uploading personal saves; keep the site non-commercial. Preserve attribution and the distinction between original project work and Capcom assets.
+The repository https://github.com/Alialhashemi23/Megaman-Legends-Rogue is public and open source (MIT for original work; Capcom assets excluded). Browser play with online co-op runs on the maintainer's own domain through a Cloudflare Tunnel, and Android builds are published as GitHub Releases. The project is non-commercial: no monetization, and never upload personal saves. Preserve attribution and the distinction between original project work and Capcom assets.

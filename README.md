@@ -158,23 +158,35 @@ Sound (Master, Music, Effects, Ambience), display (fullscreen, camera motion, fi
 
 ## For developers
 
-- Game direction: [DESIGN.md](DESIGN.md). Current status and how to work on the project: [HANDOFF.md](HANDOFF.md), then the relevant [subsystem handoff](docs/handoff/README.md). Upcoming features: [docs/handoff/ROADMAP.md](docs/handoff/ROADMAP.md).
-- Architecture, file responsibilities, tuning knobs, test suites and export commands: [docs/handoff/TECHNICAL.md](docs/handoff/TECHNICAL.md). Latest validation: [docs/FEATURE-REPORT.md](docs/FEATURE-REPORT.md).
-- Build history: [CHANGELOG.md](CHANGELOG.md).
-- Repository: https://github.com/Alialhashemi23/Megaman-Legends-Rogue. Personal saves, import caches, local backups and raw video captures are ignored by Git. No public release is configured.
+- Game direction: [DESIGN.md](DESIGN.md). Build history: [CHANGELOG.md](CHANGELOG.md). Latest validation notes: [docs/FEATURE-REPORT.md](docs/FEATURE-REPORT.md).
+- Hosting and accounts: [docs/ONLINE.md](docs/ONLINE.md), [docs/ACCOUNTS-OPS.md](docs/ACCOUNTS-OPS.md), API contract [docs/ACCOUNT-API.md](docs/ACCOUNT-API.md), Android updates [docs/ANDROID-UPDATES.md](docs/ANDROID-UPDATES.md).
+- Layout: `scripts/` holds the game (`game.gd` run loop and online play, `player.gd`, `character.gd` animation and aim, `enemy.gd`, `ruins.gd` generation, `hud.gd` menus, `account.gd` sign-in and sync, `net.gd` co-op, `progression.gd` Workshop grids). `server/` is the Node lobby relay, static host and account API (Better Auth + PostgreSQL). `tools/model-sources/build_characters.py` converts the character sources and authors their animation clips; `tools/audio/` composes and renders the music. `tests/` holds the check scripts.
+- Engine: Godot 4.7.1. On Windows, `tools/setup-runtime.ps1` (run by Play.cmd) restores the pinned console engine from `build/RelicDiver-Windows.zip`. After changing assets, run `--headless --editor --path . --import` once.
+- Personal saves, `.env`, keys, databases, backups, raw captures and local development notes are ignored by Git.
 
-Quick checks with the console engine (they don't touch your profile):
+Checks with the console engine (they never touch your own profile):
 
 ```powershell
-.\tools\Godot_v4.7.1-stable_win64_console.exe --headless --path . -- --smoke-test
-.\tools\Godot_v4.7.1-stable_win64_console.exe --headless --path . -- --combat-test
-.\tools\Godot_v4.7.1-stable_win64_console.exe --headless --path . -- --movement-test
-.\tools\Godot_v4.7.1-stable_win64_console.exe --headless --path . --script res://tests/combat_checks.gd
+$env:APPDATA = Join-Path (Get-Location) 'tools/runtime'; $env:LOCALAPPDATA = $env:APPDATA
+.\tools\Godot_v4.7.1-stable_win64_console.exe --headless --path . -- --smoke-test        # whole loop (also --combat-test, --movement-test, --persistence-test)
+.\tools\Godot_v4.7.1-stable_win64_console.exe --headless --path . --script tests/character_checks.gd
 ```
+
+| Area | Checks |
+|---|---|
+| Characters, motion, aim | `tests/character_checks.gd` |
+| Combat | `tests/combat_checks.gd`, `--combat-test` |
+| UI, options | `tests/ui_checks.gd`, `tests/options_checks.gd` |
+| Progression, Workshop, milestones | `tests/progression_checks.gd`, `tests/milestone_checks.gd` |
+| Accounts | `tests/account_checks.gd`; `tests/account_e2e.mjs` with `TEST_DATABASE_URL`, `GODOT` and optionally `PLAYWRIGHT_MODULE` |
+| Online co-op, checkpoints | `tests/run_resume_checks.gd`, `tests/coop_feedback_checks.gd`, `tests/net_test.sh <godot>`, `server/` `npm test` |
+| Android | `tests/android_checks.gd` |
+
+Builds: `tools/package-web.ps1` (browser bundle), `--export-pack 'Windows Desktop' build/RelicDiver.pck` then `tools/package-windows.ps1` (portable ZIP), `tools/package-android.ps1` (APK; `-Release` with your own keystore via `GODOT_ANDROID_KEYSTORE_RELEASE_PATH/USER/PASSWORD`). Run the packaging scripts with your normal `%APPDATA%`, where Godot's export templates live.
 
 ## Prototype scope
 
-A playable prototype with a complete start-to-extraction loop, not a finished game. There is no authored story or surface hub, guardians share a base silhouette, and balance needs human playtesting. See [PLAYTEST-ROADMAP.md](docs/handoff/PLAYTEST-ROADMAP.md).
+A playable prototype with a complete start-to-extraction loop, not a finished game. There is no authored story or surface hub, guardians share a base silhouette, and balance needs human playtesting.
 
 ## Credits and licensing
 

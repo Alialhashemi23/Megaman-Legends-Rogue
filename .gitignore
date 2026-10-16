@@ -67,3 +67,24 @@ Thumbs.db
 
 # Third-party reference screenshot is not a project asset.
 /screenshots/ui-reference.png
+
+# Local development notes, AI handoffs and owner-dashboard captures stay on the
+# maintainer's machine; the public repository keeps README, DESIGN and docs/*.md.
+/AGENTS.md
+/CLAUDE.md
+/HANDOFF.md
+/docs/handoff/
+/screenshots/admin-*.png
+
+# Databases, dumps and backups (encrypted or not) never belong in the repository.
+*.sql
+*.sql.gz
+*.dump
+*.db
+*.sqlite
+*.sqlite3
+*.enc
+/pgdata/
+/postgres-data/
+/server/backups/
+/RelicDiver-Account-Backups/
