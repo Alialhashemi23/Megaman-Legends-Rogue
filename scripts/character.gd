@@ -11,6 +11,11 @@ const BUSTER_COLORS = [Color("235acb"), Color("c73350"), Color("b02a86"), Color(
 const BUSTER_TINTS = [Color.WHITE, Color("ffb1ab"), Color("ffa3e0"), Color("c9d2ff")]
 const BUSTER_SCALES = [1.0, 1.0, 1.0, 0.62]
 const LOCOMOTION = ["run", "backpedal", "strafe_left", "strafe_right"]
+# One-shot dash clips: onset crouch, travel lean, then a plant and settle that
+# play out after the 0.19 s dash unless the digger runs, jumps or is hit.
+const DASH_CLIPS = ["dash", "dash_back", "dash_left", "dash_right"]
+const DASH_TRAVEL = 0.19
+const DASH_PLANT = 0.24
 var character = 0
 var model: Node3D
 var skeleton: Skeleton3D
@@ -28,6 +33,10 @@ var joints: Dictionary = {}
 var barrel_material: StandardMaterial3D
 var equipped_weapon = -1
 var foot_contact = false
+var dash_clip = "dash"
+var dash_elapsed = -1.0
+var was_dashing = false
+var dash_started = false
 
 func _ready() -> void:
 	character = clampi(character, 0, COUNT - 1)
@@ -38,7 +47,7 @@ func _ready() -> void:
 	assert(skeleton != null and animator != null, "Character requires its imported skin and animation player")
 	for i in skeleton.get_bone_count(): joints[skeleton.get_bone_name(i)] = i
 	animator.callback_mode_process = 2 # Manual: advance, then layer buster aiming.
-	for clip in ["idle", "run", "backpedal", "strafe_left", "strafe_right", "fall", "dash"]:
+	for clip in ["idle", "run", "backpedal", "strafe_left", "strafe_right", "fall"]:
 		animator.get_animation(clip).loop_mode = Animation.LOOP_LINEAR
 	for mesh in model.find_children("*", "MeshInstance3D", true, false):
 		for surface in mesh.mesh.get_surface_count():
@@ -77,31 +86,47 @@ func equip(index: int) -> void:
 	barrel_material.albedo_color = [Color("ffdd65"), Color("b5f3ad"), Color("ffbb65")][clampi(index, 0, 2)]
 	barrel_material.emission = barrel_material.albedo_color
 
-func select_clip(clip: String, immediate: bool = false) -> void:
+func select_clip(clip: String, immediate: bool = false, blend: float = 0.12) -> void:
 	if current_clip == clip: return
 	var preserve_step = not immediate and current_clip in LOCOMOTION and clip in LOCOMOTION
 	var phase = 0.0
 	if preserve_step:
 		phase = fposmod(animator.current_animation_position / animator.current_animation_length, 1.0)
 	current_clip = clip
-	animator.play(clip, 0.0 if immediate else 0.12)
+	animator.play(clip, 0.0 if immediate else blend)
 	if preserve_step:
 		animator.seek(phase * animator.get_animation(clip).length)
 
-func animate(dt: float, move: Vector2, grounded: bool, rising: float, dash: bool, aiming: bool, aim_pitch: float, recoil: float, speed_ratio: float = 1.0) -> void:
+# dash_direction is the dash's travel direction relative to facing (x right, y back).
+func animate(dt: float, move: Vector2, grounded: bool, rising: float, dash: bool, aiming: bool, aim_pitch: float, recoil: float, speed_ratio: float = 1.0, dash_direction: Vector2 = Vector2(0, -1)) -> void:
 	foot_contact = false
 	hurt_time = maxf(0, hurt_time - dt)
 	shot_time = maxf(0, shot_time - dt)
 	if grounded: jump_elapsed = 0
 	else: jump_elapsed += dt
+	dash_started = dash and not was_dashing
+	was_dashing = dash
+	var dash_before = dash_elapsed
+	if dash_started:
+		dash_elapsed = 0.0
+		dash_clip = dash_clip_for(dash_direction)
+		# Restart from the onset with a near-instant blend, even when repeating a clip.
+		current_clip = dash_clip
+		animator.play(dash_clip, 0.04)
+		animator.seek(0.0)
+	elif dash_elapsed >= 0: dash_elapsed += dt
+	# The recovery plays on the ground; running on cuts it after the foot plants.
+	var recovering = not dash and dash_elapsed >= 0 and dash_elapsed < animator.get_animation(dash_clip).length 		and grounded and hurt_time <= 0 and not (move.length() > 0.1 and dash_elapsed > DASH_TRAVEL + 0.07)
+	if not dash and not recovering: dash_elapsed = -1.0
+	elif grounded and dash_before < DASH_PLANT and dash_elapsed >= DASH_PLANT: foot_contact = true
 	var clip = "idle"
-	if dash: clip = "dash"
+	if dash or recovering: clip = dash_clip
 	elif not grounded: clip = "jump" if rising > 0 and jump_elapsed < 0.35 else "fall"
 	elif hurt_time > 0: clip = "hurt"
 	elif move.length() > 0.1:
 		clip = "strafe_left" if move.x < -0.4 and absf(move.x) > absf(move.y) else "strafe_right" if move.x > 0.4 and absf(move.x) > absf(move.y) else "backpedal" if move.y > 0.1 else "run"
 	elif shot_time > 0: clip = "fire"
-	select_clip(clip)
+	select_clip(clip, false, 0.14 if current_clip in DASH_CLIPS else 0.12)
 	animation_speed = speed_ratio if clip in LOCOMOTION else 1.0
 	var before = animator.current_animation_position
 	animator.advance(dt * animation_speed)
@@ -110,6 +135,10 @@ func animate(dt: float, move: Vector2, grounded: bool, rising: float, dash: bool
 		var after = animator.current_animation_position
 		foot_contact = after < before or (before < length * .5 and after >= length * .5)
 	layer_aim(dt, aiming, aim_pitch, recoil)
+
+func dash_clip_for(direction: Vector2) -> String:
+	if absf(direction.x) > absf(direction.y): return "dash_right" if direction.x > 0 else "dash_left"
+	return "dash_back" if direction.y > 0 else "dash"
 
 func layer_aim(dt: float, aiming: bool, aim_pitch: float, recoil: float) -> void:
 	arm_weight = move_toward(arm_weight, 1.0 if aiming or shot_time > 0 else 0.0, dt * 8)

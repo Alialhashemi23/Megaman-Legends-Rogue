@@ -27,7 +27,8 @@ TRON_NAMES = {**{k:v for k,v in NAMES.items() if k not in ("Bone016","Bone018")}
 SERVBOT_NAMES = {"Bone000":"Hips", "Bone001":"Head", "Bone006":"Face", "Bone002":"LeftUpperArm",
                  "Bone003":"RightUpperArm", "Bone004":"LeftUpperLeg", "Bone005":"RightUpperLeg"}
 CLIPS = {"idle":2.8,"run":.48,"backpedal":.56,"strafe_left":.56,"strafe_right":.56,
-         "jump":.6,"fall":.7,"dash":.32,"hurt":.32,"fire":.18,"victory":2.0,"defeat":.8}
+         "jump":.6,"fall":.7,"dash":.36,"dash_back":.36,"dash_left":.36,"dash_right":.36,
+         "hurt":.32,"fire":.18,"victory":2.0,"defeat":.8}
 
 def quat(x=0,y=0,z=0):
     # Intrinsic XYZ rotations, encoded as glTF xyzw quaternions.
@@ -56,6 +57,91 @@ def cycle_curve(keys, phase):
 HIP_KEYS=[(0,.61),(.12,.32),(.28,-.30),(.40,-.62),(.55,-.44),(.70,.17),(.84,.69),(1,.61)]
 KNEE_KEYS=[(0,-.16),(.12,-.32),(.28,-.18),(.40,-.22),(.55,-.95),(.70,-1.10),(.84,-.60),(1,-.16)]
 SOLE_KEYS=[(0,.12),(.12,0),(.28,-.04),(.40,-.26),(.55,-.40),(.70,-.26),(.84,.04),(1,.12)]
+
+# Dash key poses. Axes: the diggers face -Z, so +X on Hips leans the torso back and
+# +X on a leg swings it forward. +Z swings a hanging limb toward the digger's right
+# (+X) and tips the upright torso toward its left.
+# Hips carries the torso, arms and head; Pelvis carries the legs.
+# Phases: onset crouch (.10), travel (.24-.50, the 0.19 s dash), plant (.66), settle.
+DASH_FORWARD={
+    "onset":{"Hips":(-.22,0,0),"Pelvis":(.10,0,0),"Head":(.15,0,0),
+             "LeftUpperLeg":(.45,0,-.04),"LeftLowerLeg":(-.75,0,0),"LeftFoot":(.30,0,0),
+             "RightUpperLeg":(-.20,0,.04),"RightLowerLeg":(-.55,0,0),"RightFoot":(.40,0,0),
+             "LeftUpperArm":(-.25,0,-.10),"LeftForeArm":(.30,0,0),"RightUpperArm":(-.35,0,.12),"RightForeArm":(.30,0,0)},
+    "travel":{"Hips":(-.50,0,0),"Pelvis":(.18,0,0),"Head":(.38,0,0),
+              "LeftUpperLeg":(.95,0,-.04),"LeftLowerLeg":(-1.30,0,0),"LeftFoot":(.45,0,0),
+              "RightUpperLeg":(-.55,0,.05),"RightLowerLeg":(-.70,0,0),"RightFoot":(.55,0,0),
+              "LeftUpperArm":(-.70,0,-.22),"LeftForeArm":(.40,0,0),"RightUpperArm":(-.95,0,.28),"RightForeArm":(.45,0,0)},
+    "glide":{"Hips":(-.45,0,0),"Pelvis":(.16,0,0),"Head":(.34,0,0),
+             "LeftUpperLeg":(.85,0,-.04),"LeftLowerLeg":(-1.15,0,0),"LeftFoot":(.40,0,0),
+             "RightUpperLeg":(-.62,0,.05),"RightLowerLeg":(-.62,0,0),"RightFoot":(.55,0,0),
+             "LeftUpperArm":(-.75,0,-.24),"LeftForeArm":(.42,0,0),"RightUpperArm":(-1.00,0,.30),"RightForeArm":(.45,0,0)},
+    "plant":{"Hips":(.10,0,0),"Pelvis":(-.02,0,0),"Head":(-.08,0,0),
+             "LeftUpperLeg":(.40,0,-.04),"LeftLowerLeg":(-.45,0,0),"LeftFoot":(0,0,0),
+             "RightUpperLeg":(-.30,0,.04),"RightLowerLeg":(-.50,0,0),"RightFoot":(.30,0,0),
+             "LeftUpperArm":(.20,0,-.15),"LeftForeArm":(.30,0,0),"RightUpperArm":(.30,0,.20),"RightForeArm":(.40,0,0)}}
+DASH_BACK={
+    "onset":{"Hips":(-.10,0,0),"Pelvis":(.05,0,0),"Head":(.08,0,0),
+             "LeftUpperLeg":(.30,0,-.04),"LeftLowerLeg":(-.70,0,0),"LeftFoot":(.40,0,0),
+             "RightUpperLeg":(.05,0,.04),"RightLowerLeg":(-.65,0,0),"RightFoot":(.45,0,0),
+             "LeftUpperArm":(.30,0,-.12),"LeftForeArm":(.35,0,0),"RightUpperArm":(.35,0,.12),"RightForeArm":(.35,0,0)},
+    "travel":{"Hips":(.32,0,0),"Pelvis":(-.12,0,0),"Head":(-.28,0,0),
+              "LeftUpperLeg":(.55,0,-.05),"LeftLowerLeg":(-1.00,0,0),"LeftFoot":(.30,0,0),
+              "RightUpperLeg":(-.70,0,.05),"RightLowerLeg":(-.30,0,0),"RightFoot":(.30,0,0),
+              "LeftUpperArm":(.40,0,-.22),"LeftForeArm":(.45,0,0),"RightUpperArm":(.55,0,.25),"RightForeArm":(.55,0,0)},
+    "glide":{"Hips":(.28,0,0),"Pelvis":(-.10,0,0),"Head":(-.25,0,0),
+             "LeftUpperLeg":(.50,0,-.05),"LeftLowerLeg":(-.95,0,0),"LeftFoot":(.30,0,0),
+             "RightUpperLeg":(-.75,0,.05),"RightLowerLeg":(-.25,0,0),"RightFoot":(.35,0,0),
+             "LeftUpperArm":(.42,0,-.24),"LeftForeArm":(.45,0,0),"RightUpperArm":(.58,0,.27),"RightForeArm":(.55,0,0)},
+    "plant":{"Hips":(-.10,0,0),"Pelvis":(.05,0,0),"Head":(.10,0,0),
+             "LeftUpperLeg":(.25,0,-.04),"LeftLowerLeg":(-.40,0,0),"LeftFoot":(.20,0,0),
+             "RightUpperLeg":(-.35,0,.04),"RightLowerLeg":(-.40,0,0),"RightFoot":(.55,0,0),
+             "LeftUpperArm":(.30,0,-.14),"LeftForeArm":(.30,0,0),"RightUpperArm":(.35,0,.15),"RightForeArm":(.35,0,0)}}
+DASH_RIGHT={
+    "onset":{"Hips":(-.10,0,.10),"Pelvis":(.05,0,-.06),"Head":(.06,0,-.05),
+             "LeftUpperLeg":(.10,0,-.18),"LeftLowerLeg":(-.55,0,0),"LeftFoot":(.35,0,.12),
+             "RightUpperLeg":(.15,0,.10),"RightLowerLeg":(-.45,0,0),"RightFoot":(.25,0,0),
+             "LeftUpperArm":(.10,0,-.15),"LeftForeArm":(.25,0,0),"RightUpperArm":(.10,0,.30),"RightForeArm":(.25,0,0)},
+    "travel":{"Hips":(-.12,-.10,-.42),"Pelvis":(.06,0,.22),"Head":(.10,0,.30),
+              "LeftUpperLeg":(-.05,0,-.35),"LeftLowerLeg":(-.30,0,0),"LeftFoot":(.30,0,.45),
+              "RightUpperLeg":(.25,0,.85),"RightLowerLeg":(-.55,0,0),"RightFoot":(.20,0,-.55),
+              "LeftUpperArm":(.10,0,-.55),"LeftForeArm":(.30,0,0),"RightUpperArm":(.10,0,.75),"RightForeArm":(.35,0,0)},
+    "glide":{"Hips":(-.10,-.08,-.38),"Pelvis":(.05,0,.20),"Head":(.09,0,.27),
+             "LeftUpperLeg":(-.05,0,-.40),"LeftLowerLeg":(-.25,0,0),"LeftFoot":(.28,0,.48),
+             "RightUpperLeg":(.22,0,.80),"RightLowerLeg":(-.50,0,0),"RightFoot":(.20,0,-.52),
+             "LeftUpperArm":(.10,0,-.60),"LeftForeArm":(.30,0,0),"RightUpperArm":(.10,0,.70),"RightForeArm":(.35,0,0)},
+    "plant":{"Hips":(.02,0,.08),"Pelvis":(0,0,-.04),"Head":(0,0,-.05),
+             "LeftUpperLeg":(.05,0,-.10),"LeftLowerLeg":(-.30,0,0),"LeftFoot":(.20,0,.08),
+             "RightUpperLeg":(.10,0,.32),"RightLowerLeg":(-.45,0,0),"RightFoot":(.25,0,-.30),
+             "LeftUpperArm":(.10,0,-.20),"LeftForeArm":(.25,0,0),"RightUpperArm":(.10,0,.30),"RightForeArm":(.30,0,0)}}
+
+def mirror(keyed):
+    """Reflect a pose across the character's centre line (swap sides, negate Y/Z turns)."""
+    swap=lambda name:name.replace("Left","#").replace("Right","Left").replace("#","Right")
+    return {stage:{swap(name):(x,-y,-z) for name,(x,y,z) in bones.items()} for stage,bones in keyed.items()}
+
+DASH_KEYS={"dash":DASH_FORWARD,"dash_back":DASH_BACK,"dash_right":DASH_RIGHT,"dash_left":mirror(DASH_RIGHT)}
+
+def mix(a,b,s):
+    return {n:tuple(x+(y-x)*s for x,y in zip(a.get(n,(0,0,0)),b.get(n,(0,0,0)))) for n in set(a)|set(b)}
+
+def dash_pose(clip, phase, neutral, style):
+    stages=DASH_KEYS[clip]
+    keys=[(0,neutral),(.10,stages["onset"]),(.24,stages["travel"]),(.50,stages["glide"]),
+          (.66,stages["plant"]),(.82,mix(stages["plant"],neutral,.62)),(1,neutral)]
+    for (t0,p0),(t1,p1) in zip(keys,keys[1:]):
+        if phase<=t1:
+            s=(phase-t0)/(t1-t0)
+            q=mix(p0,p1,s*s*(3-2*s))
+            break
+    if style=="servbot":
+        # No pelvis, knees or feet: legs hang from Hips, so fold the pelvis turn into
+        # the stubby legs; the whole block tilts further so the dash still reads.
+        pelvis=q.get("Pelvis",(0,0,0))
+        q["Hips"]=tuple(v*1.25 for v in q["Hips"])
+        for side in ("Left","Right"):
+            q[side+"UpperLeg"]=tuple((v+p)*.8 for v,p in zip(q.get(side+"UpperLeg",(0,0,0)),pelvis))
+    return q
 
 def pose(clip, phase, style="volnutt"):
     a = phase * math.tau
@@ -113,15 +199,10 @@ def pose(clip, phase, style="volnutt"):
         q["Hips"]=(.06*lift,0,0)
         q["RightForeArm"]=(.35*lift,0,0)
         q["LeftForeArm"]=(.25*lift,0,0)
-    elif clip=="dash":
-        q["Hips"]=(.45,0,0)
-        q["Pelvis"]=(-.15,0,0)
-        q["LeftUpperLeg"]=(.7,0,0)
-        q["RightUpperLeg"]=(-.5,0,0)
-        q["LeftLowerLeg"]=(-.95,0,0)
-        q["RightLowerLeg"]=(-.35,0,0)
-        q["RightUpperArm"]=(-.65,0,.08)
-        q["Head"]=(-.22,0,0)
+    elif clip in DASH_KEYS:
+        # One-shot: starts and ends on idle's first frame so it hands back cleanly.
+        neutral=pose("idle",0,style)[0]
+        q.update(dash_pose(clip,phase,neutral,style))
     elif clip=="hurt":
         hit=math.sin(math.pi*phase)*(1-phase)
         q["Hips"]=(-.30*hit,0,.10*hit)
@@ -303,7 +384,7 @@ def convert(stem,dae,png,height,names=NAMES):
         framecount=max(17,round(duration*60)+1)
         phases=np.linspace(0,1,framecount)
         samples=[pose(clip,float(phase),stem) for phase in phases]
-        if clip in ("idle","run","backpedal","strafe_left","strafe_right","dash"):
+        if clip in ("idle","run","backpedal","strafe_left","strafe_right") or clip.startswith("dash"):
             samples=[(rotations,ground_offset(rotations)) for rotations,_ in samples]
         root_ranges[clip]=[round(min(bob for _,bob in samples),4),round(max(bob for _,bob in samples),4)]
         time=b.accessor(phases*duration,"SCALAR",bounds=True)

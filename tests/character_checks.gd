@@ -57,7 +57,7 @@ func run() -> void:
 		var weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
 		for vertex in range(0, weights.size(), 4):
 			verify(is_equal_approx(weights[vertex] + weights[vertex+1] + weights[vertex+2] + weights[vertex+3], 1.0), "Skin weight remains normalized")
-		for clip in ["idle", "run", "backpedal", "strafe_left", "strafe_right", "jump", "fall", "dash", "hurt", "fire", "victory", "defeat"]:
+		for clip in ["idle", "run", "backpedal", "strafe_left", "strafe_right", "jump", "fall", "dash", "dash_back", "dash_left", "dash_right", "hurt", "fire", "victory", "defeat"]:
 			verify(visual.animator.has_animation(clip), "Clip exists: " + clip)
 			visual.current_clip = ""
 			visual.select_clip(clip, true)
@@ -127,6 +127,44 @@ func run() -> void:
 		verify(visual.current_clip == "fall", "Descending selects fall")
 		visual.animate(.1, Vector2.ZERO, true, 0, true, false, 0, 0)
 		verify(visual.current_clip == "dash", "Dash selects its own pose")
+		# Each dash direction has its own one-shot clip, started from the onset.
+		for pair in [[Vector2(0, -1), "dash"], [Vector2(0, 1), "dash_back"], [Vector2(-1, 0), "dash_left"], [Vector2(1, 0), "dash_right"], [Vector2(.5, -.9), "dash"]]:
+			for frame in 30: visual.animate(1.0/60, Vector2.ZERO, true, 0, false, false, 0, 0)
+			verify(visual.current_clip == "idle", "A finished dash hands back to idle")
+			visual.animate(1.0/60, Vector2.ZERO, true, 0, true, false, 0, 0, 1.0, pair[0])
+			verify(visual.current_clip == pair[1] and visual.animator.current_animation_position < .03, "Dash direction selects %s from its onset" % pair[1])
+		# Travel shows a clear lean, the buster holds its aim, and the recovery plays out.
+		for frame in 30: visual.animate(1.0/60, Vector2.ZERO, true, 0, false, false, 0, 0)
+		var steady = true
+		for frame in 11:
+			visual.animate(1.0/60, Vector2.ZERO, true, 0, true, true, -.2, 0, 1.0, Vector2(0, -1))
+			var dash_barrel = (visual.weapon_mount.basis * Vector3.DOWN).normalized()
+			if frame > 6: steady = steady and dash_barrel.dot(Vector3(0, sin(-.2), -cos(-.2))) > .97
+		verify(steady, "Buster stays steady through the dash")
+		verify(visual.skeleton.get_bone_pose_rotation(visual.joints.Hips).get_angle() > .3, "Dash travel leans the whole body clearly")
+		var planted = false
+		for frame in 4:
+			visual.animate(1.0/60, Vector2.ZERO, true, 0, false, false, 0, 0)
+			planted = planted or visual.foot_contact
+		verify(visual.current_clip == "dash", "Standing still lets the dash recovery play")
+		for frame in 8:
+			visual.animate(1.0/60, Vector2.ZERO, true, 0, false, false, 0, 0)
+			planted = planted or visual.foot_contact
+		verify(planted, "The dash plant sounds a footstep")
+		for frame in 30: visual.animate(1.0/60, Vector2.ZERO, true, 0, false, false, 0, 0)
+		for frame in 11: visual.animate(1.0/60, Vector2.ZERO, true, 0, true, false, 0, 0)
+		for frame in 6: visual.animate(1.0/60, Vector2.UP, true, 0, false, false, 0, 0)
+		verify(visual.current_clip == "run", "Running on cuts the dash recovery short")
+		if index == 0:
+			# A teammate's dash clip follows its synced velocity relative to its facing.
+			var proxy = game.create_remote_player(1)
+			var turned = 0.7
+			var right = Vector3.RIGHT.rotated(Vector3.UP, turned)
+			proxy.apply_state(proxy.position, right * 19, turned, 0, Vector2.ZERO, DiverPlayer.FLAG_DASH | DiverPlayer.FLAG_FLOOR, 100, 100, 0)
+			proxy.remote_process(1.0/60)
+			verify(proxy.visual.current_clip == "dash_right", "Remote dash plays the clip for its travel direction")
+			game.remove_remote_player(1)
+		visual.animate(.1, Vector2.ZERO, true, 0, true, false, 0, 0)
 		visual.hurt()
 		visual.animate(.02, Vector2.ZERO, true, 0, false, false, 0, 0)
 		verify(visual.current_clip == "hurt", "Damage triggers a hit reaction")

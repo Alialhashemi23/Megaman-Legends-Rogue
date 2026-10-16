@@ -10,6 +10,8 @@ var yaw = 0.0
 var pitch = -0.20
 var cooldown = 0.0
 var invincible = 0.0
+# Dash i-frames are separate so they don't blink the model and hide the dash pose.
+var dash_guard = 0.0
 var dash_time = 0.0
 var dash_cooldown = 0.0
 var dash_direction = Vector3.ZERO
@@ -160,6 +162,7 @@ func _physics_process(dt: float) -> void:
 	invincible -= dt
 	dash_cooldown -= dt
 	dash_time -= dt
+	dash_guard -= dt
 	kinetic_time -= dt
 	# Needle Storm cools off shortly after the trigger is released.
 	if cooldown < -0.35: storm_heat = move_toward(storm_heat, 0.0, dt * 0.6)
@@ -191,10 +194,11 @@ func _physics_process(dt: float) -> void:
 	var move = Vector3(input.x, 0, input.y).rotated(Vector3.UP, yaw)
 	if controls and Input.is_action_pressed("dash") and dash_cooldown <= 0:
 		dash_direction = move if move.length() > 0 else Vector3(0, 0, -1).rotated(Vector3.UP, yaw)
-		dash_time = 0.19
+		dash_time = DiverCharacter.DASH_TRAVEL
 		dash_cooldown = maxf(0.65, 1.35 - count("boots") * 0.06) - (DiverProgression.BONUS.servos if "servos" in skills else 0.0)
-		invincible = 0.26
+		dash_guard = 0.26
 		game.sound.play("dash")
+		if is_on_floor(): dash_dust()
 		if specialization() == "runner":
 			game.spawn_bolt(global_position + Vector3.UP * 0.6, Vector3(0, 3.0, 0), damage() * 2.0, false, true, 1, self)
 		if character == 1 and "ability" in skills and repair_cooldown <= 0:
@@ -234,7 +238,7 @@ func _physics_process(dt: float) -> void:
 	if downed:
 		visual.preview(dt, true, false)
 		update_revive(dt)
-	else: visual.animate(dt, input, is_on_floor(), velocity.y, dash_time > 0, aiming, pitch, recoil, speed() / base_speed)
+	else: visual.animate(dt, input, is_on_floor(), velocity.y, dash_time > 0, aiming, pitch, recoil, speed() / base_speed, facing_relative(dash_direction))
 	if visual.foot_contact and footstep_time <= 0:
 		game.sound.play("step", 1.0, global_position)
 		footstep_time = .08
@@ -333,7 +337,7 @@ func shoot() -> void:
 			game.spawn_bolt(start, direction.rotated(Vector3.UP, sign_dir * 0.13), amount * minf(0.75, 0.25 + count("split") * 0.12), false, weapon >= 2, 1 if weapon == 3 else 0, self)
 
 func hurt(amount: float) -> void:
-	if invincible > 0 or downed or not game.world_running(): return
+	if invincible > 0 or dash_guard > 0 or downed or not game.world_running(): return
 	# Online part and level choices don't pause the dig, so choosing is protected.
 	if game.mode == "choice": return
 	amount *= 1.0 / (1 + count("shell") * 0.18)
@@ -398,6 +402,15 @@ func revive_now(fraction: float, helper: String = "") -> void:
 	game.build_changed()
 	if helper != "": game.notify("BACK ON YOUR FEET", "%s pulled you up. Restored %d%% Life." % [helper, int(fraction * 100)])
 
+# A world direction relative to where the digger faces (x right, y back).
+func facing_relative(direction: Vector3) -> Vector2:
+	var local = direction.rotated(Vector3.UP, -yaw)
+	return Vector2(local.x, local.z)
+
+# A quick ring of dust under the boots at the dash onset. Cosmetic: no RNG.
+func dash_dust() -> void:
+	game.impact_ring(Vector3(global_position.x, game.floor_height(global_position) + 0.06, global_position.z), 1.1, Color("e6dcc2"), 0.18)
+
 func state_flags() -> int:
 	var flags = 0
 	if is_on_floor(): flags |= FLAG_FLOOR
@@ -435,7 +448,11 @@ func remote_process(dt: float) -> void:
 	art.root.rotation.z = lerpf(art.root.rotation.z, -move_input.x * 0.065, dt * 8)
 	visual.equip(mini(weapon, 2))
 	if downed: visual.preview(dt, true, false)
-	else: visual.animate(dt, move_input, net_flags & FLAG_FLOOR != 0, net_vel.y, net_flags & FLAG_DASH != 0, net_flags & FLAG_AIM != 0, pitch, recoil, speed() / base_speed)
+	else:
+		# A teammate's dash direction comes from its synced velocity.
+		var travel = Vector3(net_vel.x, 0, net_vel.z)
+		visual.animate(dt, move_input, net_flags & FLAG_FLOOR != 0, net_vel.y, net_flags & FLAG_DASH != 0, net_flags & FLAG_AIM != 0, pitch, recoil, speed() / base_speed, facing_relative(travel) if travel.length() > 1 else Vector2(0, -1))
+		if visual.dash_started and net_flags & FLAG_FLOOR != 0: dash_dust()
 	if visual.foot_contact and footstep_time <= 0 and not downed:
 		game.sound.play("step", 0.95, global_position)
 		footstep_time = .08
