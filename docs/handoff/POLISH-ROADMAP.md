@@ -1,9 +1,8 @@
 # Polish roadmap — 2026-10-15
 
-Status: P1–P6 are implemented and verified (builds 23–28) and pushed to `main`
-(2026-10-15). All six are deployed; P6 went live after the owner's playtest
-session. Next is P7 (dash
-animation first). Still pending: owner sign-off on visuals and specialization or
+Status: P1–P7 are implemented and verified (builds 23–29) and pushed to `main`
+(2026-10-15/16). P7 (visible directional dash, planted run, landing) is build 29;
+strafe planting and personality polish await owner feedback. Next is P8 (balance). Still pending: owner sign-off on visuals and specialization or
 milestone balance, browser frame-time measurement, Retroid checks and an Android
 APK rebuild (needed for profile 4 and protocol 10).
 Phase labels P0–P8 distinguish this work from the earlier account/Android roadmap.

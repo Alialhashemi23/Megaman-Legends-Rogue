@@ -1,5 +1,14 @@
 # Local build history
 
+## 29 — Polish P7 animation and movement
+
+- **Dash you can see.** Each digger now has four dash animations (forward, back, left, right): a crouch, a strong lean into the dash, then a foot plant and settle. The dash picks the one matching its direction relative to where you face, starts on the first frame and kicks up a ring of dust. Running, jumping or getting hit cuts the recovery short; controls and dash timing are unchanged. Teammates' dashes show the right direction too, worked out from their movement, so co-op protocol is unchanged.
+- Dash invulnerability no longer blinks the model (that blinking hid most of the old dash), and dashing can no longer shorten the longer invulnerability after a hit or revive.
+- **Planted running.** Mega, Roll and Tron's run and backpedal now plant each boot on the floor while the body passes over it: heel-to-toe roll, knee drive, a brief airborne moment between steps and a forward lean (the old run leaned slightly back). Before, boots skated at roughly two thirds of the running speed. Servbot keeps his waddle. Strafing is unchanged.
+- Light stick tilts slow the stride cadence to match the slower movement.
+- **Landing.** Landing from a real fall (not a short hop) squashes into the knees, then rises back to idle. Moving on skips it, so control stays immediate.
+- Checks: character 8692 (dash direction, onset, recovery, steady buster aim, remote dashes, landing, planted boots that don't skate or sink), combat, milestones, movement, smoke and the multi-process co-op test. Contact sheets and game-camera footage reviewed for all four diggers.
+
 ## 28 — Polish P6 guardian milestones
 
 - The first and second guardians give each digger a personal milestone: a choice of three major upgrades lasting the rest of the dig. Offers are weighted toward fitted parts, but every milestone works without them. Ten milestones: Arc Conductor (lightning chains), Wildfire Core (burns that spread on kills), Glacier Drive (dash slows nearby machines), Twin Capacitor (+35% second-bolt chance), Fortune Prism (+15% crits that triple), Bulwark Frame (-25% damage above half Life), Scavenger's Instinct (repair and part chance on kills), Opening Salvo (+35% against healthy machines), Second Wind (survive one downing hit per descent) and Kinetic Loader (+30% fire rate after dashing). Values are tuning proposals.

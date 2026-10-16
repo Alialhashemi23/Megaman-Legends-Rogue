@@ -1,8 +1,9 @@
 extends SceneTree
 
-# Record every digger dashing in each direction through the real game camera.
+# Record every digger running, jumping and dashing in each direction through the
+# real game camera.
 # Run with --write-movie <file.avi> --fixed-fps 60; user saves untouched.
-const SEGMENT = 6.5
+const SEGMENT = 8.0
 var game: Node3D
 var elapsed = 0.0
 var keys: Dictionary = {}
@@ -33,7 +34,7 @@ func key(code: int, down: bool) -> void:
 	Input.parse_input_event(event)
 
 func release_all() -> void:
-	for code in [KEY_W, KEY_A, KEY_S, KEY_D, KEY_SHIFT]: key(code, false)
+	for code in [KEY_W, KEY_A, KEY_S, KEY_D, KEY_SHIFT, KEY_SPACE]: key(code, false)
 
 func begin(character: int) -> void:
 	release_all()
@@ -60,8 +61,10 @@ func _physics_process(dt: float) -> bool:
 		segment = index
 		begin(index)
 	var t = fmod(elapsed, SEGMENT)
-	# Run then dash forward; a standing dash; then right, left and back dashes.
-	key(KEY_W, t > .6 and t < 1.3)
+	# Run then dash forward; a standing dash; right, left and back dashes;
+	# a standing jump and landing; then a run with a jump.
+	key(KEY_W, (t > .6 and t < 1.3) or (t > 7.0 and t < 7.9))
+	key(KEY_SPACE, (t > 6.2 and t < 6.3) or (t > 7.3 and t < 7.4))
 	key(KEY_D, t > 3.0 and t < 3.4)
 	key(KEY_A, t > 4.2 and t < 4.6)
 	key(KEY_S, t > 5.4 and t < 5.8)

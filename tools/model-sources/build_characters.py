@@ -28,7 +28,7 @@ SERVBOT_NAMES = {"Bone000":"Hips", "Bone001":"Head", "Bone006":"Face", "Bone002"
                  "Bone003":"RightUpperArm", "Bone004":"LeftUpperLeg", "Bone005":"RightUpperLeg"}
 CLIPS = {"idle":2.8,"run":.48,"backpedal":.56,"strafe_left":.56,"strafe_right":.56,
          "jump":.6,"fall":.7,"dash":.36,"dash_back":.36,"dash_left":.36,"dash_right":.36,
-         "hurt":.32,"fire":.18,"victory":2.0,"defeat":.8}
+         "land":.26,"hurt":.32,"fire":.18,"victory":2.0,"defeat":.8}
 
 def quat(x=0,y=0,z=0):
     # Intrinsic XYZ rotations, encoded as glTF xyzw quaternions.
@@ -36,6 +36,39 @@ def quat(x=0,y=0,z=0):
     sy,cy = math.sin(y/2),math.cos(y/2)
     sz,cz = math.sin(z/2),math.cos(z/2)
     return [sx*cy*cz-cx*sy*sz,cx*sy*cz+sx*cy*sz,cx*cy*sz-sx*sy*cz,cx*cy*cz+sx*sy*sz]
+
+def as_quat(value):
+    """Pose values are XYZ Euler tuples, or xyzw quaternions from the leg solver."""
+    return list(value) if len(value)==4 else quat(*value)
+
+def quat_matrix(value):
+    x,y,z,w=as_quat(value)
+    return np.array([[1-2*(y*y+z*z),2*(x*y-z*w),2*(x*z+y*w)],
+                     [2*(x*y+z*w),1-2*(x*x+z*z),2*(y*z-x*w)],
+                     [2*(x*z-y*w),2*(y*z+x*w),1-2*(x*x+y*y)]])
+
+def matrix_quat(m):
+    trace=m[0,0]+m[1,1]+m[2,2]
+    if trace>0:
+        k=2*math.sqrt(trace+1)
+        return [(m[2,1]-m[1,2])/k,(m[0,2]-m[2,0])/k,(m[1,0]-m[0,1])/k,k/4]
+    i=int(np.argmax([m[0,0],m[1,1],m[2,2]])); j,k=(i+1)%3,(i+2)%3
+    r=2*math.sqrt(1+m[i,i]-m[j,j]-m[k,k])
+    q=[0,0,0,0]; q[i]=r/4; q[j]=(m[j,i]+m[i,j])/r; q[k]=(m[k,i]+m[i,k])/r; q[3]=(m[k,j]-m[j,k])/r
+    return q
+
+def unit(v):
+    return v/np.linalg.norm(v)
+
+def basis(direction,hinge):
+    """Orthonormal frame whose first axis is direction and second lies along hinge."""
+    a=unit(direction); b=unit(hinge-a*np.dot(a,hinge))
+    return np.column_stack([a,b,np.cross(a,b)])
+
+def pitch(angle):
+    # Rotation about X: +angle lifts the toe of a foot that points along -Z.
+    c,s=math.cos(angle),math.sin(angle)
+    return np.array([[1,0,0],[0,c,-s],[0,s,c]])
 
 def cycle_curve(keys, phase):
     """Periodic cubic Hermite: distinct contact/recovery timing, smooth velocity."""
@@ -57,6 +90,13 @@ def cycle_curve(keys, phase):
 HIP_KEYS=[(0,.61),(.12,.32),(.28,-.30),(.40,-.62),(.55,-.44),(.70,.17),(.84,.69),(1,.61)]
 KNEE_KEYS=[(0,-.16),(.12,-.32),(.28,-.18),(.40,-.22),(.55,-.95),(.70,-1.10),(.84,-.60),(1,-.16)]
 SOLE_KEYS=[(0,.12),(.12,0),(.28,-.04),(.40,-.26),(.55,-.40),(.70,-.26),(.84,.04),(1,.12)]
+
+# Planted run/backpedal legs (rigs with knees). The stance sweep matches the
+# digger's ground speed, so a planted boot stays put while the body passes over
+# it; a short airborne moment between steps gives a running stride its length.
+RUN_SPEED=6.2      # player.gd base_speed; playback scales with the digger's speed
+PLANTED={"run":{"travel":-1,"stride":.88,"lift":.30,"heel":.28,"toe":.75},
+         "backpedal":{"travel":1,"stride":.80,"lift":.18,"heel":-.22,"toe":.45}}
 
 # Dash key poses. Axes: the diggers face -Z, so +X on Hips leans the torso back and
 # +X on a leg swings it forward. +Z swings a hanging limb toward the digger's right
@@ -125,6 +165,28 @@ DASH_KEYS={"dash":DASH_FORWARD,"dash_back":DASH_BACK,"dash_right":DASH_RIGHT,"da
 def mix(a,b,s):
     return {n:tuple(x+(y-x)*s for x,y in zip(a.get(n,(0,0,0)),b.get(n,(0,0,0)))) for n in set(a)|set(b)}
 
+# Landing squash: knees take the impact, then the digger rises back to idle.
+LAND_CROUCH={"Hips":(-.25,0,0),"Pelvis":(.12,0,0),"Head":(.16,0,0),
+             "LeftUpperLeg":(.95,0,-.06),"LeftLowerLeg":(-1.55,0,0),"LeftFoot":(.72,0,0),
+             "RightUpperLeg":(.85,0,.06),"RightLowerLeg":(-1.45,0,0),"RightFoot":(.72,0,0),
+             "LeftUpperArm":(.25,0,-.30),"LeftForeArm":(.30,0,0),"RightUpperArm":(.25,0,.30),"RightForeArm":(.35,0,0)}
+
+def fold_servbot(q):
+    """No pelvis, knees or feet: legs hang from Hips, so fold the pelvis turn into
+    the stubby legs; the whole block tilts further so the motion still reads."""
+    pelvis=q.get("Pelvis",(0,0,0))
+    q["Hips"]=tuple(v*1.25 for v in q["Hips"])
+    for side in ("Left","Right"):
+        q[side+"UpperLeg"]=tuple((v+p)*.8 for v,p in zip(q.get(side+"UpperLeg",(0,0,0)),pelvis))
+    return q
+
+def land_pose(phase, neutral, style):
+    # Already half-compressed on contact, deepest at .25, then ease back up.
+    if phase<.25: k=.5+.5*(lambda t:t*t*(3-2*t))(phase/.25)
+    else: k=1-(lambda t:t*t*(3-2*t))((phase-.25)/.75)
+    q=mix(neutral,LAND_CROUCH,k)
+    return fold_servbot(q) if style=="servbot" else q
+
 def dash_pose(clip, phase, neutral, style):
     stages=DASH_KEYS[clip]
     keys=[(0,neutral),(.10,stages["onset"]),(.24,stages["travel"]),(.50,stages["glide"]),
@@ -134,14 +196,7 @@ def dash_pose(clip, phase, neutral, style):
             s=(phase-t0)/(t1-t0)
             q=mix(p0,p1,s*s*(3-2*s))
             break
-    if style=="servbot":
-        # No pelvis, knees or feet: legs hang from Hips, so fold the pelvis turn into
-        # the stubby legs; the whole block tilts further so the dash still reads.
-        pelvis=q.get("Pelvis",(0,0,0))
-        q["Hips"]=tuple(v*1.25 for v in q["Hips"])
-        for side in ("Left","Right"):
-            q[side+"UpperLeg"]=tuple((v+p)*.8 for v,p in zip(q.get(side+"UpperLeg",(0,0,0)),pelvis))
-    return q
+    return fold_servbot(q) if style=="servbot" else q
 
 def pose(clip, phase, style="volnutt"):
     a = phase * math.tau
@@ -161,7 +216,8 @@ def pose(clip, phase, style="volnutt"):
         sideways=clip.startswith("strafe")
         lateral=-1 if clip=="strafe_left" else 1
         lean=.10 if style=="volnutt" else .08
-        q["Hips"]=(lean if clip=="run" else -.04 if clip=="backpedal" else .055,
+        # Negative Hips X leans the torso into the run; backpedalling sits back slightly.
+        q["Hips"]=(-lean if clip=="run" else .04 if clip=="backpedal" else -.055,
                    -.065*math.cos(a),-.020*math.sin(a))
         q["Pelvis"]=(-q["Hips"][0]+.025,.11*math.cos(a),.045*math.sin(a))
         q["Head"]=(-q["Hips"][0]*.65,.035*math.cos(a-.25),.015*math.sin(a-.25))
@@ -203,6 +259,8 @@ def pose(clip, phase, style="volnutt"):
         # One-shot: starts and ends on idle's first frame so it hands back cleanly.
         neutral=pose("idle",0,style)[0]
         q.update(dash_pose(clip,phase,neutral,style))
+    elif clip=="land":
+        q.update(land_pose(phase,pose("idle",0,style)[0],style))
     elif clip=="hurt":
         hit=math.sin(math.pi*phase)*(1-phase)
         q["Hips"]=(-.30*hit,0,.10*hit)
@@ -367,30 +425,110 @@ def convert(stem,dae,png,height,names=NAMES):
         if name in sole_joints:
             owned=np.array(joints_per_vertex)[:,0]==joint_sids.index(sid)
             feet[name]=rest_positions[owned]-worlds[sid]
-    def ground_offset(rotations):
+    def forward_kinematics(rotations,bob=0):
         transforms={}
         for name in bone_names:
-            x,y,z,w=quat(*rotations[name])
             matrix=np.eye(4)
-            matrix[:3,:3]=[[1-2*(y*y+z*z),2*(x*y-z*w),2*(x*z+y*w)],
-                           [2*(x*y+z*w),1-2*(x*x+z*z),2*(y*z-x*w)],
-                           [2*(x*z-y*w),2*(y*z+x*w),1-2*(x*x+y*y)]]
+            matrix[:3,:3]=quat_matrix(rotations[name])
             matrix[:3,3]=translations[name]
+            if not parents[name]: matrix[1,3]+=bob
             transforms[name]=transforms[parents[name]]@matrix if parents[name] else matrix
+        return transforms
+    def ground_offset(rotations):
+        transforms=forward_kinematics(rotations)
         return -min(float((points@transforms[name][:3,:3].T+transforms[name][:3,3])[:,1].min())
                     for name,points in feet.items())
+    planted_legs="LeftLowerLeg" in bone_names and "LeftFoot" in bone_names
+    if planted_legs:
+        thigh=float(np.linalg.norm(translations["LeftLowerLeg"]))
+        shin=float(np.linalg.norm(translations["LeftFoot"]))
+        sole=feet["LeftFoot"]
+        ankle_height=-float(sole[:,1].min())
+        flat=sole[sole[:,1]<sole[:,1].min()+.012]
+        heel_point=flat[np.argmax(flat[:,2])]; toe_point=flat[np.argmin(flat[:,2])]
+        hip_height=float(forward_kinematics({n:(0,0,0) for n in bone_names})["LeftUpperLeg"][1,3])
+    def planted(clip,phase,rotations):
+        """Solve both legs onto a planted foot path; returns (rotations, root bob)."""
+        spec=PLANTED[clip]; travel=spec["travel"]; cycle=CLIPS[clip]
+        stride=spec["stride"]*hip_height
+        stance=min(.45,stride/(RUN_SPEED*cycle))
+        rotations=dict(rotations)
+        for side in ("Left","Right"):
+            for part in ("UpperLeg","LowerLeg","Foot"): rotations[side+part]=(0,0,0)
+        rest=forward_kinematics(rotations)
+        def stance_pose(p,x):
+            # The flat ankle slides opposite the travel direction at exactly the ground speed.
+            z=travel*stride/2-travel*RUN_SPEED*cycle*p
+            u=p/stance; angle=0.0; pivot=None
+            if u<.15:
+                angle=spec["heel"]*(1-u/.15); pivot=heel_point if angle>0 else toe_point
+            elif u>.62:
+                angle=-spec["toe"]*(u-.62)/.38; pivot=toe_point
+            ankle=np.array([x,ankle_height,z])
+            if pivot is not None:
+                ground=ankle+pivot
+                ankle=ground-pitch(angle)@pivot
+            return ankle,angle
+        targets={}
+        for side,offset in (("Left",0),("Right",.5)):
+            p=(phase-offset)%1
+            x=rest[side+"UpperLeg"][0,3]*.75
+            if p<stance:
+                targets[side]=stance_pose(p,x)+(True,)
+            else:
+                u=(p-stance)/(1-stance); e=u*u*(3-2*u)
+                (a0,f0),(a1,f1)=stance_pose(stance,x),stance_pose(0,x)
+                ankle=a0+(a1-a0)*e+np.array([0,spec["lift"]*hip_height*math.sin(math.pi*u),0])
+                angle=f0+(f1-f0)*e-.25*math.sin(math.pi*u)
+                targets[side]=(ankle,angle,False)
+        # Body height: lowest in mid-stance, highest mid-flight, never so high that
+        # a planted boot can't reach the floor with a slightly bent knee.
+        flight=(stance+.5)/2
+        bob=hip_height*(-.035+.03*math.cos(4*math.pi*(phase-flight)))
+        reach=.985*(thigh+shin)
+        for side,(ankle,angle,down) in targets.items():
+            if not down: continue
+            hip=rest[side+"UpperLeg"][:3,3]
+            across=(ankle[0]-hip[0])**2+(ankle[2]-hip[2])**2
+            bob=min(bob,float(ankle[1]+math.sqrt(max(reach*reach-across,0))-hip[1]))
+        world=forward_kinematics(rotations,bob)
+        for side,(ankle,angle,_) in targets.items():
+            hip=world[side+"UpperLeg"][:3,3]
+            parent=world["Pelvis"][:3,:3]
+            reach_vector=ankle-hip
+            distance=min(max(float(np.linalg.norm(reach_vector)),abs(thigh-shin)+.01),(thigh+shin)*.999)
+            down_dir=unit(reach_vector)
+            pole=np.array([0,0,-1.0])
+            across_dir=unit(pole-down_dir*np.dot(pole,down_dir))
+            hinge=unit(np.cross(down_dir,across_dir))
+            bend=math.acos(max(-1,min(1,(thigh*thigh+distance*distance-shin*shin)/(2*thigh*distance))))
+            knee=hip+thigh*(math.cos(bend)*down_dir+math.sin(bend)*across_dir)
+            foot_at=hip+down_dir*distance
+            thigh_world=basis(knee-hip,hinge)@basis(np.array(translations[side+"LowerLeg"]),np.array([1.0,0,0])).T
+            shin_world=basis(foot_at-knee,hinge)@basis(np.array(translations[side+"Foot"]),np.array([1.0,0,0])).T
+            rotations[side+"UpperLeg"]=tuple(matrix_quat(parent.T@thigh_world))
+            rotations[side+"LowerLeg"]=tuple(matrix_quat(thigh_world.T@shin_world))
+            rotations[side+"Foot"]=tuple(matrix_quat(shin_world.T@pitch(angle)))
+        return rotations,bob
     root_ranges={}
     for clip,duration in CLIPS.items():
         framecount=max(17,round(duration*60)+1)
         phases=np.linspace(0,1,framecount)
         samples=[pose(clip,float(phase),stem) for phase in phases]
-        if clip in ("idle","run","backpedal","strafe_left","strafe_right") or clip.startswith("dash"):
+        if planted_legs and clip in PLANTED:
+            samples=[planted(clip,float(phase),rotations) for phase,(rotations,_) in zip(phases,samples)]
+        elif clip in ("idle","run","backpedal","strafe_left","strafe_right","land") or clip.startswith("dash"):
             samples=[(rotations,ground_offset(rotations)) for rotations,_ in samples]
         root_ranges[clip]=[round(min(bob for _,bob in samples),4),round(max(bob for _,bob in samples),4)]
         time=b.accessor(phases*duration,"SCALAR",bounds=True)
         animation={"name":clip,"samplers":[],"channels":[]}
         for name,nodeidx in bone_names.items():
-            output=b.accessor([quat(*sample[0][name]) for sample in samples],"VEC4")
+            keys=[]
+            for sample in samples:
+                key=as_quat(sample[0][name])
+                if keys and np.dot(key,keys[-1])<0: key=[-v for v in key]
+                keys.append(key)
+            output=b.accessor(keys,"VEC4")
             sampler=len(animation["samplers"])
             animation["samplers"].append({"input":time,"output":output,"interpolation":"LINEAR"})
             animation["channels"].append({"sampler":sampler,"target":{"node":nodeidx,"path":"rotation"}})

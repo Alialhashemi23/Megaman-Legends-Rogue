@@ -16,6 +16,8 @@ const LOCOMOTION = ["run", "backpedal", "strafe_left", "strafe_right"]
 const DASH_CLIPS = ["dash", "dash_back", "dash_left", "dash_right"]
 const DASH_TRAVEL = 0.19
 const DASH_PLANT = 0.24
+# A landing after a real fall squashes into the knees unless the digger moves on.
+const LAND_AIR_TIME = 0.3
 var character = 0
 var model: Node3D
 var skeleton: Skeleton3D
@@ -37,6 +39,8 @@ var dash_clip = "dash"
 var dash_elapsed = -1.0
 var was_dashing = false
 var dash_started = false
+var air_time = 0.0
+var land_time = 0.0
 
 func _ready() -> void:
 	character = clampi(character, 0, COUNT - 1)
@@ -104,6 +108,13 @@ func animate(dt: float, move: Vector2, grounded: bool, rising: float, dash: bool
 	shot_time = maxf(0, shot_time - dt)
 	if grounded: jump_elapsed = 0
 	else: jump_elapsed += dt
+	var landed = false
+	if grounded:
+		landed = air_time > LAND_AIR_TIME and not dash
+		air_time = 0.0
+	else: air_time += dt
+	land_time = animator.get_animation("land").length if landed else maxf(0, land_time - dt)
+	if move.length() > 0.1: land_time = 0.0
 	dash_started = dash and not was_dashing
 	was_dashing = dash
 	var dash_before = dash_elapsed
@@ -123,11 +134,15 @@ func animate(dt: float, move: Vector2, grounded: bool, rising: float, dash: bool
 	if dash or recovering: clip = dash_clip
 	elif not grounded: clip = "jump" if rising > 0 and jump_elapsed < 0.35 else "fall"
 	elif hurt_time > 0: clip = "hurt"
+	elif land_time > 0 and move.length() <= 0.1:
+		clip = "land"
+		if landed: current_clip = ""
 	elif move.length() > 0.1:
 		clip = "strafe_left" if move.x < -0.4 and absf(move.x) > absf(move.y) else "strafe_right" if move.x > 0.4 and absf(move.x) > absf(move.y) else "backpedal" if move.y > 0.1 else "run"
 	elif shot_time > 0: clip = "fire"
-	select_clip(clip, false, 0.14 if current_clip in DASH_CLIPS else 0.12)
-	animation_speed = speed_ratio if clip in LOCOMOTION else 1.0
+	select_clip(clip, false, 0.05 if landed else 0.14 if current_clip in DASH_CLIPS else 0.12)
+	# A light stick tilt walks slower, so the cadence eases down with it.
+	animation_speed = speed_ratio * clampf(move.length(), 0.55, 1.0) if clip in LOCOMOTION else 1.0
 	var before = animator.current_animation_position
 	animator.advance(dt * animation_speed)
 	if clip in LOCOMOTION:

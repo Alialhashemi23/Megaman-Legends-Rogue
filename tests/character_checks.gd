@@ -98,15 +98,32 @@ func run() -> void:
 			if str(name).ends_with("Foot" if visual.joints.has("LeftFoot") else "UpperLeg"):
 				sole_vertices.append([vertex, bind_index, visual.skeleton.find_bone(name)])
 		verify(not sole_vertices.is_empty(), "Boot geometry is available for contact checks")
+		# Rigs with knees plant run/backpedal steps with an airborne moment between them.
+		var planted_clips = {"run": -1.0, "backpedal": 1.0} if visual.joints.has("LeftLowerLeg") else {}
 		for locomotion in DiverCharacter.LOCOMOTION:
 			visual.select_clip(locomotion, true)
-			for frame in 32:
-				visual.animator.seek(visual.animator.get_animation(locomotion).length * frame / 32.0, true)
+			var clip_length = visual.animator.get_animation(locomotion).length
+			var touching = 0
+			var previous = {}
+			for frame in 33:
+				visual.animator.seek(clip_length * frame / 32.0, true)
 				var lowest = INF
+				var soles = {}
 				for sole in sole_vertices:
 					var deformed = visual.skeleton.get_bone_global_pose(sole[2]) * mesh.skin.get_bind_pose(sole[1]) * vertices[sole[0]]
 					lowest = minf(lowest, deformed.y)
-				verify(absf(lowest) < .018, "At least one boot meets the floor during " + locomotion)
+					if deformed.y < .01: soles[sole[0]] = deformed
+				if not planted_clips.has(locomotion):
+					verify(absf(lowest) < .018, "At least one boot meets the floor during " + locomotion)
+					continue
+				verify(lowest > -.018, "Boots never sink into the floor during " + locomotion)
+				if lowest < .01: touching += 1
+				# A sole touching in consecutive samples stays put while the body travels on.
+				var travel = Vector3(0, 0, planted_clips[locomotion] * 6.2 * clip_length / 32.0)
+				for vertex in soles:
+					if previous.has(vertex): verify((soles[vertex] + travel).distance_to(previous[vertex]) < .03, "Planted boots don't skate during " + locomotion)
+				previous = soles
+			if planted_clips.has(locomotion): verify(touching >= 14 and touching <= 26, "Planted steps alternate with airborne moments during " + locomotion)
 		visual.select_clip("run", true)
 		visual.animator.advance(0)
 		for frame in 10: visual.animate(1.0/60, Vector2.UP, true, 0, false, true, -.2, 0)
@@ -155,6 +172,18 @@ func run() -> void:
 		for frame in 11: visual.animate(1.0/60, Vector2.ZERO, true, 0, true, false, 0, 0)
 		for frame in 6: visual.animate(1.0/60, Vector2.UP, true, 0, false, false, 0, 0)
 		verify(visual.current_clip == "run", "Running on cuts the dash recovery short")
+		# A real fall lands in a squash; moving on (or a short hop) goes straight to running.
+		visual.animate(.5, Vector2.ZERO, false, -6, false, false, 0, 0)
+		visual.animate(1.0/60, Vector2.ZERO, true, 0, false, false, 0, 0)
+		verify(visual.current_clip == "land" and visual.animator.current_animation_position < .03, "Landing from a fall squashes from its start")
+		for frame in 20: visual.animate(1.0/60, Vector2.ZERO, true, 0, false, false, 0, 0)
+		verify(visual.current_clip == "idle", "The landing squash settles back to idle")
+		visual.animate(.5, Vector2.ZERO, false, -6, false, false, 0, 0)
+		visual.animate(1.0/60, Vector2.UP, true, 0, false, false, 0, 0)
+		verify(visual.current_clip == "run", "Landing while moving keeps running")
+		visual.animate(.1, Vector2.ZERO, false, -2, false, false, 0, 0)
+		visual.animate(1.0/60, Vector2.ZERO, true, 0, false, false, 0, 0)
+		verify(visual.current_clip == "idle", "A short hop skips the landing squash")
 		if index == 0:
 			# A teammate's dash clip follows its synced velocity relative to its facing.
 			var proxy = game.create_remote_player(1)

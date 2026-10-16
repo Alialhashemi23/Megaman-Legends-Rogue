@@ -24,19 +24,41 @@ Contact-sheet renders of every room kind on all three descents show correct
 panel/crest orientation and no z-fighting. The owner's visual approval and a
 browser frame-time comparison are still pending.
 
-## Planned polish P7 — animation and movement
+## Polish P7 animation and movement — shipped in build 29 (2026-10-16)
 
-The owner requested a dedicated phase and reports **the dash has no visible
-animation**. Address that first. `character.gd` already selects a `dash` clip;
-do not assume the asset is absent. Inspect authored poses, blending, dash state
-duration/activation and aim-layer interaction, including remote co-op players.
-Every digger needs a visible dash onset, travel pose and recovery, preserving
-responsive controls and stable buster aim.
+Owner report: the dash had no visible animation. Causes: the 0.12 s blend into
+a static, looping pose that lasted only for the 0.19 s dash (about 0.07 s at
+full weight), a pose that actually leaned the torso back, and dash i-frames
+blinking `art.root` on alternate frames.
 
-Then refine start/stop and directional transitions, planted feet, jump/landing
-motion and personality with the supplied rigs and compact PS1 Legends energy.
-P2 changes no animation code and does not fix the dash. See POLISH-ROADMAP.md;
-final balance is now P8.
+- **Rig axes** (measured with a single-bone test render): the diggers face -Z;
+  +X on Hips leans the torso back, +X on a leg swings it forward, +Z swings a
+  hanging limb toward the digger's right (+X) and tips the upright torso to its
+  left. Hips carries torso/arms/head; Pelvis carries the legs. Joint rest
+  frames are pure translations.
+- **Dash clips** (`DASH_KEYS` in the converter): onset (.10), travel (.24),
+  glide (.50), plant (.66), settle, starting and ending on idle's first frame.
+  `dash_left` mirrors `dash_right`. Servbot folds the pelvis into his legs and
+  tilts more (`fold_servbot`). `character.gd` restarts the clip on the dash's
+  rising edge with a 0.04 s blend, keeps it through the recovery, and blends
+  out over 0.14 s. The plant at 0.24 s sounds a footstep. The aim layer keeps
+  the buster steady through the lean.
+- **Planted run/backpedal** (`PLANTED`, `planted()` in the converter):
+  two-bone IK with forward knees onto a foot path. The stance sweep matches
+  6.2 m/s (about 28% contact per foot), heel/toe roll (backpedal lands
+  toe-first), a swing arc and an airborne moment. Body height dips mid-stance
+  and is capped so planted boots reach. Torso and arms stay authored FK, and
+  playback still scales with the digger's speed, so faster builds stay
+  planted. Strafes and Servbot use the previous ground-fitted FK.
+- **Landing:** a `land` squash after more than 0.3 s airborne when standing
+  still; moving cancels it. **Cadence** scales with stick tilt (min 0.55).
+
+Checks in `tests/character_checks.gd` cover dash selection/onset/recovery/aim,
+remote dashes, landing, and planted boots (no sinking below the floor, no skating
+while touching, steps alternating with airborne moments). Still open: strafes
+skate (planting them sideways would cross the legs; a gallop/side-step design
+is the likely route), and personality beyond the current per-digger tweaks
+needs the owner's direction. Final balance is P8.
 
 The user's direction is the original Mega Man Legends PS1 look, not a generic low-poly approximation. They specifically rejected the former blocky player model and later asked for movement to be less stiff while staying realistic to the original game.
 
@@ -63,5 +85,7 @@ Pass 07 uses distinct contact/push-off/recovery timing, modest torso counter-mot
 - tests/character_portraits.gd: portraits rendered from the actual models for assets/ui/.
 - tests/character_game_preview.gd: staged title and gameplay views, plus Roll pause menu.
 - tests/record_video_preview.gd: real renderer/mixer capture with scripted game input.
+- tests/dash_preview.gd: side and back contact sheets of all four diggers for any clips (`-- <out dir> run,dash,...`).
+- tests/record_dash_preview.gd: game-camera footage of every digger running, dashing in four directions and jumping (`--write-movie x.avi --fixed-fps 60`).
 
 Environment art uses editable SVG textures in assets/textures/ plus modular geometry in art.gd and game.gd. The original PS1 geometry should remain the character reference; do not accidentally switch the player back to the historical procedural model still present in art.gd.

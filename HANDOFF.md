@@ -1,5 +1,30 @@
 # Relic Diver handoff
 
+## Polish P7 animation and movement — 2026-10-16 (build 29)
+
+Dash: the old dash was invisible because its 0.12 s blend left the static pose
+on screen for about 0.07 s of the 0.19 s dash, the pose leaned back, and dash
+i-frames blinked the model. Now `character.gd` plays one-shot `dash`,
+`dash_back`, `dash_left`, `dash_right` clips (0.36 s: onset, travel, plant at
+0.24 s, settle) from the dash's first frame, picked by `dash_direction`
+(relative to facing, from `player.facing_relative()`; remotes use synced
+velocity). The recovery plays unless the digger moves, jumps or is hit.
+`player.dash_guard` holds dash i-frames separately from `invincible` (no blink);
+`dash_dust()` draws a ring at onset (no RNG).
+
+Legs: the converter's `planted()` solves run/backpedal legs with two-bone IK onto
+a foot path whose stance sweep matches `RUN_SPEED` 6.2 (player `base_speed`),
+with heel/toe roll, a swing arc and an airborne moment; body height is capped so
+planted boots reach the floor. Rigs without knees (Servbot) keep FK. Run lean
+sign fixed (+X on Hips leans back). New `land` clip after > 0.3 s airborne when
+standing still. Cadence scales with stick tilt (0.55–1).
+Protocol, checkpoint and profile unchanged. Not done: strafes still skate
+(sideways planting would cross the legs), and per-digger personality beyond the
+existing differences is waiting for the owner's direction. Details in ART-ANIMATION.md.
+Packaging note: run `tools/package-web.ps1` and the pack export with the normal
+`%APPDATA%`. `tools/runtime/Godot/export_templates` is empty, so the test-time
+APPDATA override makes the Web preset fail with "configuration errors".
+
 ## Polish P6 guardian milestones — 2026-10-15 (build 28)
 
 `game.MILESTONES` (10 entries with icon/affinity/desc) and `MILESTONE_DEPTHS = [1, 2]`.

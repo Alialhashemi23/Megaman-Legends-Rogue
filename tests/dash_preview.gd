@@ -1,6 +1,6 @@
 extends SceneTree
 
-# Contact sheets of every digger's dash clips: one row per moment in the clip,
+# Contact sheets of every digger's dash (or any) clips: one row per moment in the clip,
 # rendered from the side and from behind (the gameplay view).
 # Usage: --script tests/dash_preview.gd -- <output folder> [clip,clip,...]
 
@@ -44,7 +44,10 @@ func run() -> void:
 			continue
 		for view in ["side", "back"]:
 			var sheet = Image.create(root.size.x, root.size.y * TIMES.size(), false, Image.FORMAT_RGBA8)
-			for row in TIMES.size():
+			# Dashes use fixed moments; other clips are sampled evenly over their length.
+			var length = cast[0].animator.get_animation(clip).length
+			var times = TIMES if clip.begins_with("dash") else range(TIMES.size()).map(func(i): return length * i / TIMES.size())
+			for row in times.size():
 				for i in cast.size():
 					var character = cast[i]
 					# Diggers face -Z. Side view: a row along Z seen from -X (facing left on screen).
@@ -52,12 +55,12 @@ func run() -> void:
 					character.position = Vector3(0, 0, 4.5 - i * 3.0) if view == "side" else Vector3(-4.5 + i * 3.0, 0, 0)
 					character.current_clip = ""
 					character.select_clip(clip, true)
-					character.animator.seek(minf(TIMES[row], character.animator.current_animation_length), true)
+					character.animator.seek(minf(times[row], character.animator.current_animation_length), true)
 					character.update_mount()
 				camera.position = Vector3(-5.6, 1.0, 0) if view == "side" else Vector3(0, 1.9, 5.6)
 				camera.look_at(Vector3(0, 0.9, 0))
 				label.position = camera.position + (Vector3(0, 0.9, 0) - camera.position).normalized() * 3.0 + Vector3(0, 0.62, 0)
-				label.text = "%s  %s  t=%.2f" % [clip, view, TIMES[row]]
+				label.text = "%s  %s  t=%.2f" % [clip, view, times[row]]
 				await process_frame
 				await RenderingServer.frame_post_draw
 				var frame = root.get_texture().get_image()
