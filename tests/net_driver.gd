@@ -25,6 +25,7 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--lobby-name="): lobby_name = arg.substr(13)
 	game.smoke_test = true
+	game.mode = "online" # Keep polling the list until the requested run/lobby appears.
 	game.net.player_name = role.trim_suffix("2").trim_suffix("3").trim_suffix("4").capitalize()
 	print("NET_ROLE %s server=%s id=%s" % [role, game.net.server_url, game.net.player_id])
 	game.net.refresh_list()
@@ -88,10 +89,13 @@ func host_step() -> void:
 			if wait(game.net.connected(), "server connection"): game.net.create_lobby(lobby_name, true)
 		1: wait(game.mode == "lobby" and game.net.is_host(), "lobby creation")
 		2:
-			if wait(game.net.members().size() >= 2 and game.peers.has(2), "guest in lobby"):
+			if game.net.members().size() >= 2 and game.net.selection_acknowledged() and not game.net.own_ready(): game.net.set_ready(true)
+			if wait(game.net.can_start() and game.peers.has(2), "party Ready in lobby"):
 				game.host_start_run()
-				print("FINGERPRINT host " + fingerprint())
 		3:
+			if game.in_run() and marker == 0:
+				marker = 1
+				print("FINGERPRINT host " + fingerprint())
 			var p = proxy(2)
 			if wait(p != null and p.global_position.distance_to(Vector3(4, 0.12, 2)) < 0.8, "guest movement replicated"):
 				print("CHECK host sees guest at %s" % p.global_position)
@@ -153,6 +157,7 @@ func host_step() -> void:
 				finish()
 
 func guest_step() -> void:
+	if step == 2 and game.net.ready_phase() == "idle" and game.net.selection_acknowledged() and not game.net.own_ready(): game.net.set_ready(true)
 	match step:
 		0:
 			var found = ""

@@ -16,10 +16,16 @@ const pw = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.en
 const { chromium } = pw.default || pw;
 
 const app = createServer({ port: 0, webRoot: path.join(here, "..", "build", "web"), log: (m) => console.log("[server] " + m) });
+const routeReady = app.registry.readinessCommand.bind(app.registry);
+app.registry.readinessCommand = (client, message) => {
+  const result = routeReady(client, message);
+  console.log(`[ready-wire] slot=${client.slot} t=${message.t} phase=${client.lobby?.readiness?.phase} result=${JSON.stringify(result)}`);
+  return result;
+};
 const port = await app.listen();
 const base = `http://127.0.0.1:${port}`;
 const SCALE = Number(process.env.E2E_SCALE) || 0.5;
-const launchArgs = { args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--autoplay-policy=no-user-gesture-required", "--disable-renderer-backgrounding", "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows"] };
+const launchArgs = { executablePath: process.env.E2E_BROWSER_EXECUTABLE || undefined, args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--autoplay-policy=no-user-gesture-required", "--disable-renderer-backgrounding", "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows"] };
 // Each digger gets their own browser process, like separate computers.
 const browsers = [];
 let failed = false;
@@ -48,7 +54,7 @@ async function waitLog(page, pattern, timeout = 60000) {
 
 // HUD coordinates are authored at 1440×900; software WebGL is slow, so the
 // test renders smaller and scales clicks to match.
-const click = (page, x, y) => page.mouse.click(x * SCALE, y * SCALE);
+const click = async (page, x, y) => { await page.bringToFront(); await page.mouse.click(x * SCALE, y * SCALE); };
 
 try {
   const host = await openPage("host", `${base}/`);
@@ -72,16 +78,56 @@ try {
   await guest.bringToFront();
   await waitLog(guest, new RegExp(`ONLINE: joined lobby ${code} as slot 2`), 60000);
   await guest.waitForTimeout(1500);
-  await click(guest, 344, 636); // pick Roll
+  await click(guest, 280, 636); // pick Roll
   await host.waitForTimeout(1500);
   await host.screenshot({ path: path.join(shots, "2-lobby-room-host.png") });
   await guest.screenshot({ path: path.join(shots, "3-lobby-room-guest.png") });
 
-  await click(host, 204, 807); // Start Dig
+  const waitRelay = async predicate => {
+    for (let i = 0; i < 100; i++) {
+      if (predicate(app.registry.lobbies.get(code))) return;
+      await host.waitForTimeout(100);
+    }
+    throw new Error("relay readiness transition timed out: " + predicate.toString());
+  };
+  await click(host, 190, 814); // disabled Start: neither player has readied
+  await host.waitForTimeout(300);
+  if (host.logs.some(l => l.includes("ONLINE: dig started"))) throw new Error("Start bypassed explicit Ready");
+  const readyParty = async () => {
+    await click(guest, 190, 762);
+    await click(host, 190, 762);
+    await waitRelay(l => l.readiness.phase === "idle" && [...l.readiness.members.values()].every(m => m.ready));
+    await host.waitForTimeout(1000); // the host consumes the confirmed snapshot
+  };
+  const clickToPhase = async phase => {
+    for (let i = 0; i < 20; i++) {
+      if (app.registry.lobbies.get(code).readiness.phase === phase) return;
+      await click(host, 190, 814);
+      await host.waitForTimeout(100);
+    }
+    throw new Error("Start/Cancel input did not reach phase " + phase);
+  };
+  await readyParty();
+  console.log("[test] both Ready confirmed");
+  await clickToPhase("countdown");
+  console.log("[test] countdown confirmed");
+  await host.screenshot({path:path.join(shots,"countdown-web.png")});
+  await clickToPhase("idle");
+  await waitRelay(l => [...l.readiness.members.values()].every(m => !m.ready));
+  console.log("[test] Cancel confirmed");
+  await host.waitForTimeout(1500); // consume the new setupRev before fresh consent
+  await host.screenshot({path:path.join(shots,"cancel-web.png")});
+  await guest.screenshot({path:path.join(shots,"cancel-guest-web.png")});
+  if (host.logs.some(l => l.includes("ONLINE: dig started"))) throw new Error("Cancel failed to prevent the dig");
+  await readyParty();
+  await clickToPhase("countdown");
   await waitLog(host, /ONLINE: dig started .* party=2/);
   await waitLog(guest, /ONLINE: dig started .* party=2/);
   await waitLog(host, /ONLINE: teammate .*slot 2/);
   await waitLog(guest, /ONLINE: teammate .*slot 1/);
+  await click(guest, 720, 450); // browser pointer capture requires a fresh click
+  await guest.waitForFunction(() => document.pointerLockElement !== null);
+  console.log("[guest] pointer capture confirmed after launch");
   // Walk the guest forward a little so the host sees them move.
   await guest.keyboard.down("KeyW");
   await guest.waitForTimeout(700);
@@ -111,7 +157,7 @@ try {
   await waitLog(host, /ONLINE: synced into dig/, 180000);
   console.log("[host] back in dig as a guest; the guest kept it running");
   await guest.screenshot({ path: path.join(shots, "6-after-reloads-guest.png"), timeout: 180000 });
-  console.log("WEB_E2E_PASS: menus, lobby, invite link, join, shared dig, guest reload, host reload + migration");
+  console.log("WEB_E2E_PASS: menus, invite, explicit Ready, disabled Start, countdown Cancel/retry, shared dig, pointer capture, guest reload, host reload + migration");
 } catch (error) {
   failed = true;
   let n = 0;
