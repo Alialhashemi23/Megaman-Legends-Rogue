@@ -66,9 +66,9 @@ var workshop_message = ""
 var workshop_focus_pending = false
 # Workshop grid view: centre in grid cells, zoom step, mouse-drag state.
 const GRID_RECT = Rect2(394, 366, 982, 414)
-const GRID_CELL = Vector2(96, 50)
+const GRID_CELL = Vector2(96, 38)
 const GRID_ZOOMS = [0.8, 1.0, 1.35]
-var grid_center = Vector2(0, 1.25)
+var grid_center = Vector2(0, 2.4)
 var grid_zoom_step = 1
 var grid_dragging = false
 var save_edit: LineEdit
@@ -207,7 +207,7 @@ func grid_reveal(i: int) -> void:
 
 # Overview framing: the whole grid sits below the progress/zoom strip.
 func grid_recenter() -> void:
-    grid_center = Vector2(0, 1.25)
+    grid_center = Vector2(0, 2.4)
 
 func grid_zoom_by(step: int) -> void:
     grid_zoom_step = clampi(grid_zoom_step + step, 0, GRID_ZOOMS.size() - 1)
@@ -241,7 +241,16 @@ func grid_state(i: int) -> String:
     if game.profile_source == "account" and game.account.status != "Synced": return "syncing"
     return "available"
 
+func grid_name(entry: Dictionary) -> String:
+    var special = DiverProgression.spec(workshop_character, entry.id)
+    return entry.name if special.is_empty() else special.name
+
+func grid_equipped(entry: Dictionary) -> bool:
+    return entry.id in DiverProgression.SPEC_NODES and game.equipped_spec(workshop_character) == entry.id
+
 func grid_detail(entry: Dictionary) -> String:
+    var special = DiverProgression.spec(workshop_character, entry.id)
+    if not special.is_empty(): return special.desc
     match entry.id:
         "salvage": return "Adds %s to this digger's drop pool." % game.ITEMS[DiverProgression.RESEARCH[workshop_character]].name
         "ability": return DiverProgression.ABILITIES[workshop_character]
@@ -252,12 +261,19 @@ func grid_icon(entry: Dictionary) -> String:
     match entry.icon:
         "research": return DiverProgression.RESEARCH[workshop_character]
         "weapon": return ["pulse", "needle", "siege", "scrap"][workshop_character]
+        "spec": return DiverProgression.spec(workshop_character, entry.id).icon
     return entry.icon
 
 func buy_grid_node(i: int) -> void:
     var entry = DiverProgression.NODES[i]
     match grid_state(i):
-        "owned": workshop_message = "%s is already fitted." % entry.name
+        "owned":
+            if entry.id not in DiverProgression.SPEC_NODES: workshop_message = "%s is already fitted." % entry.name
+            elif grid_equipped(entry):
+                game.equip_spec(workshop_character, "")
+                workshop_message = "%s unequipped. The next dig uses the default loadout." % grid_name(entry)
+            elif game.equip_spec(workshop_character, entry.id): workshop_message = "%s equipped for this digger's next dig." % grid_name(entry)
+            else: workshop_message = "Specializations can't change during a dig."
         "locked": workshop_message = "Buy a linked circuit first to reach %s." % entry.name
         "short": workshop_message = "%s needs %d more Zenny." % [entry.name, entry.cost - int(game.meta.zenny)]
         "syncing": workshop_message = "Waiting for your account to sync before buying."
@@ -844,6 +860,8 @@ func draw_title() -> void:
         button(Vector2(310, menu_y), Vector2(230, 48), "Quit", "quit")
     window(Vector2(48, 690), Vector2(508, 156))
     text_at(Vector2(68, 723), "SIGNATURE ATTACK", 21, WHITE, true)
+    var equipped = DiverProgression.spec(game.selected_character, game.equipped_spec(game.selected_character))
+    if not equipped.is_empty(): text_at(Vector2(300, 723), "+ " + equipped.name, 20, CYAN, true, 236)
     button(Vector2(68, 854), Vector2(472, 40), "Workshop / Zenny & Skill Trees", "workshop")
     text_at(Vector2(72, 766), game.WEAPONS[game.selected_weapon], 28, YELLOW, true)
     paragraph(Vector2(72, 808), DiverPlayer.ATTACK_DETAILS[game.selected_character], 460, 22, MUTED, 2)
@@ -1658,25 +1676,37 @@ func draw_grid(first_node: int) -> void:
         if workshop_focus_pending and i == first_node: focus_index = hits.size()
         var at = grid_point(i)
         var state = grid_state(i)
-        var visible = frame.grow(-radius).has_point(at)
-        var area = Rect2(at - Vector2.ONE * (radius + 6), Vector2.ONE * (radius + 6) * 2)
+        var special = entry.id in DiverProgression.SPEC_NODES
+        var size = radius * (1.22 if special else 1.0)
+        var visible = frame.grow(-size).has_point(at)
+        var area = Rect2(at - Vector2.ONE * (size + 6), Vector2.ONE * (size + 6) * 2)
         var hot = focus_index == hits.size() or (visible and area.has_point(pointer))
         hits.append({"rect": area if visible else Rect2(), "action": "grid_node", "value": i})
         if not visible: continue
         var fill = {"owned": SELECT, "available": PANEL, "short": PANEL, "syncing": PANEL, "locked": Color("0c1538")}[state]
         var border = {"owned": GREEN, "available": YELLOW.lerp(WHITE, pulse * 0.5), "short": EDGE, "syncing": EDGE, "locked": Color(EDGE, 0.35)}[state]
-        if hot: draw_colored_polygon(octagon(at, radius + 8), Color(YELLOW, 0.35))
-        draw_colored_polygon(octagon(at, radius), fill)
-        draw_polyline(octagon(at, radius), YELLOW if hot else border, 3.5 if hot or state == "owned" else 2.5)
-        var side = radius * 1.25
+        var equipped = grid_equipped(entry)
+        if equipped:
+            fill = Color("8a6516")
+            border = YELLOW
+        if hot: draw_colored_polygon(octagon(at, size + 8), Color(YELLOW, 0.35))
+        if special: draw_colored_polygon(octagon(at, size + 4), Color(YELLOW if equipped else EDGE, 0.5 if state != "locked" else 0.2))
+        draw_colored_polygon(octagon(at, size), fill)
+        draw_polyline(octagon(at, size), YELLOW if hot else border, 3.5 if hot or state == "owned" else 2.5)
+        var side = size * 1.25
         icon(at - Vector2.ONE * side / 2, grid_icon(entry), side, Color(1, 1, 1, 0.38) if state == "locked" else Color.WHITE)
         if state == "owned":
-            draw_colored_polygon(octagon(at + Vector2(radius * 0.72, radius * 0.72), 9 * zoom), GREEN)
-        elif zoom >= 1.0 or hot:
+            draw_colored_polygon(octagon(at + Vector2(size * 0.72, size * 0.72), 9 * zoom), YELLOW if equipped else GREEN)
+        if special and zoom >= 0.8:
+            # Specializations carry their name, so the two destinations read at a glance.
+            var title = grid_name(entry).to_upper() + ("  ·  EQUIPPED" if equipped else "" if state == "owned" else "  ·  %d" % entry.cost)
+            var title_width = heading.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
+            text_at(at + Vector2(-title_width / 2, size + 19), title, 15, YELLOW if equipped else WHITE if state == "owned" else ORANGE if state == "short" else MUTED, true)
+        elif state != "owned" and (zoom >= 1.0 or hot):
             var price = "%d" % entry.cost
             var color = YELLOW if state == "available" else ORANGE if state == "short" else MUTED
-            text_at(at + Vector2(-heading.get_string_size(price, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x / 2, radius + 19), price, 17, color, true)
-        if hot: cursor(at + Vector2(-radius - 34, -15), 28)
+            text_at(at + Vector2(-heading.get_string_size(price, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x / 2, size + 19), price, 17, color, true)
+        if hot: cursor(at + Vector2(-size - 34, -15), 28)
     # Completion and view controls along the top of the frame.
     var count = skills.size()
     window(GRID_RECT.position + Vector2(10, 10), Vector2(170, 84), INK, Color(EDGE, 0.5), false)
@@ -1697,16 +1727,20 @@ func draw_grid(first_node: int) -> void:
     window(Vector2(64, 366), Vector2(300, 414))
     window(Vector2(82, 384), Vector2(72, 72), SELECT if state == "owned" else PANEL, GREEN if state == "owned" else EDGE, false)
     icon(Vector2(86, 388), grid_icon(entry), 64, Color(1, 1, 1, 0.45) if state == "locked" else Color.WHITE)
-    paragraph(Vector2(168, 410), entry.name, 180, 23, YELLOW if state == "owned" else WHITE, 2)
+    var special = entry.id in DiverProgression.SPEC_NODES
+    paragraph(Vector2(168, 410), grid_name(entry), 180, 23, YELLOW if state == "owned" else WHITE, 2)
     var tag = {"owned": "FITTED", "available": "AVAILABLE", "short": "NEED ZENNY", "syncing": "SYNCING", "locked": "NOT LINKED"}[state]
-    badge(Vector2(82, 470), tag, 160, {"owned": GREEN, "available": YELLOW, "short": ORANGE, "syncing": CYAN, "locked": MUTED}[state])
+    if special and state == "owned": tag = "EQUIPPED" if grid_equipped(entry) else "UNLOCKED"
+    badge(Vector2(82, 470), tag, 160, {"owned": GREEN, "available": YELLOW, "short": ORANGE, "syncing": CYAN, "locked": MUTED}[state] if tag != "EQUIPPED" else YELLOW)
     text_at(Vector2(256, 493), "" if state == "owned" else "%d Z" % entry.cost, 22, YELLOW, true)
-    paragraph(Vector2(84, 534), grid_detail(entry), 262, 21, MUTED, 5)
+    paragraph(Vector2(84, 534), grid_detail(entry), 262, 21, MUTED, 6)
     var linked = []
-    for other in DiverProgression.neighbors(entry.id): linked.append(DiverProgression.node(other).name)
-    paragraph(Vector2(84, 668), "Links: " + ", ".join(linked), 262, 19, CYAN, 3)
+    for other in DiverProgression.neighbors(entry.id): linked.append(grid_name(DiverProgression.node(other)))
+    paragraph(Vector2(84, 700), "Links: " + ", ".join(linked), 262, 19, CYAN, 2)
     var action = {"owned": "Already fitted.", "available": ("A" if pad() else "Enter / click") + ": buy", "short": "Earn Zenny in digs.", "syncing": "Waiting for sync.", "locked": "Buy a linked circuit first."}[state]
-    text_at(Vector2(84, 764), action, 20, YELLOW if state == "available" else MUTED, false, 262)
+    if special and state == "owned": action = ("A" if pad() else "Enter / click") + (": unequip" if grid_equipped(entry) else ": equip for next dig")
+    elif special: action = "Unlock, then equip one per dig."
+    text_at(Vector2(84, 764), action, 20, YELLOW if state == "available" or (special and state == "owned") else MUTED, false, 262)
 
 func draw_save_codes() -> void:
     if waiting_for_paste:

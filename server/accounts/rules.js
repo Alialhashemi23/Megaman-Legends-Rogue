@@ -3,7 +3,7 @@
 // results and purchases itself, so these must match the game exactly;
 // test/rules.test.js parses the GDScript and fails if they drift apart.
 
-export const PROFILE_VERSION = 3;
+export const PROFILE_VERSION = 4;
 export const CHARACTERS = 4;
 // Workshop grid (DiverProgression.NODES/LINKS): buy a node linked to one you own.
 export const START = "frame";
@@ -20,8 +20,10 @@ export const NODES = [
   { id: "loader", cost: 340 },
   { id: "ability2", cost: 480 },
   { id: "cell", cost: 420 },
+  { id: "spec_a", cost: 600 },
+  { id: "spec_b", cost: 600 },
 ];
-export const LINKS = [["frame", "mobility"], ["frame", "salvage"], ["frame", "plating"], ["plating", "servos"], ["plating", "barrel"], ["servos", "mobility"], ["barrel", "salvage"], ["mobility", "magnet"], ["salvage", "ability"], ["magnet", "mastery"], ["ability", "mastery"], ["magnet", "loader"], ["mastery", "cell"], ["ability", "ability2"], ["loader", "cell"], ["ability2", "cell"]];
+export const LINKS = [["frame", "mobility"], ["frame", "salvage"], ["frame", "plating"], ["plating", "servos"], ["plating", "barrel"], ["servos", "mobility"], ["barrel", "salvage"], ["mobility", "magnet"], ["salvage", "ability"], ["magnet", "mastery"], ["ability", "mastery"], ["magnet", "loader"], ["mastery", "cell"], ["ability", "ability2"], ["loader", "cell"], ["ability2", "cell"], ["loader", "spec_a"], ["ability2", "spec_b"]];
 // Lifetime-kill gates for parts (ITEMS[*].unlock in game.gd).
 export const PART_GATES = { lens: 0, spring: 0, heart: 0, boots: 0, shell: 0, moss: 0, ember: 40, coil: 40, prism: 100, echo: 100, split: 220, frost: 220, clover: 220 };
 // Gates from profile v1, kept as legacy unlocks when migrating.

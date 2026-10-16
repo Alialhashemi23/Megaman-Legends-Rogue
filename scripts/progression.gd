@@ -4,7 +4,8 @@ class_name DiverProgression
 # One tuning table for every permanent purchase. Keys are scoped per digger.
 # Profile 3: the Workshop is a connected grid (polish P4). The five original
 # nodes keep their ids and effects; their links keep every v2 tree valid.
-const VERSION = 3
+# Profile 4 adds the two specialization nodes at the ends of the grid (P5).
+const VERSION = 4
 const BONUS = {"frame": 1.08, "cell": 1.06, "mobility": 1.04, "mastery": 1.05, "loader": 1.05, "barrel": 1.06, "servos": 0.12, "plating": 0.2, "magnet": 1.4, "pulse_interval": 5, "pulse_interval_2": 4, "pulse_power": 1.6, "repair_life": 8.0, "repair_life_2": 12.0, "repair_delay": 8.0, "splash_radius": 4.5, "splash_radius_2": 5.2}
 # Every digger has their own grid with this layout. `pos` is in grid cells
 # (x right, y down). A node can be bought once any linked node is owned;
@@ -22,10 +23,26 @@ const NODES = [
 	{"id": "mastery", "name": "Master Mechanic", "cost": 400, "pos": [0, 2], "icon": "wrench", "desc": "+5% attack speed."},
 	{"id": "loader", "name": "Quick Loader", "cost": 340, "pos": [-2, 4], "icon": "spring", "desc": "+5% attack speed."},
 	{"id": "ability2", "name": "Signature Circuit II", "cost": 480, "pos": [2, 4], "icon": "weapon", "desc": "Strengthen this digger's signature ability."},
-	{"id": "cell", "name": "Reserve Cell", "cost": 420, "pos": [0, 4], "icon": "life", "desc": "+6% base Life."}
+	{"id": "cell", "name": "Reserve Cell", "cost": 420, "pos": [0, 4], "icon": "life", "desc": "+6% base Life."},
+	{"id": "spec_a", "name": "Specialization", "cost": 600, "pos": [-2, 6], "icon": "spec", "desc": "Unlock a specialization."},
+	{"id": "spec_b", "name": "Specialization", "cost": 600, "pos": [2, 6], "icon": "spec", "desc": "Unlock a specialization."}
 ]
-const LINKS = [["frame", "mobility"], ["frame", "salvage"], ["frame", "plating"], ["plating", "servos"], ["plating", "barrel"], ["servos", "mobility"], ["barrel", "salvage"], ["mobility", "magnet"], ["salvage", "ability"], ["magnet", "mastery"], ["ability", "mastery"], ["magnet", "loader"], ["mastery", "cell"], ["ability", "ability2"], ["loader", "cell"], ["ability2", "cell"]]
+const LINKS = [["frame", "mobility"], ["frame", "salvage"], ["frame", "plating"], ["plating", "servos"], ["plating", "barrel"], ["servos", "mobility"], ["barrel", "salvage"], ["mobility", "magnet"], ["salvage", "ability"], ["magnet", "mastery"], ["ability", "mastery"], ["magnet", "loader"], ["mastery", "cell"], ["ability", "ability2"], ["loader", "cell"], ["ability2", "cell"], ["loader", "spec_a"], ["ability2", "spec_b"]]
 const RESEARCH = ["echo", "coil", "ember", "split"]
+# Owning a specialization node unlocks it; one is equipped per dig (or none,
+# the default loadout). Only the equipped one's effect applies. `key` is what
+# combat code checks via DiverPlayer.specialization().
+const SPEC_NODES = ["spec_a", "spec_b"]
+const SPECS = [
+	[{"key": "focus", "name": "Focus Lens", "icon": "lens", "desc": "Each consecutive Pulse hit on the same machine deals +8% more, up to +40%. Switching targets resets it."},
+	 {"key": "ricochet", "name": "Ricochet Coil", "icon": "coil", "desc": "Pulse shots that hit a machine bounce once to the nearest other machine within 9 m for 60% damage."}],
+	[{"key": "medic", "name": "Field Medic", "icon": "moss", "desc": "After 2 s without taking damage, Roll and teammates within 6 m of her repair 2 Life per second."},
+	 {"key": "storm", "name": "Needle Storm", "icon": "needle", "desc": "Holding fire ramps attack speed up to +30%. Every 6th needle on a machine exposes it: +20% damage from everyone for 3 s."}],
+	[{"key": "breaker", "name": "Siege Breaker", "icon": "siege", "desc": "Direct hits deal +40% damage and stagger nearby machines for 0.5 s."},
+	 {"key": "barrage", "name": "Wide Barrage", "icon": "ember", "desc": "Blasts reach 1.5 m farther, splash for 65% instead of 50% and slow machines for 1.5 s."}],
+	[{"key": "demolition", "name": "Demolition Charge", "icon": "split", "desc": "Bombs deal +45% damage, and a further +25% to guardians."},
+	 {"key": "runner", "name": "Scrap Runner", "icon": "dash", "desc": "Each dash drops a bomb where you stood. Machines Servbot finishes drop 2 extra scrap."}]
+]
 const ABILITIES = ["Every fifth Pulse shot deals 60% more damage.", "Dashing repairs 8 Life, once every 8 seconds.", "Siege splash radius expands from 3.5 m to 4.5 m.", "Bomb blast radius expands from 3.5 m to 4.5 m."]
 const ABILITIES_2 = ["Every fourth Pulse shot is charged instead of every fifth.", "Dash repairs grow from 8 to 12 Life.", "Siege splash radius grows from 4.5 m to 5.2 m.", "Bomb blast radius grows from 4.5 m to 5.2 m."]
 const OLD_GATES = {"ember": 10, "coil": 10, "prism": 25, "echo": 25, "split": 50, "frost": 50, "clover": 50}
@@ -73,6 +90,14 @@ static func can_buy(meta: Dictionary, character: int, id: String) -> bool:
 	if character < 0 or character >= 4 or entry.is_empty(): return false
 	var skills = owned(meta, character)
 	return id not in skills and int(meta.get("zenny", 0)) >= entry.cost and reachable(skills, id)
+
+static func spec(character: int, id: String) -> Dictionary:
+	var index = SPEC_NODES.find(id)
+	return SPECS[character][index] if index >= 0 and character >= 0 and character < SPECS.size() else {}
+
+# The specialization a digger may bring into a dig: owned, or none.
+static func usable_spec(meta: Dictionary, character: int, id: String) -> String:
+	return id if id in SPEC_NODES and id in owned(meta, character) else ""
 
 static func completion(meta: Dictionary, character: int) -> float:
 	return float(owned(meta, character).size()) / NODES.size()

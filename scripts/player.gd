@@ -27,6 +27,13 @@ var xp_required = 12
 var items: Dictionary = {}
 var weapon = 0
 var skills: Array = []
+# Equipped specialization node ("spec_a"/"spec_b") for this dig, or "".
+var spec = ""
+var storm_heat = 0.0
+var focus_target: Node3D
+var focus_stacks = 0
+var last_hurt = -100000
+var medic_glow = 0.0
 var shot_count = 0
 var repair_cooldown = 0.0
 const SIGNATURES = [0, 1, 2, 3]
@@ -106,6 +113,18 @@ func count(id: String) -> int:
 func life_bonus() -> float:
 	return (DiverProgression.BONUS.frame if "frame" in skills else 1.0) * (DiverProgression.BONUS.cell if "cell" in skills else 1.0)
 
+# The equipped specialization's effect key ("focus", "medic"...), or "".
+func specialization() -> String:
+	if spec == "" or spec not in skills: return ""
+	return str(DiverProgression.spec(character, spec).get("key", ""))
+
+# Field Medic: Roll herself, or a nearby teammate's Roll, keeps repairs going.
+func medic_nearby() -> bool:
+	if character == 1 and specialization() == "medic": return true
+	for other in game.remote_players.values():
+		if is_instance_valid(other) and not other.downed and other.character == 1 and other.specialization() == "medic" and other.global_position.distance_to(global_position) < 6.0: return true
+	return false
+
 func max_hp() -> float:
 	var starting_life = 65.0 if character == 3 else 100.0
 	return base_health - 100.0 + starting_life * life_bonus() + 20 * count("heart")
@@ -119,7 +138,7 @@ func speed() -> float:
 func fire_delay() -> float:
 	var base = [0.25, 0.13, 0.65, 0.75][weapon]
 	var workshop = (DiverProgression.BONUS.mastery if "mastery" in skills else 1.0) * (DiverProgression.BONUS.loader if "loader" in skills else 1.0)
-	return base / (fire_multiplier * workshop * (1.0 + 0.14 * count("spring")))
+	return base / (fire_multiplier * workshop * (1.0 + 0.14 * count("spring")) * (1.0 + storm_heat))
 
 func _physics_process(dt: float) -> void:
 	if not game.world_running(): return
@@ -133,6 +152,14 @@ func _physics_process(dt: float) -> void:
 	invincible -= dt
 	dash_cooldown -= dt
 	dash_time -= dt
+	# Needle Storm cools off shortly after the trigger is released.
+	if cooldown < -0.35: storm_heat = move_toward(storm_heat, 0.0, dt * 0.6)
+	if not downed and hp < max_hp() and Time.get_ticks_msec() - last_hurt > 2000 and medic_nearby():
+		hp = minf(max_hp(), hp + 2.0 * dt)
+		medic_glow -= dt
+		if medic_glow <= 0:
+			medic_glow = 0.7
+			game.burst(global_position + Vector3.UP * 0.9, Color("9cde70"), 2)
 	recoil = move_toward(recoil, 0.0, dt * 8)
 	trauma = move_toward(trauma, 0.0, dt * 1.8)
 	if is_instance_valid(lock_target):
@@ -159,6 +186,8 @@ func _physics_process(dt: float) -> void:
 		dash_cooldown = maxf(0.65, 1.35 - count("boots") * 0.06) - (DiverProgression.BONUS.servos if "servos" in skills else 0.0)
 		invincible = 0.26
 		game.sound.play("dash")
+		if specialization() == "runner":
+			game.spawn_bolt(global_position + Vector3.UP * 0.6, Vector3(0, 3.0, 0), damage() * 2.0, false, true, 1, self)
 		if character == 1 and "ability" in skills and repair_cooldown <= 0:
 			heal(DiverProgression.BONUS.repair_life_2 if "ability2" in skills else DiverProgression.BONUS.repair_life)
 			repair_cooldown = DiverProgression.BONUS.repair_delay
@@ -277,6 +306,8 @@ func shoot() -> void:
 		var flight = maxf(0.25, Vector2(target.x - start.x, target.z - start.z).length() / 18.0)
 		direction = (target - start) / flight + Vector3.UP * 10.0 * flight
 	var amount = damage() * ([1.0, 0.55, 2.4, 2.0][weapon])
+	if specialization() == "demolition": amount *= 1.45
+	if specialization() == "storm": storm_heat = minf(0.30, storm_heat + 0.03)
 	shot_count += 1
 	var interval = int(DiverProgression.BONUS.pulse_interval_2 if "ability2" in skills else DiverProgression.BONUS.pulse_interval)
 	if character == 0 and "ability" in skills and shot_count % interval == 0: amount *= DiverProgression.BONUS.pulse_power
@@ -294,6 +325,7 @@ func hurt(amount: float) -> void:
 	if game.mode == "choice": return
 	amount *= 1.0 / (1 + count("shell") * 0.18)
 	hp = maxf(0, hp - amount)
+	last_hurt = Time.get_ticks_msec()
 	visual.hurt()
 	invincible = 0.65 + (DiverProgression.BONUS.plating if "plating" in skills else 0.0)
 	game.hurt_flash = 0.5

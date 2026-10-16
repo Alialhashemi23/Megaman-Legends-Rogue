@@ -1,5 +1,13 @@
 # Local build history
 
+## 27 — Polish P5 character specializations
+
+- Each digger's grid ends in two specialization circuits (600 Zenny each). Owning one unlocks it; equip one in the Workshop for the next dig, and switch freely between digs. With none equipped, the dig uses the default loadout. Only the equipped specialization applies, even with both owned.
+- Mega: Focus Lens / Ricochet Coil. Roll: Field Medic / Needle Storm. Tron: Siege Breaker / Wide Barrage. Servbot: Demolition Charge / Scrap Runner. Each works solo; Field Medic and Needle Storm's exposure also help teammates. Values are tuning proposals.
+- The equipped specialization is saved per device in settings, carried in the dig's build, and restored exactly on co-op rejoin and checkpoint resume; builds cannot claim one the digger doesn't own. The title shows the equipped specialization next to the signature attack.
+- Profile 4 (grid gains `spec_a`/`spec_b`), co-op protocol 9. Stagger and slow effects reach the host through the existing slow message, which now carries a radius.
+- Checks: progression 309 (equip rules, one-per-dig, build round trip, Focus ramp, Needle Storm exposure, Field Medic reach, Ricochet bounce, blast radius and guardian bonus), the other client suites, server 43 against PostgreSQL, and a live-dig soak firing every digger with each specialization.
+
 ## 26 — Polish P4 Workshop circuit grids
 
 - The Workshop list is now a connected 12-circuit grid per digger. Buy Reinforced Frame, then any circuit linked to one you own. Routes branch and rejoin, and every circuit is reachable, so each grid can reach 100%.

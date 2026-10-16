@@ -1,10 +1,10 @@
 # Polish roadmap — 2026-10-15
 
-Status: P1 UI, P2 ruins (builds 23/24), P3 music (build 25) and P4 Workshop
-grids (build 26) are verified, pushed to `main` and deployed (2026-10-15).
-Next is P5. Still pending: owner visual sign-off for P2/P4, browser frame-time
-measurement, Retroid checks and an Android APK rebuild (needed for profile 3
-and protocol 8).
+Status: P1 UI, P2 ruins (builds 23/24), P3 music (build 25), P4 Workshop grids
+(build 26) and P5 specializations (build 27) are verified, pushed to `main` and
+deployed (2026-10-15). Next is P6. Still pending: owner sign-off on visuals and
+specialization feel/balance, browser frame-time measurement, Retroid checks and
+an Android APK rebuild (needed for profile 4 and protocol 9).
 Phase labels P0–P8 distinguish this work from the earlier account/Android roadmap.
 Product decisions: [POLISH-PROGRESSION.md](POLISH-PROGRESSION.md).
 

@@ -62,6 +62,8 @@ Profile 3 (polish P4): purchases follow the Workshop grid rule (buy a node linke
 to an owned one; trees must stay connected through `frame`). `buy()` and
 `applyOutcome()` stamp stored profiles to version 3. Stored v2 data needs no
 database migration because every v2 tree is a valid connected grid tree.
+Profile 4 (P5) adds the `spec_a`/`spec_b` grid nodes. Which specialization is
+equipped is a per-device setting, not account data, so it needs no server operation.
 
 ## Menus, invites and co-op
 

@@ -9,6 +9,9 @@ var max_health = 30.0
 var dead = false
 var active = false
 var slow = 0.0
+# Needle Storm: every sixth needle exposes a machine to extra damage.
+var exposed = 0.0
+var needle_hits = 0
 var burn_time = 0.0
 var burn_tick = 0.0
 var burn_damage = 0.0
@@ -122,6 +125,7 @@ func _physics_process(dt: float) -> void:
 	active = active or game.room_has_player(room_id, global_position) or health < max_health
 	if not active: return
 	slow -= dt
+	exposed -= dt
 	flash -= dt
 	shield -= dt
 	attack -= dt
@@ -356,6 +360,20 @@ func take_damage(amount: float, effects: bool = true, source: Node3D = null) -> 
 		if local_shot: game.hit_confirm = 0.14
 		if kind != 3:
 			knockback = (global_position - source.global_position).normalized() * 2.5
+	# Specializations are judged here, on the host, for local and remote shooters.
+	var key = source.specialization()
+	if effects and key == "focus":
+		if source.focus_target == self: source.focus_stacks = mini(5, source.focus_stacks + 1)
+		else:
+			source.focus_target = self
+			source.focus_stacks = 0
+		amount *= 1.0 + 0.08 * source.focus_stacks
+	if exposed > 0: amount *= 1.2
+	if effects and key == "storm":
+		needle_hits += 1
+		if needle_hits % 6 == 0:
+			exposed = 3.0
+			game.float_text(global_position + Vector3.UP * (4.0 if kind == 3 else 2.6), "EXPOSED", Color("ffdc68"))
 	var crit = false
 	if effects and game.rng.randf() < minf(0.6, source.count("prism") * 0.08):
 		amount *= 2
@@ -402,7 +420,7 @@ func die() -> void:
 	game.net.broadcast([DiverNet.M_DIE, game.depth, net_id])
 	var killer = last_source if is_instance_valid(last_source) else game.player
 	game.drop_pickup(position + Vector3.UP * 0.5, "xp", 18 if kind == 3 else 5 if kind == 2 else 3)
-	game.drop_pickup(position + Vector3(0.4, 0.5, 0), "scrap", 30 if kind == 3 else game.rng.randi_range(2, 5))
+	game.drop_pickup(position + Vector3(0.4, 0.5, 0), "scrap", (30 if kind == 3 else game.rng.randi_range(2, 5)) + (2 if killer.specialization() == "runner" else 0))
 	if killer.count("moss") > 0: game.heal_player(killer, 1.5 * killer.count("moss"))
 	if game.rng.randf() < 0.12: game.drop_pickup(position + Vector3(-0.4, 0.5, 0), "health", 12)
 	if kind == 3:

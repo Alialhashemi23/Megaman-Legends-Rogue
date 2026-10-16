@@ -43,6 +43,8 @@ var vibration = true
 var fullscreen = false
 var camera_effects = true
 var map_zoom = false
+# Equipped specialization per digger ("0".."3" -> "spec_a"/"spec_b"); per device.
+var specs: Dictionary = {}
 var fov = 67.0
 var bindings: Dictionary = {}
 var using_pad = false
@@ -202,6 +204,11 @@ func load_settings() -> void:
 	map_zoom = data.get("map_zoom", false) == true
 	camera_effects = data.get("camera_effects", true) == true
 	fov = clampf(float(data.get("fov", 67.0)), 55.0, 85.0)
+	specs = {}
+	var saved_specs = data.get("specs", {})
+	if saved_specs is Dictionary:
+		for key in saved_specs:
+			if key in ["0", "1", "2", "3"] and saved_specs[key] in DiverProgression.SPEC_NODES: specs[key] = saved_specs[key]
 	var saved = data.get("bindings", {})
 	if saved is Dictionary:
 		for id in saved:
@@ -226,4 +233,4 @@ func save_settings() -> void:
 	if game and game.get("smoke_test"): return
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path.get_base_dir()))
 	var f = FileAccess.open(path, FileAccess.WRITE)
-	if f: f.store_string(JSON.stringify({"mouse_sensitivity": mouse_sensitivity, "look_speed": look_speed, "invert_y": invert_y, "vibration": vibration, "fullscreen": fullscreen, "camera_effects": camera_effects, "map_zoom": map_zoom, "fov": fov, "bindings": bindings}, "\t"))
+	if f: f.store_string(JSON.stringify({"mouse_sensitivity": mouse_sensitivity, "look_speed": look_speed, "invert_y": invert_y, "vibration": vibration, "fullscreen": fullscreen, "camera_effects": camera_effects, "map_zoom": map_zoom, "fov": fov, "specs": specs, "bindings": bindings}, "\t"))

@@ -29,6 +29,15 @@ with a long name) and Workshop were rendered at 1440×900 and 960×600 with no
 overlaps. Not covered: real controllers and Retroid, or a live browser
 first-load session check.
 
+## Polish P5 specialization UI — build 27 (2026-10-15)
+
+Specialization nodes are larger, named under the node, and gold when equipped.
+Accepting an owned one toggles equip (`buy_grid_node()`); the details panel shows
+UNLOCKED/EQUIPPED and an equip/unequip hint. The title shows "+ <name>" beside
+SIGNATURE ATTACK. The grid's default view is GRID_CELL (96, 38), centred at
+(0, 2.4), so all five rows and the specialization labels fit at 1440×900 and
+960×600.
+
 ## Polish P4 Workshop grid UI — shipped in build 26 (2026-10-15)
 
 The skill list became a pannable/zoomable circuit grid (`draw_grid()`), with

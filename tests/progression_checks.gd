@@ -68,7 +68,7 @@ func run() -> void:
 			bomb._physics_process(0.05)
 			verify(bomb.flight_velocity.y < before, "Bomb follows gravity")
 		game.mode = "workshop"
-		game.meta.zenny = 4000
+		game.meta.zenny = 5000
 		verify(not game.buy_skill(character, "mastery"), "Unlinked nodes cannot be bought")
 		for entry in DiverProgression.NODES:
 			var wallet = game.meta.zenny
@@ -104,6 +104,107 @@ func run() -> void:
 	verify(is_equal_approx(game.player.revive, 0.8), "Roll revives twice as fast")
 	game.remote_players.clear()
 	helper.free()
+	# Specializations: unlocked on the grid, one equipped per dig, only it applies.
+	var spec_keys = []
+	for pair in DiverProgression.SPECS:
+		verify(pair.size() == 2, "Two specializations per digger")
+		for special in pair: spec_keys.append(special.key)
+	var unique_keys = {}
+	for key in spec_keys: unique_keys[key] = true
+	verify(spec_keys.size() == 8 and unique_keys.size() == 8, "Eight distinct specialization effects")
+	game.selected_character = 0
+	game.mode = "title"
+	verify(game.equip_spec(0, "spec_a"), "An owned specialization can be equipped")
+	game.start_run(4242)
+	var mega = game.player
+	mega.set_physics_process(false)
+	for e in game.enemies: e.set_physics_process(false)
+	verify(mega.spec == "spec_a" and mega.specialization() == "focus", "A dig brings the equipped specialization")
+	verify(not game.equip_spec(0, "spec_b"), "Specializations cannot change during a dig")
+	var foes = game.enemies.filter(func(e): return e.kind != 3)
+	var target: DiverEnemy = foes[0]
+	target.max_health = 100000
+	target.health = 100000
+	var dealt = []
+	for k in 7:
+		var before_hp = target.health
+		target.take_damage(10.0, true, mega)
+		dealt.append(before_hp - target.health)
+	verify(is_equal_approx(dealt[0], 10.0) and is_equal_approx(dealt[5], 14.0) and is_equal_approx(dealt[6], 14.0), "Focus Lens ramps to +40% on one machine")
+	var saved_build = game.build_state()
+	verify(saved_build.spec == "spec_a", "Builds carry the specialization for co-op and rejoin")
+	mega.spec = ""
+	verify(mega.specialization() == "", "Owning both specializations applies neither unless one is equipped")
+	game.apply_build(saved_build)
+	verify(game.player.spec == "spec_a", "Rejoining restores the exact specialization")
+	var forged = saved_build.duplicate(true)
+	forged.spec = "spec_b"
+	forged.skills = ["frame"]
+	game.apply_build(forged)
+	verify(game.player.spec == "", "Builds cannot claim an unowned specialization")
+	game.apply_build(saved_build)
+	# Needle Storm exposes machines for everyone; Field Medic repairs nearby allies.
+	var roll = DiverPlayer.new()
+	roll.character = 1
+	roll.game = game
+	roll.is_local = false
+	roll.skills = ["frame", "spec_a", "spec_b"]
+	roll.spec = "spec_b"
+	root.add_child(roll)
+	roll.global_position = mega.global_position
+	for k in 6: target.take_damage(10.0, true, roll)
+	verify(target.exposed > 0, "Every sixth Needle Storm hit exposes a machine")
+	var exposed_before = target.health
+	target.take_damage(10.0, false, mega)
+	verify(is_equal_approx(exposed_before - target.health, 12.0), "Exposed machines take +20% from everyone")
+	roll.storm_heat = 0.3
+	var storm_delay = roll.fire_delay()
+	roll.storm_heat = 0.0
+	verify(is_equal_approx(storm_delay * 1.3, roll.fire_delay()), "Needle Storm heat raises attack speed by up to 30%")
+	game.remote_players[5] = roll
+	verify(not mega.medic_nearby(), "Needle Storm Roll does not repair")
+	roll.spec = "spec_a"
+	verify(mega.medic_nearby(), "A nearby Field Medic Roll repairs teammates")
+	roll.global_position = mega.global_position + Vector3(9, 0, 0)
+	verify(not mega.medic_nearby(), "Field Medic only reaches teammates within 6 m")
+	game.remote_players.erase(5)
+	# Ricochet Coil bounces a hit to the nearest other machine in sight.
+	mega.spec = "spec_b"
+	var second: DiverEnemy = foes[1]
+	target.global_position = mega.global_position + Vector3(0, 0, -3)
+	second.global_position = mega.global_position + Vector3(2.5, 0, -3)
+	var shot = DiverBolt.new()
+	shot.game = game
+	shot.source = mega
+	shot.amount = 10.0
+	game.world.add_child(shot)
+	shot.global_position = target.global_position + Vector3.UP
+	var bolts_before = game.world.get_children().filter(func(n): return n is DiverBolt).size()
+	shot.ricochet(target, target.global_position + Vector3.UP)
+	var bounces = game.world.get_children().filter(func(n): return n is DiverBolt and n.bounced)
+	verify(bounces.size() == 1 and is_equal_approx(bounces[0].amount, 6.0) and game.world.get_children().filter(func(n): return n is DiverBolt).size() == bolts_before + 1, "Ricochet Coil bounces once for 60% damage")
+	# Tron's and Servbot's specializations change their blasts.
+	var tron = DiverPlayer.new()
+	tron.character = 2
+	tron.skills = ["frame", "salvage", "ability", "spec_a", "spec_b"]
+	tron.spec = "spec_b"
+	var blast = DiverBolt.new()
+	blast.source = tron
+	verify(is_equal_approx(blast.splash_radius(), DiverProgression.BONUS.splash_radius + 1.5), "Wide Barrage widens Tron's blasts")
+	tron.spec = "spec_a"
+	verify(is_equal_approx(blast.splash_radius(), DiverProgression.BONUS.splash_radius) and blast.spec() == "breaker", "Siege Breaker keeps the normal radius")
+	var servbot = DiverPlayer.new()
+	servbot.character = 3
+	servbot.skills = ["frame", "spec_a"]
+	servbot.spec = "spec_a"
+	var guardian = DiverEnemy.new()
+	guardian.kind = 3
+	blast.source = servbot
+	verify(is_equal_approx(blast.guardian_bonus(guardian), 1.25) and is_equal_approx(blast.guardian_bonus(target), 1.0), "Demolition Charge hits guardians harder")
+	for node in [roll, shot]: node.queue_free()
+	for node in [tron, blast, servbot, guardian]: node.free()
+	game.mode = "title"
+	verify(game.equip_spec(0, ""), "Unequipping restores the default loadout between digs")
 	# Real disk round trip: purchases and codes save immediately and atomically.
 	game.mode = "workshop"
 	game.smoke_test = false
@@ -191,7 +292,7 @@ func run() -> void:
 		await dpad(step[0])
 		verify(focused.call() == step[1] or (step[1] == "grid_node" and game.hud.hits[game.hud.focus_index].action == "grid_node"), "D-pad reaches %s (got %s)" % [step[1], focused.call()])
 	game.hud.focus_index = tabs + index_of.call("frame")
-	for step in [[JOY_BUTTON_DPAD_DOWN, "mastery"], [JOY_BUTTON_DPAD_DOWN, "cell"], [JOY_BUTTON_DPAD_DOWN, "start"], [JOY_BUTTON_DPAD_LEFT, "save_codes"], [JOY_BUTTON_DPAD_UP, "loader"], [JOY_BUTTON_DPAD_RIGHT, "cell"]]:
+	for step in [[JOY_BUTTON_DPAD_DOWN, "mastery"], [JOY_BUTTON_DPAD_DOWN, "cell"], [JOY_BUTTON_DPAD_DOWN, "spec_a"], [JOY_BUTTON_DPAD_DOWN, "start"], [JOY_BUTTON_DPAD_LEFT, "save_codes"], [JOY_BUTTON_DPAD_UP, "spec_a"], [JOY_BUTTON_DPAD_RIGHT, "spec_b"]]:
 		await dpad(step[0])
 		verify(focused.call() == step[1], "D-pad reaches %s (got %s)" % [step[1], focused.call()])
 	verify(game.hud.workshop_character == start_character, "Moving around the grid never switches digger")
@@ -199,7 +300,7 @@ func run() -> void:
 	await dpad(JOY_BUTTON_X)
 	verify(game.hud.grid_zoom_step == 2 and game.hud.GRID_RECT.has_point(game.hud.grid_point(game.hud.focus_index - tabs)), "Zooming in keeps the focused node visible")
 	game.hud.activate("grid_center")
-	verify(game.hud.grid_zoom_step == 1 and game.hud.grid_center == Vector2(0, 1.25), "Recenter restores the overview")
+	verify(game.hud.grid_zoom_step == 1 and game.hud.grid_center == Vector2(0, 2.4), "Recenter restores the overview")
 	# Accepting a node buys it only when it is linked and affordable.
 	var wallet = game.meta.zenny
 	var probe = 3 - start_character if start_character != 3 else 0

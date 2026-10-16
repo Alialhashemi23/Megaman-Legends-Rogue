@@ -1,5 +1,23 @@
 # Relic Diver handoff
 
+## Polish P5 specializations — 2026-10-15 (build 27)
+
+`DiverProgression.SPECS` holds two specializations per digger, keyed by the grid
+nodes `spec_a` (linked from Quick Loader) and `spec_b` (from Signature II).
+Equipping is per device (`DiverSettings.specs`), via `game.equip_spec()` (refused
+during a dig) and `equipped_spec()`. A dig's `player.spec` goes into
+`build_state()` / `apply_build()` / proxy info (`clean_spec()` rejects unowned
+specializations). `DiverPlayer.specialization()` returns the effect key only when
+the equipped node is owned. The effects are:
+
+- Focus Lens and Needle Storm exposure: host-side in `enemy.take_damage()`.
+- Ricochet Coil, Siege Breaker, Wide Barrage and Demolition Charge: in `bolt.gd`.
+- Storm heat, Field Medic and the Scrap Runner dash bomb: in `player.gd`.
+- Scrap Runner's extra scrap: in `enemy.die()`.
+
+Profile 4, protocol 9; the `M_FROST` message now carries a radius. Guardian
+build milestones are P6.
+
 ## Polish P4 Workshop grids — 2026-10-15 (build 26)
 
 `DiverProgression.NODES/LINKS/START` define one 12-circuit grid layout per

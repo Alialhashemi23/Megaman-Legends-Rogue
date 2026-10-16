@@ -47,7 +47,7 @@ test("Zenny reward matches the formula in progression.gd", () => {
 
 test("profile validation follows the game's rules", () => {
   assert.deepEqual(validateProfile({ version: 2 }), fresh());
-  assert.equal(validateProfile({ version: 4 }), null, "future versions are refused");
+  assert.equal(validateProfile({ version: 5 }), null, "future versions are refused");
   assert.equal(validateProfile({ version: 2, wins: 2, runs: 1 }), null, "more wins than runs");
   assert.equal(validateProfile({ version: 2, deepest: 4 }), null);
   assert.equal(validateProfile({ version: 2, zenny: 1.5 }), null);
@@ -57,7 +57,7 @@ test("profile validation follows the game's rules", () => {
   assert.equal(validateProfile({ version: 2, legacy_unlocks: ["lens"] }), null, "lens was never gated");
   const v1 = validateProfile({ version: 1, kills: 30, runs: 3 });
   assert.deepEqual(v1.legacy_unlocks.sort(), ["coil", "echo", "ember", "prism"], "v1 profiles keep what they had earned");
-  assert.equal(v1.version, 3);
+  assert.equal(v1.version, 4);
   assert.ok(isEmpty(fresh()) && !isEmpty({ ...fresh(), runs: 1 }));
 });
 
@@ -94,7 +94,7 @@ test("purchases check prerequisites and balance", () => {
   assert.ok(buy(one, 4, "frame").error, "no fifth digger");
   assert.ok(buy(one, 0, "nope").error, "unknown node");
   assert.equal(buy(one, 1, "frame").profile.trees["1"][0], "frame", "trees are per digger");
-  assert.equal(buy({ ...one, version: 2 }, 0, "plating").profile.version, 3, "buying upgrades the stored profile version");
+  assert.equal(buy({ ...one, version: 2 }, 0, "plating").profile.version, 4, "buying upgrades the stored profile version");
   assert.ok(buy(one, 0, "barrel").error, "barrel links from plating or salvage, not frame");
   assert.ok(buy(buy(one, 0, "salvage").profile, 0, "barrel").profile, "a second route reaches the same node");
 });

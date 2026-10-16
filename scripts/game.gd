@@ -366,6 +366,7 @@ func build_floor(keep_player: bool, arrive: bool = true) -> void:
 		player.game = self
 		player.character = selected_character
 		player.skills = DiverProgression.owned(meta, selected_character)
+		player.spec = equipped_spec(selected_character)
 		world.add_child(player)
 	player.slot = net.slot
 	player.player_id = net.player_id if net.active() else ""
@@ -936,7 +937,7 @@ func award_pickup(p: Dictionary, who: DiverPlayer) -> void:
 			else: net.send(who.slot, [DiverNet.M_ITEM, p.id])
 	net.broadcast([DiverNet.M_PICKUP_GONE, depth, p.net_id, who.slot, p.kind])
 
-func spawn_bolt(pos: Vector3, dir: Vector3, amount: float, hostile: bool, heavy: bool, projectile_kind: int = 0, source: Node3D = null, cosmetic: bool = false) -> void:
+func spawn_bolt(pos: Vector3, dir: Vector3, amount: float, hostile: bool, heavy: bool, projectile_kind: int = 0, source: Node3D = null, cosmetic: bool = false) -> DiverBolt:
 	var bolt = DiverBolt.new()
 	bolt.game = self
 	bolt.direction = dir if projectile_kind == 1 else dir.normalized()
@@ -950,6 +951,7 @@ func spawn_bolt(pos: Vector3, dir: Vector3, amount: float, hostile: bool, heavy:
 	bolt.global_position = pos
 	bolt.look_at(pos + dir)
 	if source == player and not cosmetic and net.active(): net.broadcast([DiverNet.M_SHOT, depth, pos, dir, heavy, projectile_kind])
+	return bolt
 
 func register_effect(node: Node3D, duration: float, grow: float = 0) -> void:
 	if effects.size() > 120: node.queue_free(); return
@@ -1368,12 +1370,12 @@ func heal_player(who: DiverPlayer, amount: float) -> void:
 	if who == player: player.heal(amount)
 	else: net.send(who.slot, [DiverNet.M_HEAL, amount])
 
-func frost_burst(pos: Vector3, amount: float) -> void:
+func frost_burst(pos: Vector3, amount: float, radius: float = 6.0) -> void:
 	if net.is_guest():
-		net.to_host([DiverNet.M_FROST, depth, pos, amount])
+		net.to_host([DiverNet.M_FROST, depth, pos, amount, radius])
 		return
 	for enemy in enemies:
-		if is_instance_valid(enemy) and not enemy.dead and enemy.position.distance_to(pos) < 6:
+		if is_instance_valid(enemy) and not enemy.dead and enemy.position.distance_to(pos) < radius:
 			enemy.slow = amount
 
 # Guests report their hits to the host, who applies damage and part effects.
@@ -1403,6 +1405,22 @@ func local_player_down() -> void:
 # --- builds and world snapshots --------------------------------------------
 
 # Everything needed to hand a digger back their exact build.
+func clean_spec(value: Variant, skills: Array) -> String:
+	return value if value is String and value in DiverProgression.SPEC_NODES and value in skills else ""
+
+# This device's equipped specialization for a digger, if still owned.
+func equipped_spec(character: int) -> String:
+	return DiverProgression.usable_spec(meta, character, str(settings.specs.get(str(character), "")))
+
+# Free to change between digs; a dig keeps the one it started with.
+func equip_spec(character: int, id: String) -> bool:
+	if in_run() or (id != "" and DiverProgression.usable_spec(meta, character, id) == ""): return false
+	if id == "": settings.specs.erase(str(character))
+	else: settings.specs[str(character)] = id
+	if not smoke_test: settings.save_settings()
+	send_info()
+	return true
+
 func clean_skills(value: Variant) -> Array:
 	var result = []
 	if value is Array:
@@ -1414,7 +1432,7 @@ func build_state() -> Dictionary:
 	var p = player
 	var queue = choice_queue.duplicate()
 	if queue_level: queue.append("level")
-	return {"id": net.player_id, "name": net.player_name, "character": p.character, "weapon": p.weapon, "skills": p.skills.duplicate(), "shot_count": p.shot_count, "repair_cooldown": p.repair_cooldown, "items": p.items.duplicate(), "level": p.level, "xp": p.xp, "xp_required": p.xp_required, "base_health": p.base_health, "base_damage": p.base_damage, "fire_multiplier": p.fire_multiplier, "hp": p.hp, "downed": p.downed, "choice": {"kind": choice_kind, "items": choice_items.duplicate(), "depth": int(choice_source.get("depth", depth)), "cache": int(choice_source.get("cache", -1)), "sourced": not choice_source.is_empty()} if mode == "choice" else {}, "queue": queue, "pending": pending_choices.duplicate(true)}
+	return {"id": net.player_id, "name": net.player_name, "character": p.character, "weapon": p.weapon, "skills": p.skills.duplicate(), "spec": p.spec, "shot_count": p.shot_count, "repair_cooldown": p.repair_cooldown, "items": p.items.duplicate(), "level": p.level, "xp": p.xp, "xp_required": p.xp_required, "base_health": p.base_health, "base_damage": p.base_damage, "fire_multiplier": p.fire_multiplier, "hp": p.hp, "downed": p.downed, "choice": {"kind": choice_kind, "items": choice_items.duplicate(), "depth": int(choice_source.get("depth", depth)), "cache": int(choice_source.get("cache", -1)), "sourced": not choice_source.is_empty()} if mode == "choice" else {}, "queue": queue, "pending": pending_choices.duplicate(true)}
 
 func apply_build(b: Dictionary) -> void:
 	var p = player
@@ -1422,6 +1440,7 @@ func apply_build(b: Dictionary) -> void:
 	selected_character = p.character
 	p.weapon = DiverPlayer.SIGNATURES[p.character]
 	p.skills = clean_skills(b.get("skills", []))
+	p.spec = clean_spec(b.get("spec", ""), p.skills)
 	p.shot_count = maxi(0, int(b.get("shot_count", 0)))
 	p.repair_cooldown = clampf(float(b.get("repair_cooldown", 0)), 0, DiverProgression.BONUS.repair_delay)
 	p.items = (b.get("items", {}) as Dictionary).duplicate() if b.get("items") is Dictionary else {}
@@ -1645,6 +1664,7 @@ func send_info() -> void:
 		build.character = selected_character
 		build.weapon = selected_weapon
 		build.skills = DiverProgression.owned(meta, selected_character)
+		build.spec = equipped_spec(selected_character)
 	if net.active():
 		roster[net.player_id] = build
 		net.broadcast([DiverNet.M_INFO, build])
@@ -1671,6 +1691,7 @@ func create_remote_player(member_slot: int) -> DiverPlayer:
 	proxy.character = clampi(int(info.get("character", 0)), 0, DiverCharacter.COUNT - 1)
 	proxy.weapon = DiverPlayer.SIGNATURES[proxy.character]
 	proxy.skills = clean_skills(info.get("skills", []))
+	proxy.spec = clean_spec(info.get("spec", ""), proxy.skills)
 	proxy.items = (info.get("items", {}) as Dictionary).duplicate() if info.get("items") is Dictionary else {}
 	proxy.level = int(info.get("level", 1))
 	world.add_child(proxy)
@@ -1979,7 +2000,7 @@ const SHAPES = {
 	DiverNet.M_USED: [NUM, NUM],
 	DiverNet.M_HIT: [NUM, NUM, NUM],
 	DiverNet.M_INTERACT: [NUM, NUM],
-	DiverNet.M_FROST: [NUM, TYPE_VECTOR3, NUM],
+	DiverNet.M_FROST: [NUM, TYPE_VECTOR3, NUM, NUM],
 	DiverNet.M_HEAL: [NUM],
 	DiverNet.M_ITEM: [TYPE_STRING],
 	DiverNet.M_XP: [NUM],
@@ -2028,6 +2049,7 @@ func net_message(from_slot: int, m: Array) -> void:
 				if proxy.character != int(b.get("character", 0)): proxy.set_character(int(b.get("character", 0)))
 				proxy.weapon = DiverPlayer.SIGNATURES[proxy.character]
 				proxy.skills = clean_skills(b.get("skills", []))
+				proxy.spec = clean_spec(b.get("spec", ""), proxy.skills)
 				proxy.items = (b.items as Dictionary).duplicate()
 				proxy.level = int(b.get("level", 1))
 		DiverNet.M_STATE:
@@ -2122,7 +2144,7 @@ func net_message(from_slot: int, m: Array) -> void:
 			var index = int(m[2])
 			if net.is_host() and sender(from_slot) and index >= 0 and index < interactables.size(): perform_interact(interactables[index], sender(from_slot))
 		DiverNet.M_FROST:
-			if net.is_host(): frost_burst(m[2], clampf(float(m[3]), 0, 20))
+			if net.is_host(): frost_burst(m[2], clampf(float(m[3]), 0, 20), clampf(float(m[4]), 0, 8))
 		DiverNet.M_CHAT:
 			add_chat(from_slot, net.member_name(from_slot), m[1].strip_edges().left(120), m[2])
 			if m[2] and sender(from_slot): sender(from_slot).speak(m[1].left(40))
