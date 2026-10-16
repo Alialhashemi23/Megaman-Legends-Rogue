@@ -1,5 +1,12 @@
 # Local build history
 
+## 24 — Workshop controller navigation
+
+- The Workshop has three rows. On the digger headers, Left/Right moves between diggers and Down enters that digger's skills. Up from the top skill returns to the selected header instead of jumping to another digger. On the bottom buttons, Left/Right moves between Save Codes, Start and Back. LB/RB always switch digger.
+- The selected header is highlighted with a portrait and yellow name; the focused header shows the cursor.
+- Skill buttons say why you can't buy: `Locked` (requirements), `Need N Z` (Zenny) or `Syncing` (account not yet synced).
+- Checks: progression 153 (D-pad row navigation), UI 47, options 39.
+
 ## 23 — Polish P1 UI fixes and P2 ruins
 
 - Workshop opens on a skill: the first affordable node, else the first unfitted one. Left/Right, the stick and LB/RB (or C/Y) switch diggers and refocus that digger's tree.

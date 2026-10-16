@@ -13,6 +13,16 @@ func verify(ok: bool, message: String) -> void:
 		failures += 1
 		push_error("PROGRESSION_CHECK_FAILED: " + message)
 
+func dpad(button: int) -> void:
+	for pressed in [true, false]:
+		var event = InputEventJoypadButton.new()
+		event.button_index = button
+		event.pressed = pressed
+		root.push_input(event, true)
+	game.hud.queue_redraw()
+	await process_frame
+	await process_frame
+
 func run() -> void:
 	game = load("res://main.tscn").instantiate()
 	game.save_path = "res://save/progression-test.json"
@@ -159,6 +169,25 @@ func run() -> void:
 	await process_frame
 	await process_frame
 	verify(game.hud.workshop_character == start_character, "LB switches Workshop digger back")
+	# D-pad treats headers, skills and bottom buttons as separate rows.
+	var action_at = func() -> String: return game.hud.hits[game.hud.focus_index].action
+	await dpad(JOY_BUTTON_DPAD_UP)
+	verify(action_at.call() == "tree_character" and game.hud.focus_index == start_character, "Up from the top skill reaches the selected digger header")
+	await dpad(JOY_BUTTON_DPAD_RIGHT)
+	var previewed = wrapi(start_character + 1, 0, tabs)
+	verify(game.hud.workshop_character == previewed and game.hud.focus_index == previewed, "Right on headers moves to and shows the next digger")
+	await dpad(JOY_BUTTON_DPAD_DOWN)
+	verify(action_at.call() == "buy_skill" and game.hud.workshop_character == previewed, "Down from a header enters that digger's skills")
+	for i in DiverProgression.NODES.size() - (game.hud.focus_index - tabs): await dpad(JOY_BUTTON_DPAD_DOWN)
+	verify(action_at.call() == "start", "Down past the last skill reaches Start Another Dig")
+	await dpad(JOY_BUTTON_DPAD_LEFT)
+	verify(action_at.call() == "save_codes" and game.hud.workshop_character == previewed, "Left on the bottom row moves between buttons, not diggers")
+	await dpad(JOY_BUTTON_DPAD_UP)
+	verify(game.hud.focus_index == tabs + DiverProgression.NODES.size() - 1, "Up from the bottom row returns to the last skill")
+	await dpad(JOY_BUTTON_DPAD_DOWN)
+	await dpad(JOY_BUTTON_DPAD_DOWN)
+	verify(action_at.call() == "tree_character" and game.hud.focus_index == previewed, "Down from the bottom row wraps to the selected header")
+	game.hud.select_workshop_character(start_character)
 	var wallet = game.meta.zenny
 	game.meta.zenny = 0
 	game.hud.select_workshop_character(start_character)

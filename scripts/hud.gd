@@ -184,6 +184,43 @@ func workshop_first_node() -> int:
     # Keep the skills inspectable even when nothing is affordable or all are fitted.
     return maxi(0, first_unowned)
 
+# The Workshop is three rows: digger headers, the skill column and the bottom
+# buttons. Each keeps its own Left/Right meaning; Up/Down moves between them.
+func workshop_navigate(delta: int, horizontal: bool) -> void:
+    var tabs: Array[int] = []
+    var nodes: Array[int] = []
+    var row: Array[int] = []
+    for i in hits.size():
+        match hits[i].action:
+            "tree_character": tabs.append(i)
+            "buy_skill": nodes.append(i)
+            _: row.append(i)
+    if tabs.is_empty() or nodes.is_empty() or row.is_empty(): return
+    var primary = row[mini(1, row.size() - 1)]
+    if focus_index in tabs:
+        if horizontal:
+            # Preview the neighbouring digger without leaving the header row.
+            workshop_character = wrapi(tabs.find(focus_index) + delta, 0, tabs.size())
+            workshop_message = ""
+            focus_index = tabs[workshop_character]
+        else: focus_index = nodes[workshop_first_node()] if delta > 0 else primary
+    elif focus_index in nodes:
+        if horizontal: select_workshop_character(workshop_character + delta)
+        else:
+            var next = nodes.find(focus_index) + delta
+            focus_index = tabs[workshop_character] if next < 0 else primary if next >= nodes.size() else nodes[next]
+    elif focus_index in row:
+        if horizontal: focus_index = row[clampi(row.find(focus_index) + delta, 0, row.size() - 1)]
+        else: focus_index = nodes[nodes.size() - 1] if delta < 0 else tabs[workshop_character]
+    else: focus_index = nodes[workshop_first_node()]
+
+func workshop_label(entry: Dictionary, skills: Array, available: bool) -> String:
+    if entry.id in skills: return "Fitted"
+    if available: return "%d Z / Buy" % entry.cost
+    if (entry.requires != "" and entry.requires not in skills) or (entry.id == "mastery" and "ability" not in skills): return "%d Z / Locked" % entry.cost
+    if int(game.meta.zenny) < entry.cost: return "Need %d Z" % entry.cost
+    return "%d Z / Syncing" % entry.cost
+
 func title_account_copy() -> Dictionary:
     var a = game.account
     if a.state == "restoring":
@@ -314,7 +351,8 @@ func _input(event: InputEvent) -> void:
     if event is InputEventMouseButton: return
     if game.mode == "workshop" and event is InputEventJoypadButton:
         if event.button_index in [JOY_BUTTON_LEFT_SHOULDER, JOY_BUTTON_RIGHT_SHOULDER]:
-            navigate(-1 if event.button_index == JOY_BUTTON_LEFT_SHOULDER else 1, true)
+            select_workshop_character(workshop_character + (-1 if event.button_index == JOY_BUTTON_LEFT_SHOULDER else 1))
+            game.sound.play("menu_move")
             get_viewport().set_input_as_handled()
             return
     for dir in [["nav_up", -1, false], ["nav_down", 1, false], ["nav_left", -1, true], ["nav_right", 1, true]]:
@@ -343,8 +381,7 @@ func navigate(delta: int, horizontal: bool) -> void:
         focus_index = clampi(focus_index + delta * 2, focus_index % 2, hits.size() - 1)
     elif game.mode == "choice": choice_preview = wrapi(choice_preview + delta, 0, 3)
     elif game.mode in ["archive", "inventory"]: select_part(delta)
-    elif game.mode == "workshop" and horizontal:
-        select_workshop_character(workshop_character + delta)
+    elif game.mode == "workshop": workshop_navigate(delta, horizontal)
     elif game.mode == "title" and horizontal:
         if not hits.is_empty() and hits[clampi(focus_index, 0, hits.size()-1)].action == "character":
             select_character(game.selected_character + 1)
@@ -1439,11 +1476,18 @@ func draw_workshop() -> void:
     page_title("THE WORKSHOP", "Permanent circuits / Each digger has their own tree. Parts and levels reset each dig.")
     text_at(Vector2(1090, 232), "%d ZENNY" % game.meta.zenny, 30, YELLOW, true)
     if game.profile_source == "account": text_at(Vector2(64, 262), "%s / +%d pending" % [game.account.status, game.account.pending_zenny()], 21, CYAN)
-    text_at(Vector2(824, 262), "LB / RB: Digger   Up / Down: Navigate" if pad() else "Left / Right: Digger   Up / Down: Navigate", 20, MUTED, false, 552)
+    text_at(Vector2(824, 262), "LB / RB: Digger   Up / Down: Skills" if pad() else "Left / Right: Digger   Up / Down: Skills", 20, MUTED, false, 552)
     var first_node = workshop_first_node() if workshop_focus_pending else -1
     if workshop_focus_pending: focus_index = -1
     for i in DiverCharacter.COUNT:
-        button(Vector2(64 + i * 328, 278), Vector2(312, 62), DiverCharacter.DISPLAY_NAMES[i], "tree_character", i, workshop_character == i)
+        var tab = Rect2(Vector2(64 + i * 328, 278), Vector2(312, 62))
+        var chosen = workshop_character == i
+        var hot = focus_index == hits.size() or tab.has_point(pointer)
+        window(tab.position, tab.size, SELECT if chosen else PANEL, YELLOW if chosen or hot else EDGE)
+        if hot: cursor(tab.position + Vector2(-28, 15))
+        draw_texture_rect(portraits[i], Rect2(tab.position + Vector2(6, 4), Vector2(48, 54)), false)
+        text_at(tab.position + Vector2(64, 41), DiverCharacter.DISPLAY_NAMES[i], 26, YELLOW if chosen else WHITE, false, 236)
+        hits.append({"rect": tab, "action": "tree_character", "value": i})
     window(Vector2(64, 366), Vector2(300, 414))
     draw_texture_rect(portraits[workshop_character], Rect2(92, 388, 244, 282), false)
     paragraph(Vector2(86, 712), DiverPlayer.ATTACK_DETAILS[workshop_character], 260, 23, CYAN, 3)
@@ -1457,7 +1501,7 @@ func draw_workshop() -> void:
         text_at(pos + Vector2(18, 28), entry.name, 24, YELLOW if owned else WHITE, true)
         var detail = DiverProgression.ABILITIES[workshop_character] if entry.id == "ability" else "Adds %s to this digger's drop pool." % game.ITEMS[DiverProgression.RESEARCH[workshop_character]].name if entry.id == "salvage" else entry.desc
         text_at(pos + Vector2(18, 56), detail, 21, MUTED, false, 715)
-        var label = "Fitted" if owned else "%d Z / Buy" % entry.cost if available else "%d Z / Locked" % entry.cost
+        var label = workshop_label(entry, skills, available)
         if workshop_focus_pending and i == first_node: focus_index = hits.size()
         button(pos + Vector2(748, 12), Vector2(216, 48), label, "buy_skill", i)
     workshop_focus_pending = false

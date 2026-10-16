@@ -16,7 +16,13 @@
   status, or sign-in needed. It ignores profile requests from old generations.
   This is wording only; account persistence is unchanged.
 
-Checks: `tests/progression_checks.gd` covers Workshop entry focus, Right/LB
+Build 24 (owner report: controller treated headers and skills as one list):
+`workshop_navigate()` gives the Workshop its own rows (headers / skills /
+bottom buttons) instead of the flat `move_focus()` list. LB/RB call
+`select_workshop_character()` directly. `workshop_label()` shows Locked,
+Need N Z or Syncing. Headers are drawn with portraits and a clear selection.
+
+Checks: `tests/progression_checks.gd` covers D-pad row navigation, Workshop entry focus, Right/LB
 switching, unaffordable-tree fallback and stale vs current account checks.
 UI/options/account checks pass. The title (with/without a saved dig, signed in
 with a long name) and Workshop were rendered at 1440×900 and 960×600 with no
