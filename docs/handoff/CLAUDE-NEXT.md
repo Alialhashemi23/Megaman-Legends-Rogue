@@ -139,7 +139,7 @@ increase versionCode for distributed updates, never require uninstalling.
   by the owner independently, without breaking the game key.
 - Resend `mail.galosengen.dev` is verified; DNS setup is finished. No need to
   repeat Cloudflare login or create another mail domain.
-- Encrypted daily backups: `C:/Users/Temp/OneDrive/Documents/RelicDiver-Account-Backups`,
+- Encrypted daily backups: the synced folder in `.env` `BACKUP_HOST_DIR`,
   7 daily + 4 weekly; isolated restore passed. Human confirmation of OneDrive
   off-machine syncing and a separate password-manager recovery-secret copy
   remains. Never run `docker compose down -v` on the live stack.

@@ -67,6 +67,8 @@ The script gives Godot its own editor-settings folder (`D:\Android\godot-config`
 
 The preset (`export_presets.cfg` preset 2) sets `version/code` and `version/name`. **Raise `version/code` for every build you hand to someone**, since Android only updates in place to a higher code. The debug key is for development: a release build needs a securely backed-up key, and the app id must not change once a signed build is distributed.
 
+Public releases: `tools/package-android.ps1 -Release` with the release keystore (see HANDOFF.md, "Public release"), uploaded to a GitHub Release as `RelicDiver-android.apk`. Debug/test builds use a different key, so installing a release over one needs an uninstall first.
+
 Running on a device or emulator:
 
 ```powershell

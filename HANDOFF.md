@@ -15,6 +15,17 @@ with apksigner) is at `build/RelicDiver-android.apk`; it must be installed on
 the Retroid by hand while USB debugging is off. The server and protocol are
 unchanged (device endpoints remain for old APKs).
 
+Public release (owner-approved 2026-10-16): the repo is prepared for public
+open source (MIT with the Capcom-asset exclusion, fan-project notice and Android
+download/install guide in README). Public APKs are signed with a new release key
+(alias `relicdiver`, certificate SHA-256 `e39e37ab…3cfcab`), kept outside the
+repo in the toolchain's `release` folder with its password file; the owner must
+back up both off the machine and then delete the password file. Build with
+`tools/package-android.ps1 -Release` and the three `GODOT_ANDROID_KEYSTORE_RELEASE_*`
+variables. Releases are GitHub Releases whose asset is named
+`RelicDiver-android.apk` (the README links `releases/latest/download/...`).
+Test-key builds (codes 2–5) need an uninstall before installing a release build.
+
 ## Polish P7 animation and movement — 2026-10-16 (build 29)
 
 Dash: the old dash was invisible because its 0.12 s blend left the static pose
@@ -195,7 +206,7 @@ A non-profit Mega Man Legends fan roguelike: colorful ancient machinery, mysteri
 
 ## Live deployment
 
-https://megaman.galosengen.dev is served from this PC through a Cloudflare Tunnel by `docker compose`. Accounts add `postgres`, a completed `migrate` job and `backup` to `relic-diver` and `cloudflared`; secrets are in the untracked `.env`. Its `COMPOSE_FILE` includes both Compose files so default commands retain accounts. Encrypted backups go to `C:/Users/Temp/OneDrive/Documents/RelicDiver-Account-Backups`; off-machine sync and a separate recovery-secret copy still need human confirmation. The tunnel routes to `http://relic-diver:8080`; the desktop build's default server is `wss://megaman.galosengen.dev/ws`. A move to the user's Ubuntu laptop and later a VPS is planned as part of the roadmap.
+https://megaman.galosengen.dev is served from this PC through a Cloudflare Tunnel by `docker compose`. Accounts add `postgres`, a completed `migrate` job and `backup` to `relic-diver` and `cloudflared`; secrets are in the untracked `.env`. Its `COMPOSE_FILE` includes both Compose files so default commands retain accounts. Encrypted backups go to the synced folder named by `BACKUP_HOST_DIR` in `.env`; off-machine sync and a separate recovery-secret copy still need human confirmation. The tunnel routes to `http://relic-diver:8080`; the desktop build's default server is `wss://megaman.galosengen.dev/ws`. A move to the user's Ubuntu laptop and later a VPS is planned as part of the roadmap.
 
 To ship a gameplay change (only when the user asks to deploy, because a restart drops online lobbies):
 

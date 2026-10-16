@@ -61,7 +61,7 @@ SMTP authentication passed without sending email. Actual inbox delivery and the
 owner's sign-up/confirmation still need the owner to exercise the live flow.
 
 Daily encrypted backups keep 7 daily and 4 weekly copies in
-`C:/Users/Temp/OneDrive/Documents/RelicDiver-Account-Backups`. Backup startup now
+the off-machine synced folder set as `BACKUP_HOST_DIR` in the host's `.env`. Backup startup now
 waits for migrations. A fresh post-migration backup passed checksum/decryption
 and restored into a disposable database on an isolated Docker network; all 11
 public tables matched, then test resources were removed. Production data was

@@ -2,14 +2,34 @@
 
 A third-person 3D dungeon roguelike fan prototype made in Godot 4.7.1, inspired by Mega Man Legends and the stacking item combinations of action roguelikes. Play as helmet-off Mega Man Volnutt, Roll Caskett, Tron Bonne or a Servbot, using the original PS1 models and textures supplied from The Models Resource. Explore seeded ruins alone or with up to three friends online. Environment art, animation, music, sound effects and ambience were authored for this project.
 
-This is a non-profit fan project, not affiliated with Capcom. See [Credits and licensing](#credits-and-licensing).
+> **Fan project notice:** Relic Diver is a free, non-profit fan game. It is not affiliated with, endorsed by or sponsored by Capcom. Mega Man Legends, Mega Man Volnutt, Roll Caskett, Tron Bonne and the Servbots, and their original models and textures, belong to Capcom; they are excluded from this project's MIT license. Nothing here is sold, and it will never be monetized. Rights holders can reach the maintainer through GitHub. See [Credits and licensing](#credits-and-licensing).
+
+## Download for Android
+
+**[Download the latest APK](https://github.com/Alialhashemi23/Megaman-Legends-Rogue/releases/latest/download/RelicDiver-android.apk)** (Android 7.0 or newer, 64-bit ARM; about 31 MB). All versions and release notes: [Releases](https://github.com/Alialhashemi23/Megaman-Legends-Rogue/releases).
+
+Built for handhelds with controllers (such as the Retroid Pocket 5); a gamepad or a Bluetooth controller is needed, as there are no touch controls.
+
+**Install**
+
+1. On the device, open the download link above in the browser (or copy the `.apk` over USB to its **Download** folder).
+2. Open the downloaded `RelicDiver-android.apk` from the browser's downloads or the **Files** app.
+3. If Android asks, allow installs from that app (**Settings → Allow from this source**), then go back and tap **Install**.
+4. If Google Play Protect warns that the app is unrecognised, choose **More details → Install anyway**. It warns because the game isn't distributed through the Play Store.
+5. Open **Relic Diver**. Play as Guest, or sign in from the account bar on the title screen to sync progress with the browser and Windows versions.
+
+**Updating:** download the newer APK and install it over the existing app; saves and sign-in are kept. Updates must be signed with the same key as the installed version.
+
+**Check the file (optional):** each release lists the APK's SHA-256. The signing certificate's SHA-256 is `e3:9e:37:ab:31:0d:cc:d8:df:bf:d7:0f:3b:f9:0c:41:30:6e:0e:79:70:40:b7:77:c0:12:12:d7:01:3c:fc:ab` (check with `apksigner verify --print-certs RelicDiver-android.apk`).
+
+**Upgrading from a pre-release test build** (0.19.0 test builds and earlier, signed with a different key): uninstall the old app first. Account progress is on the server and comes back when you sign in; Guest progress on that device is lost.
 
 ## Play
 
 - **Browser:** https://megaman.galosengen.dev (desktop Chrome, Edge, Firefox or Safari).
 - **Windows, from this folder:** double-click **Play.cmd**. On a fresh clone it extracts the tracked `build/RelicDiver-Windows.zip` and prepares the pinned Godot runtime first. No installation, account, network connection or extra downloads are needed for solo play.
 - **Portable:** extract `build/RelicDiver-Windows.zip` and run **RelicDiver.exe**, keeping `RelicDiver.pck` and the notices beside it. The executable is the full Godot runtime, so it is larger than a normal release export.
-- **Android development build:** `tools/package-android.ps1` builds a test-signed ARM64 APK with in-game account sign-in and secure sessions. Emulator-checked; Retroid testing and public downloads are pending. See [Android updates](docs/ANDROID-UPDATES.md). Credits / Licenses is available from the title.
+- **Android:** see [Download for Android](#download-for-android). To build it yourself, `tools/package-android.ps1` makes a debug-signed ARM64 APK (`-Release` signs with your own keystore from environment variables). See [Android updates](docs/ANDROID-UPDATES.md). Credits / Licenses is available from the title.
 - **Edit:** **Edit.cmd** opens the project in the bundled editor. The entry point is `project.godot`; gameplay lives in `scripts/`.
 
 ## Diggers
