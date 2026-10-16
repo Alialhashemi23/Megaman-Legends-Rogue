@@ -1,5 +1,41 @@
 # Game account sync (phase 4)
 
+## In-game sign-in and the Guest rule — 2026-10-16 (build 30)
+
+Owner direction: sign-in is a modal on the same screen on every platform, and
+Guest progress follows one rule. `DiverAccount.settle_guest()` runs whenever an
+account becomes active (sign-in, browser cookie session at startup, Android
+restore): if the account is empty and Guest has progress, it previews and
+confirms `/api/v1/migrate-guest` by itself, and clears Guest once the server
+confirms; otherwise (or on `not_empty`) `game.discard_guest_progress()` resets
+the Guest archive, its browser mirror and a saved Guest dig. Sign-out therefore
+returns to a fresh Guest. Account caches, outboxes and checkpoints are untouched.
+
+The panel (`hud.gd draw_account()`, drawn over an inert title) has Sign in,
+Create account, Forgot password, Authenticator code (TOTP or backup code) and
+Check your email views, with LineEdits that controller confirm focuses and Enter
+advances. `account.gd` posts to Better Auth (`sign-in/email`, `sign-up/email`,
+`request-password-reset`, `two-factor/verify-totp|verify-backup-code`) with no
+bearer. Browsers rely on the cookie; native clients send `Origin: <server>`,
+read `set-auth-token`, and send the `two_factor` cookie back themselves
+(`request_headers()`). The owner account has an authenticator, so this step is
+required for them. The device flow, its polling and the manual adoption buttons
+are gone from the game; the server keeps the device endpoints for old APKs.
+Invite links join their lobby once sign-in finishes.
+
+Diagnosis that led here (read-only): one account only; Android (old APK 4)
+synced runs and purchases to it; the browser sent nothing after Oct 14, so the
+owner's later playtesting stayed in that browser's Guest save. The owner chose to
+let the rule discard that browser Guest progress.
+
+Checks: account 56 (sign-in errors, authenticator cookie/headers, bearer,
+create/reset, automatic adoption, account-wins discard incl. saved Guest dig,
+modal fields/Back), Android 48, UI 47, options 39, progression 309, resume 24,
+co-op feedback 40, smoke, persistence; `tests/account_e2e.mjs` against disposable
+PostgreSQL with Playwright: native password + authenticator sign-in through a
+response-dropping proxy, browser modal sign-in with a TOTP code from an invite,
+purchase, reload (cookie session kept), second browser and Windows sync.
+
 Implemented on `feature/account-sync` (`084d6a6`), merged into `main` through `dec0ddc`, and deployed with the
 user's authorization on 2026-10-14. Godot exports and Docker builds ran locally
 on the Windows PC. Public health, exact pack SHA256, isolation headers and the

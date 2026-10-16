@@ -72,6 +72,13 @@ var grid_center = Vector2(0, 2.4)
 var grid_zoom_step = 1
 var grid_dragging = false
 var save_edit: LineEdit
+# In-game sign-in modal fields; `underlay` draws the title behind it, inert.
+var auth_name_edit: LineEdit
+var auth_email_edit: LineEdit
+var auth_password_edit: LineEdit
+var auth_code_edit: LineEdit
+var auth_backup = false
+var underlay = false
 var save_message = "Export a code to keep a backup outside this browser."
 var pending_import: Dictionary = {}
 var waiting_for_paste = false
@@ -85,6 +92,19 @@ func _ready() -> void:
     texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
     for id in DiverCharacter.IDS: portraits.append(load("res://assets/ui/%s_portrait.png" % id))
     save_edit = make_field(32768, "Paste a Relic Diver save code here")
+    auth_name_edit = make_field(16, "Digger name")
+    auth_email_edit = make_field(254, "Email")
+    auth_email_edit.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_EMAIL_ADDRESS
+    auth_password_edit = make_field(128, "Password")
+    auth_password_edit.secret = true
+    auth_password_edit.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_PASSWORD
+    auth_code_edit = make_field(16, "123456")
+    for field in [auth_name_edit, auth_email_edit, auth_password_edit, auth_code_edit]:
+        field.text_submitted.connect(func(_text): auth_field_submitted(field))
+        field.gui_input.connect(func(event):
+            if event is InputEventKey and event.pressed and event.physical_keycode == KEY_ESCAPE:
+                get_viewport().gui_release_focus()
+                field.accept_event())
     name_edit = make_field(16, "Your digger name")
     name_edit.text_submitted.connect(func(_text): commit_name(); get_viewport().gui_release_focus())
     name_edit.focus_exited.connect(commit_name)
@@ -328,7 +348,7 @@ func title_account_copy() -> Dictionary:
     if a.state == "restoring":
         return {"label": "Account offline / Retry" if a.status == "Offline" else "Restoring account…", "detail": "Saved sign-in awaiting confirmation"}
     if a.state == "signing_in":
-        return {"label": "Finish signing in…", "detail": "Approve this device in your browser"}
+        return {"label": "Signing in…", "detail": "Loading your account progress"}
     if a.state == "needs_sign_in":
         return {"label": "Sign in again", "detail": "Cloud progress / Sign-in needed" if game.profile_source == "account" else "Saved sign-in needs renewal"}
     if a.signed_in():
@@ -413,7 +433,7 @@ func cursor(pos: Vector2, side: float = 30) -> void:
 
 func button(pos: Vector2, size: Vector2, title: String, action: String, value: int = 0, primary: bool = false) -> void:
     var area = Rect2(pos, size)
-    var hot = focus_index == hits.size() or area.has_point(pointer)
+    var hot = not underlay and (focus_index == hits.size() or area.has_point(pointer))
     window(pos, size, SELECT if hot else Color("254991") if primary else PANEL, YELLOW if hot else EDGE)
     if hot: cursor(pos + Vector2(-28, size.y / 2 - 16))
     text_at(pos + Vector2(24, size.y / 2 + 10), title, 28, WHITE, false, size.x - 48)
@@ -524,8 +544,12 @@ func back() -> bool:
         "android_update": game.android_updates.later()
         "credits": activate("title")
         "account":
-            if game.account.state == "signing_in": game.account.cancel_sign_in()
-            activate("title")
+            var a = game.account
+            if game.profile_source != "account" and a.state != "restoring" and a.auth.view != "sign_in":
+                activate("auth_view", AUTH_VIEWS.find("sign_in"))
+            else:
+                if a.state == "signing_in" or a.auth.busy: a.cancel_sign_in()
+                activate("title")
         "archive", "online": activate("title")
         "workshop": activate(workshop_return)
         "save_codes": activate("workshop")
@@ -600,10 +624,17 @@ func activate(action: String, value: int = 0) -> void:
         "guest":
             game.account.play_guest()
             game.show_title()
-        "device_open": game.account.open_device_page()
-        "device_cancel": game.account.cancel_sign_in()
-        "migrate_guest": game.account.preview_migration(game.guest_meta)
         "migrate_confirm": game.account.confirm_migration()
+        "auth_field": [auth_name_edit, auth_email_edit, auth_password_edit, auth_code_edit][value].grab_focus()
+        "auth_view":
+            auth_backup = false
+            auth_code_edit.text = ""
+            game.account.open_auth(AUTH_VIEWS[value])
+            if AUTH_VIEWS[value] in ["sign_in", "create", "forgot"] and auth_email_edit.text == "": auth_email_edit.text = game.account.auth.email
+        "auth_submit": submit_auth()
+        "auth_backup":
+            auth_backup = not auth_backup
+            auth_code_edit.text = ""
         "takeover":
             game.account.retry_run(true)
         "retry_run": game.account.retry_run()
@@ -750,6 +781,8 @@ func _draw() -> void:
     for field in [code_edit, server_edit, pass_edit, new_pass_edit]:
         if game.mode != "online": field.visible = false
     save_edit.visible = game.mode == "save_codes"
+    if game.mode != "account":
+        for field in [auth_name_edit, auth_email_edit, auth_password_edit, auth_code_edit]: field.visible = false
     var chatting = game.net.active() and (game.mode == "lobby" or (game.mode == "play" and game.chat_open))
     if not chatting: chat_edit.visible = false
     match game.mode:
@@ -875,7 +908,7 @@ func draw_title() -> void:
     for i in DiverCharacter.COUNT:
         var pos = Vector2(1038 + (i % 2) * 172, 399 + (i / 2) * 70)
         var selected = game.selected_character == i
-        var hot = focus_index == hits.size() or Rect2(pos, Vector2(162, 64)).has_point(pointer)
+        var hot = not underlay and (focus_index == hits.size() or Rect2(pos, Vector2(162, 64)).has_point(pointer))
         window(pos, Vector2(162, 64), SELECT if selected else INK, YELLOW if selected or hot else EDGE)
         draw_texture_rect(portraits[i], Rect2(pos + Vector2(2, 3), Vector2(52, 58)), false)
         text_at(pos + Vector2(60, 41), DiverCharacter.SHORT_NAMES[i].capitalize(), 25 if i < 3 else 21, WHITE, true)
@@ -1513,7 +1546,7 @@ func draw_online() -> void:
 # Compact button for rows like the lobby's kick controls.
 func small_button(pos: Vector2, size: Vector2, title: String, action: String, value: int = 0, color: Color = PANEL) -> void:
     var area = Rect2(pos, size)
-    var hot = area.has_point(pointer)
+    var hot = not underlay and area.has_point(pointer)
     window(pos, size, SELECT if hot else color, YELLOW if hot else EDGE, false)
     text_at(pos + Vector2(12, size.y / 2 + 7), title, 19, WHITE, false, size.x - 20)
     hits.append({"rect": area, "action": action, "value": value})
@@ -1812,48 +1845,125 @@ func draw_save_codes() -> void:
     button(Vector2(1084, 764), Vector2(292, 62), "Back", "workshop")
     text_at(Vector2(64, 876), "Run checkpoints and control settings are separate from this backup.", 23, MUTED)
 
-func draw_account() -> void:
-    backdrop()
-    page_title("DIGGER ACCOUNT", "Permanent progress across browser, Windows and Android. Guest progress stays on this device.")
+const AUTH_VIEWS = ["sign_in", "create", "forgot", "two_factor", "check_email"]
+
+func submit_auth() -> void:
     var a = game.account
-    window(Vector2(64, 282), Vector2(1312, 430))
-    if a.state == "signing_in":
-        text_at(Vector2(96, 335), "SIGN IN ON YOUR BROWSER", 30, CYAN, true)
-        text_at(Vector2(96, 430), str(a.device.get("user_code", "Requesting code…")), 64, YELLOW, true)
-        paragraph(Vector2(96, 496), ("Approve this device in your browser. Code expires in %d seconds. " % maxi(0, int(a.device_remaining))) + ("Android remembers your session using secure storage." if OS.has_feature("android") else "Windows sessions stay in memory; sign in again after closing the game."), 1180, 27, WHITE, 3)
-        button(Vector2(96, 620), Vector2(560, 58), "Open sign-in page", "device_open")
-        button(Vector2(688, 620), Vector2(560, 58), "Cancel", "device_cancel")
-    elif a.state == "restoring":
-        text_at(Vector2(96, 342), "RESTORING YOUR ACCOUNT", 30, CYAN, true)
-        paragraph(Vector2(96, 412), "Waiting for the server to confirm your saved session. Retry when connected, or explicitly choose Guest to play offline.", 1180, 30, WHITE, 4)
-        button(Vector2(96, 620), Vector2(560, 58), "Retry sync", "account_retry")
-        button(Vector2(688, 620), Vector2(560, 58), "Play as Guest", "guest")
-    elif game.profile_source == "account":
-        text_at(Vector2(96, 335), str(a.identity.get("name", "Digger")) + " / " + a.status, 30, CYAN, true)
+    get_viewport().gui_release_focus()
+    match a.auth.view:
+        "sign_in": a.sign_in_email(auth_email_edit.text, auth_password_edit.text)
+        "create": a.create_account(auth_name_edit.text, auth_email_edit.text, auth_password_edit.text)
+        "forgot": a.send_reset(auth_email_edit.text)
+        "two_factor": a.verify_code(auth_code_edit.text, auth_backup)
+    if a.auth.view != "forgot": auth_password_edit.text = ""
+
+# Enter moves to the next field of the form, or submits from the last one.
+func auth_field_submitted(field: LineEdit) -> void:
+    var order = auth_fields()
+    var at = order.find(field)
+    if at >= 0 and at < order.size() - 1: order[at + 1].grab_focus()
+    else: submit_auth()
+
+func auth_fields() -> Array:
+    match game.account.auth.view:
+        "sign_in": return [auth_email_edit, auth_password_edit]
+        "create": return [auth_name_edit, auth_email_edit, auth_password_edit]
+        "forgot": return [auth_email_edit]
+        "two_factor": return [auth_code_edit]
+    return []
+
+# A labelled text box; focusing it with Enter / A opens the on-screen keyboard.
+func auth_field(field: LineEdit, index: int, pos: Vector2, label: String) -> void:
+    text_at(pos + Vector2(0, -10), label, 21, MUTED)
+    var area = Rect2(pos, Vector2(560, 48))
+    if focus_index == hits.size() and not field.has_focus(): window(pos - Vector2(4, 4), area.size + Vector2(8, 8), INK, YELLOW, false)
+    hits.append({"rect": area, "action": "auth_field", "value": index})
+    place_field(field, pos, area.size, 24)
+
+func draw_account() -> void:
+    # A modal over the title: the title stays visible behind it but can't be used.
+    underlay = true
+    draw_title()
+    underlay = false
+    hits.clear()
+    var extra = ui_offset / ui_scale
+    rect(-extra, BASE + extra * 2, Color(0.02, 0.04, 0.14, 0.72))
+    var a = game.account
+    var origin = Vector2(400, 96)
+    window(origin, Vector2(640, 708))
+    var x = origin.x + 40
+    var shown: Array = []
+    if a.state == "restoring":
+        text_at(Vector2(x, 160), "RESTORING YOUR ACCOUNT", 30, CYAN, true)
+        paragraph(Vector2(x, 222), "Waiting for the server to confirm your saved sign-in. Retry when connected, or play as Guest for now.", 560, 26, WHITE, 5)
+        button(Vector2(x, 470), Vector2(560, 56), "Retry", "account_retry", 0, true)
+        button(Vector2(x, 540), Vector2(560, 56), "Play as Guest", "guest")
+    elif game.profile_source == "account" and not a.state in ["needs_sign_in", "signing_in"]:
+        text_at(Vector2(x, 160), str(a.identity.get("name", "Digger")), 34, YELLOW, true, 560)
+        text_at(Vector2(x, 200), "Signed in / " + a.status, 24, CYAN)
         var synced = "Never" if a.last_sync == 0 else Time.get_datetime_string_from_unix_time(int(a.last_sync), true) + " UTC"
-        text_at(Vector2(96, 382), "Last sync: " + synced + " / +%d pending Zenny" % a.pending_zenny(), 25, YELLOW)
-        text_at(Vector2(96, 430), "Cloud: %d digs / %d machines / %d Zenny" % [game.meta.runs, game.meta.kills, game.meta.zenny], 27)
-        text_at(Vector2(96, 476), "This device's Guest: %d digs / %d machines / %d Zenny" % [game.guest_meta.runs, game.guest_meta.kills, game.guest_meta.zenny], 27)
+        text_at(Vector2(x, 246), "Last sync: " + synced, 22, MUTED)
+        text_at(Vector2(x, 290), "%d digs  /  %d clears  /  %d machines" % [game.meta.runs, game.meta.wins, game.meta.kills], 25)
+        text_at(Vector2(x, 326), "%d Zenny  (+%d pending)" % [game.meta.zenny, a.pending_zenny()], 25, YELLOW)
         if not a.migration.is_empty():
-            text_at(Vector2(96, 531), "Adopt: %d digs / %d Zenny / %d purchased circuits" % [a.migration.preview.runs, a.migration.preview.zenny, a.migration.preview.trees], 26, YELLOW)
-            button(Vector2(96, 550), Vector2(600, 56), "Confirm adoption into empty account", "migrate_confirm")
-        elif a.empty_account(): button(Vector2(96, 550), Vector2(600, 56), "Use this PC's progress / Preview", "migrate_guest")
-        else: text_at(Vector2(96, 570), "Cloud progress is active. Your Guest archive remains untouched.", 26, MUTED)
-        button(Vector2(96, 630), Vector2(340, 56), "Retry sync", "account_retry")
-        button(Vector2(468, 630), Vector2(340, 56), "Sign Out", "sign_out")
-        if a.state == "needs_sign_in": button(Vector2(840, 630), Vector2(400, 56), "Sign In again", "sign_in")
+            text_at(Vector2(x, 372), "Adopt: %d digs / %d Zenny / %d circuits" % [a.migration.preview.runs, a.migration.preview.zenny, a.migration.preview.trees], 24, YELLOW)
+            button(Vector2(x, 390), Vector2(560, 52), "Confirm adoption into this account", "migrate_confirm")
+        button(Vector2(x, 486), Vector2(560, 52), "Close", "title", 0, true)
+        button(Vector2(x, 548), Vector2(272, 52), "Retry sync", "account_retry")
+        button(Vector2(x + 288, 548), Vector2(272, 52), "Sign Out", "sign_out")
+        if a.outbox.is_empty(): small_button(Vector2(x, 612), Vector2(560, 40), confirm_label("clear_session", 0, "Sign out and clear this device's account cache"), "clear_session")
     else:
-        text_at(Vector2(96, 342), "PLAY AS GUEST OR BRING YOUR PROGRESS", 30, CYAN, true)
-        paragraph(Vector2(96, 412), "Guest digs work offline. Account digs and Workshop purchases need the server. Pending results retry safely and become spendable after confirmation.", 1180, 30, WHITE, 4)
-        button(Vector2(96, 620), Vector2(560, 58), "Sign In", "sign_in", 0, true)
-        button(Vector2(688, 620), Vector2(560, 58), "Play as Guest", "guest")
-    if a.takeover_needed: button(Vector2(64, 736), Vector2(620, 56), confirm_label("takeover", 0, "Take over active account dig"), "takeover")
-    elif a.pending_run_callback.is_valid(): button(Vector2(64, 736), Vector2(620, 56), "Retry account dig", "retry_run")
-    elif game.net.invited_code() != "": button(Vector2(64, 736), Vector2(620, 56), "Continue to invited lobby", "invite_continue")
-    else: button(Vector2(64, 736), Vector2(620, 56), "Return to Title", "title")
-    if game.profile_source == "account": button(Vector2(716, 736), Vector2(660, 56), "Play as Guest / keep cloud outbox", "guest")
-    if game.profile_source == "account" and a.outbox.is_empty(): button(Vector2(716, 810), Vector2(660, 48), confirm_label("clear_session", 0, "Sign Out + clear this account's local cache"), "clear_session")
-    paragraph(Vector2(64, 880), game.message_detail if game.message_time > 0 else "No automatic merges. Leave a dig or lobby before changing accounts.", 1312, 22, YELLOW, 1)
+        # Guest, or an account whose sign-in ended (its pending progress waits).
+        if game.profile_source == "account" and a.auth.view == "sign_in" and a.auth.note == "":
+            a.auth.note = "Your sign-in ended. Sign in again to sync your progress."
+            a.auth.bad = false
+        match a.auth.view:
+            "sign_in":
+                text_at(Vector2(x, 160), "SIGN IN", 32, CYAN, true)
+                paragraph(Vector2(x, 202), "Keep your progress on every device. Signing in replaces this device's Guest progress with your account's.", 560, 21, MUTED, 3)
+                auth_field(auth_email_edit, 1, Vector2(x, 300), "Email")
+                auth_field(auth_password_edit, 2, Vector2(x, 386), "Password")
+                shown = [auth_email_edit, auth_password_edit]
+                button(Vector2(x, 454), Vector2(560, 54), "Signing in…" if a.auth.busy else "Sign In", "auth_submit", 0, true)
+                button(Vector2(x, 518), Vector2(272, 50), "Create account", "auth_view", AUTH_VIEWS.find("create"))
+                button(Vector2(x + 288, 518), Vector2(272, 50), "Forgot password", "auth_view", AUTH_VIEWS.find("forgot"))
+            "create":
+                text_at(Vector2(x, 160), "CREATE AN ACCOUNT", 32, CYAN, true)
+                paragraph(Vector2(x, 202), "Your Guest progress on this device moves into the new account.", 560, 21, MUTED, 2)
+                auth_field(auth_name_edit, 0, Vector2(x, 272), "Digger name")
+                auth_field(auth_email_edit, 1, Vector2(x, 352), "Email")
+                auth_field(auth_password_edit, 2, Vector2(x, 432), "Password (10+ characters)")
+                shown = [auth_name_edit, auth_email_edit, auth_password_edit]
+                button(Vector2(x, 494), Vector2(560, 54), "Creating…" if a.auth.busy else "Create account", "auth_submit", 0, true)
+                button(Vector2(x, 556), Vector2(560, 46), "I already have an account", "auth_view", AUTH_VIEWS.find("sign_in"))
+            "forgot":
+                text_at(Vector2(x, 160), "FORGOT YOUR PASSWORD?", 32, CYAN, true)
+                paragraph(Vector2(x, 202), "We'll email you a link to choose a new one. It opens in your browser.", 560, 21, MUTED, 2)
+                auth_field(auth_email_edit, 1, Vector2(x, 300), "Email")
+                shown = [auth_email_edit]
+                button(Vector2(x, 370), Vector2(560, 54), "Sending…" if a.auth.busy else "Send reset link", "auth_submit", 0, true)
+                button(Vector2(x, 434), Vector2(560, 50), "Back to sign in", "auth_view", AUTH_VIEWS.find("sign_in"))
+            "two_factor":
+                text_at(Vector2(x, 160), "AUTHENTICATOR CODE", 32, CYAN, true)
+                paragraph(Vector2(x, 202), "Enter a backup code." if auth_backup else "Enter the 6-digit code from your authenticator app.", 560, 21, MUTED, 2)
+                auth_field(auth_code_edit, 3, Vector2(x, 300), "Backup code" if auth_backup else "Code")
+                shown = [auth_code_edit]
+                button(Vector2(x, 370), Vector2(560, 54), "Checking…" if a.auth.busy else "Continue", "auth_submit", 0, true)
+                button(Vector2(x, 434), Vector2(272, 50), "Use authenticator" if auth_backup else "Use a backup code", "auth_backup")
+                button(Vector2(x + 288, 434), Vector2(272, 50), "Back to sign in", "auth_view", AUTH_VIEWS.find("sign_in"))
+            "check_email":
+                text_at(Vector2(x, 160), "CHECK YOUR EMAIL", 32, CYAN, true)
+                paragraph(Vector2(x, 214), "We sent a confirmation link to %s. Open it to finish creating your account, then sign in here." % a.auth.email, 560, 25, WHITE, 5)
+                button(Vector2(x, 400), Vector2(560, 54), "Sign In", "auth_view", AUTH_VIEWS.find("sign_in"), true)
+        if game.profile_source == "account": button(Vector2(x, 616), Vector2(560, 50), "Sign out", "sign_out")
+        else: button(Vector2(x, 616), Vector2(560, 50), "Close / play as Guest", "title")
+    for field in [auth_name_edit, auth_email_edit, auth_password_edit, auth_code_edit]:
+        if not field in shown: field.visible = false
+    if a.takeover_needed: button(Vector2(x, 680), Vector2(560, 44), confirm_label("takeover", 0, "Take over active account dig"), "takeover")
+    elif a.pending_run_callback.is_valid(): button(Vector2(x, 680), Vector2(560, 44), "Retry account dig", "retry_run")
+    elif game.net.invited_code() != "": button(Vector2(x, 680), Vector2(560, 44), "Continue to invited lobby", "invite_continue")
+    var note = a.auth.note if a.auth.note != "" else (game.message_detail if game.message_time > 0 else "")
+    if note != "": paragraph(Vector2(x, 752), note, 560, 22, ORANGE if a.auth.bad else YELLOW, 2)
 
 func draw_android_update() -> void:
     backdrop()

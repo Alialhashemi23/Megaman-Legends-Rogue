@@ -50,7 +50,8 @@ func run() -> void:
 	var guest = game.meta.duplicate(true)
 	await login("acc_test_a", 100, 2)
 	verify(game.profile_source == "account" and game.meta.zenny == 100, "Cloud wallet replaces active view")
-	verify(game.guest_meta == guest, "Guest view remains separate")
+	verify(game.guest_meta.zenny == 0 and not DiverAccount.has_progress(game.guest_meta), "An account with progress wins: Guest progress is discarded")
+	verify(not sent.any(func(r): return r.path == "/api/v1/migrate-guest"), "Guest progress is never offered to an account that has progress")
 	verify(not game.save_meta() and not FileAccess.file_exists(game.save_path), "Cloud cannot write guest archive")
 	verify(account.status == "Synced", "Confirmed profile reports sync")
 	# A lost response leaves an immutable body on disk, and no spendable reward.
@@ -115,7 +116,7 @@ func run() -> void:
 	responses.append({"code": 200, "data": {}})
 	account.sign_out()
 	await settle()
-	verify(game.profile_source == "guest" and game.meta == guest, "Sign-out restores original guest profile")
+	verify(game.profile_source == "guest" and not DiverAccount.has_progress(game.meta), "Sign-out leaves a fresh Guest, not the discarded progress")
 	# New account run retries reuse their durable start intent after lost response.
 	await login("acc_test_c")
 	var began = [false]
@@ -130,7 +131,8 @@ func run() -> void:
 	account.attach_world("coop-world")
 	account.server_run = ""
 	verify(account.resume_world("coop-world") and account.server_run == "run_real", "Local account run follows checkpoint without using host run id")
-	# Migration always previews first, and rejected adoption preserves guest.
+	# A save-code adoption previews first; if the account gained progress meanwhile, the account wins.
+	game.guest_meta = guest.duplicate(true)
 	responses.append({"code": 200, "data": {"preview": {"runs": 0, "zenny": 777, "kills": 0, "trees": 0}, "confirm": "mig_test"}})
 	account.preview_migration(guest)
 	await settle()
@@ -138,7 +140,37 @@ func run() -> void:
 	responses.append({"code": 409, "data": {"error": {"code": "not_empty"}}})
 	account.confirm_migration()
 	await settle()
-	verify(game.guest_meta == guest and account.outbox.is_empty(), "Rejected migration never changes guest")
+	verify(not DiverAccount.has_progress(game.guest_meta) and account.outbox.is_empty(), "Adoption refused because the account has progress discards Guest")
+	account.sign_out()
+	await settle()
+	# A new, empty account adopts this device's Guest progress automatically, once.
+	game.mode = "title"
+	game.meta = guest.duplicate(true)
+	var adopted = DiverProgression.fresh()
+	adopted.zenny = 777
+	responses.append({"code": 200, "data": {"preview": {"runs": 0, "zenny": 777, "kills": 0, "trees": 0}, "confirm": "mig_auto"}})
+	responses.append({"code": 200, "data": {"account": {"id": "acc_test_new", "name": "New", "role": "player"}, "profile": adopted, "revision": 1}})
+	await login("acc_test_new", 0, 0)
+	await settle()
+	var migrations = sent.filter(func(r): return r.path == "/api/v1/migrate-guest")
+	verify(migrations.size() >= 2 and migrations[-2].body.profile.zenny == 777 and migrations[-1].body.confirm == "mig_auto" and migrations[-1].body.has("op_id"), "Empty account previews then confirms Guest adoption by itself")
+	verify(game.meta.zenny == 777 and not DiverAccount.has_progress(game.guest_meta), "Adopted progress continues in the account and leaves Guest fresh")
+	account.sign_out()
+	await settle()
+	# An account with progress also clears a saved Guest dig.
+	game.meta = guest.duplicate(true)
+	var guest_dig = {"v": game.CHECKPOINT_VERSION, "run_id": "guest-dig", "account_id": "", "online": false, "world": {"depth": 1}, "build": {}}
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(game.checkpoint_path.get_base_dir()))
+	var checkpoint = FileAccess.open(game.checkpoint_path, FileAccess.WRITE)
+	checkpoint.store_var(guest_dig)
+	checkpoint.close()
+	game.saved_dig = guest_dig
+	verify(not game.load_checkpoint().is_empty(), "Fixture: a saved Guest dig exists")
+	await login("acc_test_a", 12, 6)
+	verify(game.load_checkpoint().is_empty() and game.saved_dig.is_empty(), "Signing in to an account with progress discards a saved Guest dig")
+	account.sign_out()
+	await settle()
+	await login("acc_test_c")
 	# Actual menu supports all navigation paths and never claims pending is saved.
 	game.mode = "account"
 	game.hud.queue_redraw()
@@ -146,29 +178,65 @@ func run() -> void:
 	verify(game.hud.hits.any(func(hit): return hit.action == "account_retry"), "Account menu exposes keyboard/controller Retry target")
 	verify(game.hud.back() and game.mode == "title", "Account menu supports Back")
 	verify(not FileAccess.get_file_as_string(account.path_for("profile.json")).contains("access_token"), "Cache contains no credentials")
-	# Device polling recognizes Better Auth's string errors and cancellation.
+	# In-game sign-in: errors stay in the panel; a session token and then the profile follow success.
+	account.sign_out()
+	await settle()
 	game.mode = "account"
-	account.state = "signing_in"
-	account.device = {"device_code": "test-device"}
-	account.device_remaining = 600
-	account.device_wait = 0
-	account.device_interval = 5
-	responses.append({"code": 400, "data": {"error": "slow_down"}})
-	account._process(0.1)
+	account.open_auth("sign_in")
+	responses.append({"code": 401, "data": {"code": "INVALID_EMAIL_OR_PASSWORD", "message": "Invalid email or password"}})
+	account.sign_in_email("digger@example.test", "wrong password")
 	await settle()
-	verify(account.device_interval == 10, "Device slow_down adds five seconds")
-	account.device_wait = 0
-	responses.append({"code": 400, "data": {"error": "access_denied"}})
-	account._process(0.1)
+	verify(sent.back().path == "/api/auth/sign-in/email" and sent.back().body.email == "digger@example.test", "Sign-in posts email and password to Better Auth")
+	verify(account.auth.bad and account.auth.note.contains("don't match") and account.state == "guest" and not account.auth.busy, "Wrong password explains itself and stays Guest")
+	responses.append({"code": 403, "data": {"code": "EMAIL_NOT_VERIFIED"}})
+	account.sign_in_email("digger@example.test", "right password")
 	await settle()
-	verify(account.device.is_empty() and account.state == "needs_sign_in", "Device denial stops polling without clearing pending account data")
-	account.state = "signing_in"
-	account.device = {"device_code": "expired"}
-	account.device_remaining = 0.01
-	var sent_count = sent.size()
-	account._process(1)
+	verify(account.auth.note.contains("Confirm your email"), "Unverified email asks for confirmation")
+	responses.append({"code": 200, "data": {"twoFactorRedirect": true}, "headers": PackedStringArray(["Set-Cookie: __Secure-better-auth.two_factor=abc.def%3D; Max-Age=600; Path=/; HttpOnly; Secure"])})
+	account.sign_in_email("digger@example.test", "right password")
 	await settle()
-	verify(account.device.is_empty() and sent.size() == sent_count, "Expired code cannot poll again")
+	verify(account.auth.view == "two_factor" and account.auth.cookie == "__Secure-better-auth.two_factor=abc.def%3D", "Authenticator accounts get the code step and keep its cookie")
+	var code_headers = account.request_headers({"auth": true, "credential": "", "cookie": account.auth.cookie})
+	verify(OS.has_feature("web") or ("Cookie: " + account.auth.cookie in code_headers and "Origin: " + account.base_url() in code_headers and not Array(code_headers).any(func(h): return h.begins_with("Authorization"))), "Native code check sends the cookie and the game server's origin, never a bearer")
+	responses.append({"code": 401, "data": {"code": "INVALID_CODE"}})
+	account.verify_code("123 456", false)
+	await settle()
+	verify(sent.back().path == "/api/auth/two-factor/verify-totp" and sent.back().body.code == "123456" and account.auth.view == "two_factor" and account.auth.bad, "A wrong code stays on the code step")
+	responses.append({"code": 200, "data": {"token": "raw"}, "headers": PackedStringArray(["set-auth-token: signed.token-value"])})
+	responses.append({"code": 200, "data": document("acc_test_a", 12, 6)})
+	account.verify_code("654321", false)
+	await settle()
+	verify(OS.has_feature("web") or account.token == "signed.token-value", "Native keeps the bearer token Better Auth issued")
+	verify(account.signed_in() and account.identity.id == "acc_test_a" and game.profile_source == "account" and game.mode == "title", "A completed sign-in loads the account and closes the panel")
+	verify(account.auth.cookie == "" and not account.auth.busy, "Sign-in leaves no authenticator cookie behind")
+	account.sign_out()
+	await settle()
+	responses.append({"code": 200, "data": {"user": {"id": "u"}}})
+	game.mode = "account"
+	account.open_auth("create")
+	account.create_account("Digger", "new@example.test", "long enough password")
+	await settle()
+	verify(sent.back().path == "/api/auth/sign-up/email" and sent.back().body.name == "Digger" and account.auth.view == "check_email", "Creating an account asks to confirm the email")
+	responses.append({"code": 200, "data": {"status": true}})
+	account.open_auth("forgot")
+	account.send_reset("new@example.test")
+	await settle()
+	verify(sent.back().path == "/api/auth/request-password-reset" and not account.auth.bad and account.auth.note.contains("reset link"), "Forgot password sends the reset email")
+	# The panel is a modal over the title, with focusable fields and Back steps.
+	account.open_auth("create")
+	game.hud.queue_redraw()
+	await settle()
+	verify(game.hud.hits.filter(func(hit): return hit.action == "auth_field").size() == 3 and game.hud.hits.any(func(hit): return hit.action == "auth_submit"), "Create form exposes three fields and a submit target")
+	verify(not game.hud.hits.any(func(hit): return hit.action == "start"), "Title buttons under the modal can't be used")
+	game.hud.activate("auth_field", 1)
+	verify(game.hud.auth_email_edit.has_focus(), "Controller confirm focuses a text field")
+	game.hud.auth_email_edit.text_submitted.emit("x")
+	verify(game.hud.auth_password_edit.has_focus(), "Enter moves to the next field")
+	game.hud.get_viewport().gui_release_focus()
+	verify(game.hud.back() and account.auth.view == "sign_in" and game.mode == "account", "Back from Create returns to Sign in")
+	verify(game.hud.back() and game.mode == "title", "Back from Sign in closes the panel")
+	await login("acc_test_a", 12, 6)
+	account.state = "signed_in"
 	# Cleanup refuses to erase any durable pending operation.
 	account.state = "signed_in"
 	account.discover("ember")

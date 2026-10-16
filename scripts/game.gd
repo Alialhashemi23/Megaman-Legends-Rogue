@@ -1115,6 +1115,24 @@ func activate_guest() -> void:
 	guest_meta = {}
 	net.disconnect_server()
 
+# The account rule: once an account is active, this device's Guest progress has
+# either moved into it or been overruled by it, so Guest starts fresh (including
+# a saved Guest dig). Account caches and checkpoints are untouched.
+func discard_guest_progress() -> void:
+	var active = meta
+	var source = profile_source
+	meta = DiverProgression.fresh()
+	profile_source = "guest"
+	save_meta()
+	guest_meta = meta
+	meta = active
+	profile_source = source
+	var cp = load_checkpoint()
+	if cp.is_empty() or str(cp.get("account_id", "")) != "": return
+	saved_dig = {}
+	for path in [checkpoint_path, checkpoint_path + ".tmp"]:
+		if FileAccess.file_exists(path): DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
 func record_discovery(id: String) -> void:
 	if profile_source == "account": account.discover(id)
 	else:

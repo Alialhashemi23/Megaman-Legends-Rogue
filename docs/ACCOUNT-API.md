@@ -30,11 +30,13 @@ Schema changes are explicit: `node server/migrate.js` (Compose runs it as a one-
 | Client | How it signs in | How it calls the API |
 |---|---|---|
 | Browser game | Same-origin pages at `/account` (sign up, sign in, verify, forgot/reset password). Returns to `/?lobby=CODE` etc. via `?return=` (relative paths only) | `better-auth.session_token` HttpOnly, Secure, SameSite=Lax cookie. Non-GET requests must send `Origin: <PUBLIC_ORIGIN>` |
-| Windows / Android | Device code: game requests a code, shows it and opens `/account/device?code=XXXX-XXXX` in the system browser; the player signs in there and approves | `Authorization: Bearer <access_token>` |
+| Windows / Android | In-game email + password (and authenticator code) against `/api/auth/sign-in/email`; the session comes back in the `set-auth-token` header. Requests send `Origin: <server origin>` because Better Auth requires one, and the authenticator step sends the `two_factor` cookie from the sign-in response back as `Cookie`. Builds before 0.19.0 used the device code below | `Authorization: Bearer <set-auth-token>` |
 
 Sessions last **7 days** and slide: any authenticated request more than a day after the last refresh extends them. Sign-out (`POST /api/auth/sign-out`, cookie or bearer) revokes the session immediately. An expired or revoked token gets `401 unauthorized`; the client keeps its pending operations and asks the player to sign in again.
 
-### Device flow (native)
+Since game 0.19.0 every client signs in from an in-game panel (browser: same-origin `fetch`, so the session cookie is set directly). The device flow stays enabled for older Android builds.
+
+### Device flow (native, builds before 0.19.0)
 
 ```http
 POST /api/auth/device/code

@@ -1,5 +1,20 @@
 # Relic Diver handoff
 
+## In-game sign-in + Guest rule — 2026-10-16 (build 30, Android code 5)
+
+Owner report: the title didn't show GALOSENGEN after signing in, and Android
+looked like a fresh slate. Read-only diagnosis: a single account; Android (old
+APK 4) synced to it; the browser hadn't been signed in since Oct 14, so the
+owner's playtesting since then lived in that browser's Guest save. The owner
+asked for (1) an in-game modal for sign-in on every platform and (2) Guest
+progress moving into a new or empty account, while an account that already has
+progress wins and Guest is discarded. Both are implemented; see the top of
+ACCOUNT-SYNC.md. The owner's account has an authenticator, so the modal has a
+code step. Android APK code 5 / 0.19.0 (same test key as code 3/4, verified
+with apksigner) is at `build/RelicDiver-android.apk`; it must be installed on
+the Retroid by hand while USB debugging is off. The server and protocol are
+unchanged (device endpoints remain for old APKs).
+
 ## Polish P7 animation and movement — 2026-10-16 (build 29)
 
 Dash: the old dash was invisible because its 0.12 s blend left the static pose

@@ -106,11 +106,5 @@ func run() -> void:
 	verify(game.account.backgrounded and game.account.read_file("outbox.json", []) == game.account.outbox, "Suspension persists pending operations before leaving the app")
 	game.account._notification(NOTIFICATION_APPLICATION_RESUMED)
 	verify(not game.account.backgrounded, "Resume restores foreground processing")
-	game.account.state = "signing_in"
-	game.account.device = {"device_code": "disposable-expired-code"}
-	game.account.device_remaining = 600
-	game.account.device_deadline = Time.get_unix_time_from_system() - 1
-	game.account._process(0)
-	verify(game.account.device.is_empty() and game.account.state != "signing_in", "Time spent in external browser counts against device-code expiry")
 	print("ANDROID_CHECKS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)

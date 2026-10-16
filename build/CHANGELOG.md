@@ -1,5 +1,13 @@
 # Local build history
 
+## 30 — In-game sign-in and one rule for Guest progress
+
+- Signing in no longer leaves the game. The account bar opens a panel over the title on browser, Windows and Android: email and password, then a 6-digit authenticator code (or a backup code) if the account uses one. Create an account or ask for a password reset from the same panel. Errors (wrong password, unconfirmed email, too many attempts, no connection) appear in the panel. Windows and Android no longer use the device code approved in a separate browser.
+- Guest progress: creating an account (or signing in to an empty one) moves this device's Guest progress into it automatically, and play continues there. Signing in to an account that already has progress keeps the account's progress and discards this device's Guest progress, including a saved Guest dig. Signing out starts a fresh Guest.
+- Opening an invite link while signed out shows the sign-in panel; after signing in, the game joins that lobby.
+- Android 0.19.0 (code 5) includes all of this plus builds 26–29; it installs over earlier test builds and keeps their saves. Older Android builds still sign in with a device code, but can't join current lobbies.
+- Checks: account 56, Android 48, UI 47, options 39, progression 309, resume 24, co-op feedback 40, smoke and persistence; the account end-to-end test against a disposable database with password + authenticator sign-in on native and in a real browser, lost responses, reload, second browser and Windows sync.
+
 ## 29 — Polish P7 animation and movement
 
 - **Dash you can see.** Each digger now has four dash animations (forward, back, left, right): a crouch, a strong lean into the dash, then a foot plant and settle. The dash picks the one matching its direction relative to where you face, starts on the first frame and kicks up a ring of dust. Running, jumping or getting hit cuts the recovery short; controls and dash timing are unchanged. Teammates' dashes show the right direction too, worked out from their movement, so co-op protocol is unchanged.

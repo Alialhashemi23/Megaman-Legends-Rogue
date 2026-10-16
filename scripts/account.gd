@@ -3,6 +3,11 @@ class_name DiverAccount
 
 # Account data never shares the guest archive. Windows tokens are memory-only;
 # Android uses Keystore-backed encryption through a separate vault.
+# Sign-in happens in-game on every platform (email + password, then an
+# authenticator code when the account has one). Browsers keep the session
+# cookie; Windows and Android keep the bearer token Better Auth returns.
+# Guest progress joins an empty account once; otherwise the account wins and
+# this device's Guest progress is discarded.
 signal changed
 signal message(text: String)
 var game: Node
@@ -17,10 +22,10 @@ var last_sync = 0.0
 var outbox: Array = []
 var foreground_seconds = 0.0 # Foreground dig time not yet reported to /api/v1/activity.
 var token = ""
-var device: Dictionary = {}
-var device_remaining = 0.0
-var device_wait = 0.0
-var device_interval = 5.0
+# In-game sign-in panel: which form shows, whether a request is in flight, the
+# last note (and whether it's an error), the email to keep between forms, and the
+# authenticator step's cookie (Windows/Android carry it themselves).
+var auth: Dictionary = {"view": "sign_in", "busy": false, "note": "", "bad": false, "email": "", "cookie": ""}
 var retry_wait = 0.0
 var attempts = 0
 var heartbeat_clock = 0.0
@@ -36,7 +41,6 @@ var generation = 0
 var http: HTTPRequest
 var vault: DiverAndroidVault
 var backgrounded = false
-var device_deadline = 0.0
 
 func platform_id() -> String:
 	return "android" if OS.has_feature("android") else ("web" if OS.has_feature("web") else "windows")
@@ -114,11 +118,20 @@ func pump() -> void:
 		var response: Dictionary = transport.call(r.path, r.body, r.method)
 		deliver.call_deferred(int(response.get("code", 0)), response.get("data", {}), response.get("headers", PackedStringArray()))
 		return
+	var error = http.request(r.url, request_headers(r), r.method, "" if r.body == null else JSON.stringify(r.body))
+	if error != OK: deliver.call_deferred(0, {}, PackedStringArray())
+
+# Sign-in calls carry no bearer. Better Auth wants an Origin on them, which a
+# browser adds itself; native clients name the game server, and send the
+# authenticator step's cookie back themselves.
+func request_headers(r: Dictionary) -> PackedStringArray:
 	var headers = PackedStringArray(["Content-Type: application/json"])
 	var credential = str(r.get("credential", token))
 	if credential != "": headers.append("Authorization: Bearer " + credential)
-	var error = http.request(r.url, headers, r.method, "" if r.body == null else JSON.stringify(r.body))
-	if error != OK: deliver.call_deferred(0, {}, PackedStringArray())
+	if r.get("auth", false) and not OS.has_feature("web"):
+		headers.append("Origin: " + base_url())
+		if str(r.get("cookie", "")) != "": headers.append("Cookie: " + str(r.cookie))
+	return headers
 
 func completed(result: int, code: int, headers: PackedStringArray, body: PackedByteArray) -> void:
 	var parser = JSON.new()
@@ -155,6 +168,9 @@ func receive_profile(code: int, data: Dictionary, _headers: PackedStringArray) -
 			server_run = ""
 			start_intent = active.get("start", {})
 		state = "signed_in"
+		auth.busy = false
+		auth.note = ""
+		auth.view = "sign_in"
 		if not apply_profile(data):
 			if switching and profile.is_empty():
 				# Nothing confirmed yet: stay unconfirmed so digs, purchases and server changes wait.
@@ -168,10 +184,17 @@ func receive_profile(code: int, data: Dictionary, _headers: PackedStringArray) -
 			return
 		if switching:
 			game.activate_account()
-			if game.mode in ["title", "account"]: game.mode = "account"
+			settle_guest()
+			# A pending invite goes straight to its lobby; otherwise the sign-in
+			# panel closes onto the title. Other screens are left alone.
+			if game.net.invited_code() != "" and not game.net.active() and game.mode in ["title", "account"]:
+				game.mode = "online"
+				game.net.join_lobby(game.net.invited_code(), game.net.url_param("key"))
+			elif game.mode == "account": game.show_title()
 		flush()
 	elif code == 401:
 		var restoring = state in ["restoring", "needs_sign_in"]
+		if state == "signing_in": auth_failed("Sign-in didn't stick. Please try again.")
 		if vault != null: vault.erase(base_url())
 		token = ""
 		if restoring or not identity.is_empty(): state = "needs_sign_in"
@@ -185,6 +208,9 @@ func receive_profile(code: int, data: Dictionary, _headers: PackedStringArray) -
 			game.mode = "account"
 	else:
 		status = "Offline"
+		if state == "signing_in":
+			state = "needs_sign_in" if not identity.is_empty() else "guest"
+			auth_failed("Signed in, but your progress couldn't load. Check your connection and try again.")
 		if code == 403: message.emit("Verify your email in the sign-in page before syncing progress.")
 		# A saved session restored while offline retries on its own once the server is reachable.
 		if state == "restoring" and (code == 0 or code == 429 or code >= 500): retry_wait = 15
@@ -281,6 +307,9 @@ func operation_done(code: int, data: Dictionary, headers: PackedStringArray) -> 
 		if not apply_profile(data):
 			retry_wait = 10
 			return
+		if outbox[0].path == "/api/v1/migrate-guest":
+			game.discard_guest_progress()
+			message.emit("Your Guest progress is now saved to your account.")
 		if outbox[0].path == "/api/v1/run-results" and str(outbox[0].body.run_id) == last_result_run and game.mode == "end":
 			game.new_unlocks.clear()
 			for id in data.get("result", {}).get("new_unlocks", []):
@@ -294,6 +323,7 @@ func operation_done(code: int, data: Dictionary, headers: PackedStringArray) -> 
 		return
 	elif code >= 400 and code < 500 and code != 429:
 		if reason == "revision_conflict": apply_profile(data)
+		if reason == "not_empty" and outbox[0].path == "/api/v1/migrate-guest": game.discard_guest_progress()
 		message.emit("Your progress changed on another device. Please retry the purchase." if reason == "revision_conflict" else "Progress operation refused: " + reason)
 		outbox.pop_front()
 	else:
@@ -419,36 +449,155 @@ func ticket(callback: Callable) -> void:
 func sign_in() -> void:
 	if not switch_allowed(): return
 	if vault != null and state == "guest" and FileAccess.file_exists(vault.file_for(base_url())):
-		# A session kept by play_guest() is tried before asking for a new approval.
+		# A session kept by play_guest() is tried before asking for the password.
 		resume_saved_session()
 		if state == "restoring": return
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("location.assign('/account?return=' + encodeURIComponent(location.pathname + location.search))", true)
+	open_auth("sign_in")
+
+func open_auth(view: String, note: String = "", bad: bool = false) -> void:
+	auth.view = view
+	auth.note = note
+	auth.bad = bad
+	if view != "two_factor": auth.cookie = ""
+	game.mode = "account"
+	changed.emit()
+
+func auth_post(path: String, body: Dictionary, callback: Callable) -> void:
+	auth.busy = true
+	auth.note = ""
+	requests.append({"path": path, "url": base_url() + path, "body": body, "callback": callback, "method": HTTPClient.METHOD_POST, "generation": generation, "credential": "", "auth": true, "cookie": auth.cookie})
+	pump()
+
+func auth_failed(note: String) -> void:
+	auth.busy = false
+	auth.note = note
+	auth.bad = true
+	changed.emit()
+
+static func header(headers: PackedStringArray, name: String) -> String:
+	for line in headers:
+		if line.to_lower().begins_with(name + ":"): return line.substr(name.length() + 1).strip_edges()
+	return ""
+
+# Better Auth's error code, or a readable reason for a failed sign-in request.
+func auth_error(code: int, data: Dictionary, fallback: String) -> String:
+	var reason = str(data.get("code", ""))
+	if code == 0 or code >= 500: return "Can't reach the server. Check your connection and try again."
+	if code == 429: return "Too many attempts. Wait a minute, then try again."
+	match reason:
+		"INVALID_EMAIL_OR_PASSWORD", "INVALID_EMAIL", "INVALID_PASSWORD": return "That email and password don't match an account."
+		"EMAIL_NOT_VERIFIED": return "Confirm your email first. We've sent the link again; check your inbox."
+		"USER_ALREADY_EXISTS", "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL": return "That email already has an account. Sign in instead."
+		"PASSWORD_TOO_SHORT": return "Use at least 10 characters for your password."
+		"PASSWORD_TOO_LONG": return "Use at most 128 characters for your password."
+		"INVALID_TWO_FACTOR_COOKIE": return "That sign-in expired. Sign in again."
+		"INVALID_CODE", "INVALID_BACKUP_CODE", "INVALID_TWO_FACTOR_CODE": return "That code didn't work. Wait for a fresh code and try again."
+	var text = str(data.get("message", ""))
+	return text if text != "" and text.length() < 120 else fallback
+
+func sign_in_email(email: String, password: String) -> void:
+	if not switch_allowed() or auth.busy: return
+	email = email.strip_edges()
+	auth.email = email
+	if email == "" or password == "":
+		auth_failed("Enter your email and password.")
 		return
-	state = "signing_in"
-	request("/api/auth/device/code", {"client_id": "relic-" + platform_id()}, func(code, data, _headers):
-		if code != 200:
-			state = "needs_sign_in" if not identity.is_empty() else "guest"
-			message.emit("Sign-in is unavailable. You can still play as Guest.")
-			return
-		device = data
-		device_remaining = float(data.expires_in)
-		device_deadline = Time.get_unix_time_from_system() + device_remaining
-		device_interval = float(data.interval)
-		device_wait = device_interval
-		open_device_page()
+	auth_post("/api/auth/sign-in/email", {"email": email, "password": password}, func(code, data, headers):
+		if code == 200 and data.get("twoFactorRedirect", false):
+			auth.busy = false
+			auth.cookie = two_factor_cookie(headers)
+			open_auth("two_factor")
+		elif code == 200: start_session(headers)
+		else: auth_failed(auth_error(code, data, "Sign-in failed. Try again."))
 	)
 
-func open_device_page() -> void:
-	if device.has("verification_uri_complete"):
-		if not persist_pending(): return
-		var url = str(device.verification_uri_complete)
-		OS.shell_open(base_url() + url if url.begins_with("/") else url)
+func verify_code(code_text: String, backup: bool) -> void:
+	if auth.busy: return
+	var value = code_text.strip_edges() if backup else code_text.replace(" ", "").replace("-", "")
+	if value == "":
+		auth_failed("Enter the code from your authenticator app.")
+		return
+	auth_post("/api/auth/two-factor/verify-backup-code" if backup else "/api/auth/two-factor/verify-totp", {"code": value}, func(code, data, headers):
+		if code == 200:
+			auth.cookie = ""
+			start_session(headers)
+		elif str(data.get("code", "")) == "INVALID_TWO_FACTOR_COOKIE": open_auth("sign_in", auth_error(code, data, ""), true)
+		else: auth_failed(auth_error(code, data, "That code didn't work. Try again."))
+	)
+
+func create_account(digger: String, email: String, password: String) -> void:
+	if not switch_allowed() or auth.busy: return
+	email = email.strip_edges()
+	auth.email = email
+	if digger.strip_edges() == "" or email == "" or password == "":
+		auth_failed("Enter a digger name, your email and a password.")
+		return
+	auth_post("/api/auth/sign-up/email", {"name": digger.strip_edges(), "email": email, "password": password, "callbackURL": "/account"}, func(code, data, _headers):
+		auth.busy = false
+		if code == 200: open_auth("check_email")
+		else: auth_failed(auth_error(code, data, "Couldn't create the account. Try again."))
+	)
+
+func send_reset(email: String) -> void:
+	if auth.busy: return
+	email = email.strip_edges()
+	auth.email = email
+	if email == "":
+		auth_failed("Enter the email you signed up with.")
+		return
+	auth_post("/api/auth/request-password-reset", {"email": email, "redirectTo": "/account?reset=1"}, func(code, data, _headers):
+		auth.busy = false
+		if code == 200:
+			auth.note = "If that email has an account, a reset link is on its way. It works for an hour."
+			auth.bad = false
+			changed.emit()
+		else: auth_failed(auth_error(code, data, "Couldn't send the link. Try again."))
+	)
+
+# Better Auth sets a short-lived two_factor cookie when a code is needed; the
+# browser keeps it by itself, Windows and Android send it back explicitly.
+static func two_factor_cookie(headers: PackedStringArray) -> String:
+	var pattern = RegEx.create_from_string("((?:__Secure-)?[A-Za-z0-9_.-]*two_factor)=([^;,\\s]+)")
+	for line in headers:
+		if line.to_lower().begins_with("set-cookie:"):
+			var found = pattern.search(line)
+			if found: return found.get_string(1) + "=" + found.get_string(2)
+	return ""
+
+# A successful sign-in: keep the bearer token (native), then load the profile.
+func start_session(headers: PackedStringArray) -> void:
+	if not OS.has_feature("web"):
+		var issued = header(headers, "set-auth-token")
+		if issued == "":
+			auth_failed("Sign-in didn't return a session. Please try again.")
+			return
+		token = issued
+		if OS.has_feature("android"):
+			if vault == null: vault = DiverAndroidVault.new()
+			if not vault.save_token(base_url(), token):
+				vault.erase(base_url())
+				message.emit("Secure session storage unavailable. Sign in again after restarting.")
+	state = "signing_in"
+	auth.busy = true
+	refresh()
 
 func cancel_sign_in() -> void:
-	device = {}
-	state = "needs_sign_in" if not identity.is_empty() else "guest"
+	auth.busy = false
+	auth.note = ""
+	auth.cookie = ""
+	if state == "signing_in": state = "needs_sign_in" if not identity.is_empty() else "guest"
 	generation += 1
+
+# The account rule for this device's Guest progress, applied whenever an
+# account becomes active: an empty account adopts it once; otherwise the
+# account wins and the Guest progress is discarded.
+func settle_guest() -> void:
+	var guest: Dictionary = game.guest_meta
+	if not guest.is_empty() and has_progress(guest) and empty_account(): preview_migration(guest, true)
+	else: game.discard_guest_progress()
+
+static func has_progress(meta: Dictionary) -> bool:
+	return int(meta.get("runs", 0)) > 0 or int(meta.get("kills", 0)) > 0 or int(meta.get("zenny", 0)) > 0 or not (meta.get("trees", {}) as Dictionary).is_empty()
 
 # Choosing Guest while a saved Android session is still unconfirmed (usually offline)
 # keeps the encrypted session for the next launch or Sign In instead of revoking it.
@@ -482,7 +631,9 @@ func sign_out() -> void:
 	revision = 0
 	last_sync = 0
 	outbox = []
-	device = {}
+	auth.cookie = ""
+	retry_wait = 0
+	attempts = 0
 	migration = {}
 	server_run = ""
 	start_intent = {}
@@ -513,14 +664,16 @@ func clear_local_session() -> void:
 func empty_account() -> bool:
 	return not profile.is_empty() and int(profile.runs) == 0 and int(profile.kills) == 0 and int(profile.zenny) == 0 and profile.trees.is_empty()
 
-func preview_migration(source: Dictionary) -> void:
+func preview_migration(source: Dictionary, automatic: bool = false) -> void:
 	if not switch_allowed() or not signed_in() or not empty_account(): return
 	var value = source.duplicate(true)
 	value.erase("revision")
 	request("/api/v1/migrate-guest", {"profile": value}, func(code, data, _headers):
 		if code == 200:
 			migration = {"profile": value, "confirm": data.confirm, "preview": data.preview}
-			game.mode = "account"
+			if automatic: confirm_migration()
+			else: game.mode = "account"
+		elif automatic and code == 409: game.discard_guest_progress()
 		else: message.emit("Guest adoption refused. Your local save is unchanged.")
 	)
 
@@ -547,32 +700,3 @@ func _process(dt: float) -> void:
 			request("/api/v1/runs/" + server_run + "/heartbeat", null, func(code, _data, _headers):
 				if code == 409: message.emit("This account's dig was taken over elsewhere. Your result will still sync.")
 			)
-	if state != "signing_in" or device.is_empty(): return
-	device_remaining -= dt
-	if device_deadline > 0: device_remaining = minf(device_remaining, device_deadline - Time.get_unix_time_from_system())
-	device_wait -= dt
-	if device_remaining <= 0:
-		cancel_sign_in()
-		message.emit("Sign-in code expired. Please sign in again.")
-		return
-	if device_wait > 0: return
-	for r in requests:
-		if r.path == "/api/auth/device/token": return
-	device_wait = device_interval
-	request("/api/auth/device/token", {"grant_type": "urn:ietf:params:oauth:grant-type:device_code", "device_code": device.device_code, "client_id": "relic-" + platform_id()}, func(code, data, _headers):
-		if code == 200:
-			token = str(data.access_token)
-			if OS.has_feature("android"):
-				if vault == null: vault = DiverAndroidVault.new()
-				if not vault.save_token(base_url(), token):
-					vault.erase(base_url())
-					message.emit("Secure session storage unavailable. Sign in again after restarting.")
-			device = {}
-			refresh()
-		elif data.get("error") == "slow_down":
-			device_interval += 5
-			device_wait = maxf(device_wait, device_interval)
-		elif data.get("error") in ["access_denied", "expired_token", "invalid_grant"]:
-			cancel_sign_in()
-			message.emit("Sign-in ended. You can try again.")
-	)

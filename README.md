@@ -9,7 +9,7 @@ This is a non-profit fan project, not affiliated with Capcom. See [Credits and l
 - **Browser:** https://megaman.galosengen.dev (desktop Chrome, Edge, Firefox or Safari).
 - **Windows, from this folder:** double-click **Play.cmd**. On a fresh clone it extracts the tracked `build/RelicDiver-Windows.zip` and prepares the pinned Godot runtime first. No installation, account, network connection or extra downloads are needed for solo play.
 - **Portable:** extract `build/RelicDiver-Windows.zip` and run **RelicDiver.exe**, keeping `RelicDiver.pck` and the notices beside it. The executable is the full Godot runtime, so it is larger than a normal release export.
-- **Android development build:** `tools/package-android.ps1` builds a test-signed ARM64 APK with account sign-in and secure sessions. Emulator-checked; Retroid testing and public downloads are pending. See [Android updates](docs/ANDROID-UPDATES.md). Credits / Licenses is available from the title.
+- **Android development build:** `tools/package-android.ps1` builds a test-signed ARM64 APK with in-game account sign-in and secure sessions. Emulator-checked; Retroid testing and public downloads are pending. See [Android updates](docs/ANDROID-UPDATES.md). Credits / Licenses is available from the title.
 - **Edit:** **Edit.cmd** opens the project in the bundled editor. The entry point is `project.godot`; gameplay lives in `scripts/`.
 
 ## Diggers
@@ -99,7 +99,9 @@ Try rapid fire with Ember Engine and Storm Coil for constant hit effects, or spl
 
 ## Progression
 
-**Accounts (browser + Windows, when the server enables them):** open the title's Account panel to sign in or play as Guest. Cloud records, Zenny, discoveries and Workshop purchases follow your account. Results that cannot sync remain pending and cannot be spent. Retry reconnects safely. Windows sign-in uses a code approved in your browser; the token stays in memory, so sign in again after closing the game. Guest progress remains on this device, separate from cloud progress. Adoption into an empty account needs preview and confirmation; save codes cannot replace an established cloud wallet. Sign-in/out and import are blocked during a dig or lobby.
+**Accounts (browser, Windows and Android, when the server enables them):** press the title's account bar to open the sign-in panel over the title: email and password, then a 6-digit code if your account uses an authenticator app. Create an account or reset a forgotten password from the same panel (the confirmation and reset links arrive by email). Cloud records, Zenny, discoveries and Workshop purchases follow your account. Results that cannot sync remain pending and cannot be spent. Retry reconnects safely.
+
+Guest progress and accounts: if you play as Guest and then create an account, your Guest progress moves into the new account and continues there. Signing in to an account that already has progress keeps the account's progress, and this device's Guest progress (including a saved Guest dig) is discarded. Browsers stay signed in as long as you play at least once a week; Android remembers your sign-in securely; Windows keeps it in memory, so sign in again after closing the game. Save codes cannot replace an established cloud wallet. Sign-in/out and import are blocked during a dig or lobby.
 
 Every dig starts at level one with no parts. Run levels, upgrades and fitted parts reset; records, unlocks and Workshop purchases persist.
 

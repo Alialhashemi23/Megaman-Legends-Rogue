@@ -31,11 +31,21 @@ func run() -> void:
 	game.net.server_url = OS.get_environment("ACCOUNT_TEST_ORIGIN").replace("http://", "ws://") + "/ws"
 	account = game.account
 	account.cache_root = OS.get_environment("ACCOUNT_TEST_CACHE")
-	account.token = OS.get_environment("ACCOUNT_TEST_TOKEN")
-	account.state = "signing_in"
-	account.refresh()
+	if OS.get_environment("ACCOUNT_TEST_EMAIL") != "":
+		# The in-game sign-in over real HTTP, with an authenticator code when given.
+		account.sign_in_email(OS.get_environment("ACCOUNT_TEST_EMAIL"), OS.get_environment("ACCOUNT_TEST_PASSWORD"))
+		var totp = OS.get_environment("ACCOUNT_TEST_TOTP")
+		if totp != "":
+			await until(func(): return account.auth.view == "two_factor" and not account.auth.busy)
+			verify(account.auth.cookie.contains("two_factor="), "Native sign-in keeps the authenticator cookie")
+			account.verify_code(totp, false)
+	else:
+		account.token = OS.get_environment("ACCOUNT_TEST_TOKEN")
+		account.state = "signing_in"
+		account.refresh()
 	await until(func(): return account.signed_in())
-	verify(game.guest_meta.zenny == 999, "HTTP sign-in isolates guest wallet")
+	verify(account.token != "" and not account.auth.bad, "Native sign-in holds a bearer session")
+	verify(not DiverAccount.has_progress(game.guest_meta), "An account with progress discards this device's Guest progress")
 	if OS.get_environment("ACCOUNT_TEST_MODE") == "write":
 		verify(game.meta.zenny == 200, "Native receives initial cloud migration")
 		var began = [false]
