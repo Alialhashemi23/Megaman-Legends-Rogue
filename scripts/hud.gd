@@ -62,7 +62,7 @@ var copied_time = 0.0
 const CONFIRM = ["leave_online", "leave_dig", "abandon", "kick", "discard", "start_new", "give_up", "reset_controls", "takeover", "clear_session"]
 # Options page rows: sound, display, then controls.
 const OPTIONS = ["master", "music", "effects", "ambience", "mute", "fullscreen", "camera", "fov", "mouse", "look", "invert", "vibration", "controls", "map_zoom", "back"]
-const MENU_MODES = ["title", "solo_prep", "pause", "options", "controls", "choice", "inventory", "archive", "end", "online", "lobby", "workshop", "save_codes", "account", "android_update", "credits"]
+const MENU_MODES = ["title", "solo_prep", "pause", "options", "controls", "choice", "inventory", "archive", "end", "online", "lobby", "launch_preparing", "workshop", "save_codes", "account", "android_update", "credits"]
 var credits_lines: PackedStringArray = []
 var credits_page = 0
 var options_return = "title"
@@ -196,6 +196,7 @@ func portrait() -> Texture2D:
     return portraits[game.player.character]
 
 func select_character(index: int) -> void:
+    if game.net.active() and game.net.ready_phase() != "idle": return
     game.selected_character = wrapi(index, 0, DiverCharacter.COUNT)
     game.player.set_character(game.selected_character)
     game.player.visual.preview(0)
@@ -589,6 +590,9 @@ func back() -> bool:
         get_viewport().gui_release_focus()
         return true
     match game.mode:
+        "lobby", "launch_preparing":
+            if game.net.loadout_locked(): game.net.cancel_launch()
+            else: activate("leave_online")
         "solo_prep":
             page_focus.title = {"action": "solo", "value": 0}
             activate("title")
@@ -783,6 +787,9 @@ func activate(action: String, value: int = 0) -> void:
         "inspect": selected_item = value
         "title": game.show_title()
         "character": select_character(value)
+        "ready": game.net.set_ready(not game.net.own_ready())
+        "cancel_launch": game.net.cancel_launch()
+        "lobby_workshop": game.request_loadout_change()
         "mute": game.sound.muted = not game.sound.muted
         "options":
             if game.mode in ["title", "pause"]: options_return = game.mode
@@ -862,13 +869,13 @@ func _draw() -> void:
     if confirm_time <= 0: confirming = ""
     # Hiding a focused LineEdit releases focus, even if shown again in this draw.
     # Only hide fields when their page no longer owns them.
-    name_edit.visible = game.mode in ["online", "lobby"]
+    name_edit.visible = game.mode in ["online", "lobby", "launch_preparing"]
     for field in [code_edit, server_edit, pass_edit, new_pass_edit]:
         if game.mode != "online": field.visible = false
     save_edit.visible = game.mode == "save_codes"
     if game.mode != "account":
         for field in [auth_name_edit, auth_email_edit, auth_password_edit, auth_code_edit]: field.visible = false
-    var chatting = game.net.active() and (game.mode == "lobby" or (game.mode == "play" and game.chat_open))
+    var chatting = game.net.active() and (game.mode in ["lobby", "launch_preparing"] or (game.mode == "play" and game.chat_open))
     if not chatting: chat_edit.visible = false
     match game.mode:
         "model_preview": return
@@ -876,6 +883,7 @@ func _draw() -> void:
         "solo_prep": draw_solo_prep()
         "online": draw_online()
         "lobby": draw_lobby()
+        "launch_preparing": draw_lobby()
         "archive": draw_parts(true)
         "choice": draw_choice()
         "pause": draw_pause()
@@ -1649,29 +1657,38 @@ func small_button(pos: Vector2, size: Vector2, title: String, action: String, va
     text_at(pos + Vector2(12, size.y / 2 + 7), title, 19, WHITE, false, size.x - 20)
     hits.append({"rect": area, "action": action, "value": value})
 
-func digger_card(pos: Vector2, member_slot: int, member_name: String, character: int, weapon: int) -> void:
+func disabled_button(pos: Vector2, size: Vector2, title: String) -> void:
+    window(pos, size, INK, Color("4c6ea6"), false)
+    text_at(pos + Vector2(18, size.y / 2 + 8), title, 23, MUTED, false, size.x - 36)
+
+func digger_card(pos: Vector2, member: Dictionary) -> void:
     var net = game.net
-    var color: Color = DiverNet.SLOT_COLORS[clampi(member_slot, 0, 4)]
-    window(pos, Vector2(672, 92), BLUE if member_slot == net.slot else INK, color, false)
-    window(pos + Vector2(10, 8), Vector2(68, 76), BLUE, EDGE, false)
-    draw_texture_rect(portraits[clampi(character, 0, DiverCharacter.COUNT - 1)], Rect2(pos + Vector2(13, 10), Vector2(62, 72)), false)
-    text_at(pos + Vector2(94, 38), member_name, 27, color, true, 330)
-    text_at(pos + Vector2(94, 72), "%s  ·  %s" % [DiverCharacter.SHORT_NAMES[clampi(character, 0, DiverCharacter.COUNT - 1)].capitalize(), ["Pulse Buster", "Needle Buster", "Siege Buster", "Salvage Bombs"][clampi(weapon, 0, 3)]], 22, MUTED, false, 360)
-    var x = 576
-    if member_slot == net.host_slot:
-        badge(pos + Vector2(x, 14), "HOST", 86, YELLOW)
-        x -= 92
-    if member_slot == net.slot: badge(pos + Vector2(x, 14), "YOU", 80, CYAN)
-    elif net.is_host(): small_button(pos + Vector2(486, 50), Vector2(176, 34), confirm_label("kick", member_slot, "Remove"), "kick", member_slot, Color(0.30, 0.10, 0.14))
+    var member_slot = int(member.slot)
+    var selection: Dictionary = member.get("selection", {})
+    var character = int(selection.get("character", 0))
+    var weapon = int(selection.get("weapon", 0))
+    var color: Color = DiverNet.SLOT_COLORS[member_slot]
+    window(pos, Vector2(672, 86), BLUE if member_slot == net.slot else INK, color, false)
+    draw_texture_rect(portraits[character], Rect2(pos + Vector2(14, 6), Vector2(62, 72)), false)
+    text_at(pos + Vector2(94, 28), str(member.name), 25, color, true, 310)
+    text_at(pos + Vector2(94, 54), "%s / %s" % [DiverCharacter.SHORT_NAMES[character].capitalize(), game.WEAPONS[weapon]], 21, WHITE, false, 320)
+    var spec = DiverProgression.spec(character, str(selection.get("spec", "")))
+    text_at(pos + Vector2(94, 78), spec.get("name", "No specialization"), 19, MUTED, false, 320)
+    text_at(pos + Vector2(430, 70), "READY" if member.get("ready", false) else "NOT READY", 20, GREEN if member.get("ready", false) else YELLOW, true, 136)
+    if member_slot == net.host_slot: badge(pos + Vector2(576, 8), "HOST", 86, YELLOW)
+    elif member_slot == net.slot: badge(pos + Vector2(576, 8), "YOU", 80, CYAN)
+    if net.is_host() and member_slot != net.slot: small_button(pos + Vector2(576, 48), Vector2(86, 30), "Remove", "kick", member_slot, Color(0.30, 0.10, 0.14))
 
 func draw_lobby() -> void:
     backdrop()
     var net = game.net
     var info: Dictionary = net.lobby
+    var phase = net.ready_phase()
+    var locked = net.loadout_locked() or phase == "running"
     var extras = []
     if net.lobby_password != "": extras.append("password %s" % net.lobby_password)
     if bool(info.get("locked", false)): extras.append("locked")
-    page_title(str(info.get("name", "Lobby")).to_upper(), "%s lobby · Code %s%s" % ["Public" if info.get("isPublic", true) else "Private", net.lobby_code, ("  ·  " + "  ·  ".join(extras)) if not extras.is_empty() else ""])
+    page_title(str(info.get("name", "Lobby")).to_upper(), "%s lobby / Code %s%s" % ["Public" if info.get("isPublic", true) else "Private", net.lobby_code, (" / " + " / ".join(extras)) if not extras.is_empty() else ""])
     window(Vector2(64, 276), Vector2(560, 150))
     text_at(Vector2(86, 310), "INVITE LINK", 20, WHITE, true)
     text_at(Vector2(86, 346), net.invite_link(), 22, CYAN, false, 516)
@@ -1681,43 +1698,53 @@ func draw_lobby() -> void:
     text_at(Vector2(86, 476), "YOUR NAME", 20, WHITE, true)
     if not editing() or get_viewport().gui_get_focus_owner() != name_edit: name_edit.text = net.player_name
     place_field(name_edit, Vector2(86, 488), Vector2(516, 44))
-    window(Vector2(64, 562), Vector2(560, 196))
-    text_at(Vector2(86, 594), "YOUR DIGGER", 20, WHITE, true)
+    window(Vector2(64, 562), Vector2(560, 174))
+    text_at(Vector2(86, 594), "LOADOUT LOCKED" if locked else "YOUR DIGGER", 20, WHITE, true)
     for i in DiverCharacter.COUNT:
         var pos = Vector2(86 + i * 131, 606)
         var selected = game.selected_character == i
-        var hot = Rect2(pos, Vector2(125, 60)).has_point(pointer)
+        var hot = not locked and (focus_index == hits.size() or Rect2(pos, Vector2(125, 60)).has_point(pointer))
         window(pos, Vector2(125, 60), SELECT if selected else INK, YELLOW if selected or hot else EDGE, false)
         draw_texture_rect(portraits[i], Rect2(pos + Vector2(4, 3), Vector2(48, 54)), false)
         text_at(pos + Vector2(56, 38), DiverCharacter.SHORT_NAMES[i].capitalize(), 19 if i < 3 else 15, WHITE, true)
-        hits.append({"rect": Rect2(pos, Vector2(125, 60)), "action": "character", "value": i})
-    text_at(Vector2(86, 710), game.WEAPONS[game.selected_weapon], 25, YELLOW, true)
-    paragraph(Vector2(86, 746), DiverPlayer.ATTACK_DETAILS[game.selected_character], 520, 22, MUTED, 2)
-    if game.account.takeover_needed: button(Vector2(64, 778), Vector2(280, 58), confirm_label("takeover", 0, "Take over dig"), "takeover", 0, true)
-    elif game.account.pending_run_callback.is_valid(): button(Vector2(64, 778), Vector2(280, 58), "Retry account dig", "retry_run", 0, true)
-    elif net.is_host(): button(Vector2(64, 778), Vector2(280, 58), "Start Dig", "start_online", 0, true)
-    else:
-        window(Vector2(64, 778), Vector2(280, 58), INK, EDGE, false)
-        text_at(Vector2(84, 815), "Waiting for host…", 23, YELLOW)
-    button(Vector2(364, 778), Vector2(260, 58), confirm_label("leave_online", 0, "Leave Lobby"), "leave_online")
+        if not locked: hits.append({"rect": Rect2(pos, Vector2(125, 60)), "action": "character", "value": i})
+    text_at(Vector2(86, 695), game.WEAPONS[game.selected_weapon], 24, YELLOW, true)
+    var spec = DiverProgression.spec(game.selected_character, game.equipped_spec(game.selected_character))
+    text_at(Vector2(86, 724), "Spec: " + str(spec.get("name", "None equipped")), 21, MUTED, false, 516)
+    if phase == "running": disabled_button(Vector2(64, 740), Vector2(270, 44), "Joining active dig...")
+    elif not game.account_ready_to_prepare(): disabled_button(Vector2(64, 740), Vector2(270, 44), "Confirm account first")
+    elif net.server_ready and not net.readiness().is_empty() and net.selection_acknowledged():
+        button(Vector2(64, 740), Vector2(270, 44), "Unready / Cancel" if net.own_ready() else "Ready", "ready", 0, true)
+    else: disabled_button(Vector2(64, 740), Vector2(270, 44), "Confirming loadout..." if net.server_ready else "Server update needed")
+    if game.account.takeover_needed: button(Vector2(354, 740), Vector2(270, 44), confirm_label("takeover", 0, "Take over account dig"), "takeover")
+    elif game.account.pending_run_callback.is_valid() and (game.account.server_run == "" or game.account.lease_retry.is_valid()): button(Vector2(354, 740), Vector2(270, 44), "Retry account dig", "retry_run")
+    elif phase == "running": disabled_button(Vector2(354, 740), Vector2(270, 44), "Waiting for host sync")
+    else: button(Vector2(354, 740), Vector2(270, 44), "Change loadout" if locked or net.own_ready() else "Workshop", "lobby_workshop")
+    if net.loadout_locked(): button(Vector2(64, 792), Vector2(270, 44), "Cancel launch", "cancel_launch", 0, true)
+    elif net.can_start(): button(Vector2(64, 792), Vector2(270, 44), "Start Dig", "start_online", 0, true)
+    else: disabled_button(Vector2(64, 792), Vector2(270, 44), "Ready the party first" if net.is_host() else "Host starts the dig")
+    button(Vector2(354, 792), Vector2(270, 44), confirm_label("leave_online", 0, "Leave Lobby"), "leave_online")
     var members: Array = net.members()
-    window(Vector2(656, 276), Vector2(720, 470))
+    window(Vector2(656, 276), Vector2(720, 430))
     text_at(Vector2(680, 314), "PARTY   %d / %d" % [members.size(), DiverNet.MAX_PLAYERS], 26, WHITE, true)
     if net.is_host(): small_button(Vector2(1176, 288), Vector2(180, 36), "Unlock Lobby" if bool(info.get("locked", false)) else "Lock Lobby", "lock")
     for i in DiverNet.MAX_PLAYERS:
-        var pos = Vector2(680, 330 + i * 102)
-        if i < members.size():
-            var member_slot = int(members[i].slot)
-            if member_slot == net.slot: digger_card(pos, member_slot, net.player_name, game.selected_character, game.selected_weapon)
-            else:
-                var peer: Dictionary = game.peers.get(member_slot, {})
-                digger_card(pos, member_slot, str(members[i].name), int(peer.get("character", 0)), int(peer.get("weapon", 0)))
+        var pos = Vector2(680, 330 + i * 92)
+        if i < members.size(): digger_card(pos, members[i])
         else:
-            window(pos, Vector2(672, 92), Color(0.05, 0.12, 0.32, 0.6), Color("4c6ea6"), false)
-            text_at(pos + Vector2(28, 54), "Open slot — waiting for a digger", 23, Color("6f8fc0"))
-    # Lobby chat.
-    draw_chat(Vector2(660, 790), 716, 2, false)
-    place_field(chat_edit, Vector2(656, 800), Vector2(720, 36), 19)
+            window(pos, Vector2(672, 86), Color(0.05, 0.12, 0.32, 0.6), Color("4c6ea6"), false)
+            text_at(pos + Vector2(28, 50), "Open slot - waiting for a digger", 23, Color("6f8fc0"))
+    window(Vector2(656, 718), Vector2(720, 54), INK, EDGE, false)
+    var detail = "Waiting for: " + net.waiting_names()
+    if not net.server_ready: detail = "Update the game and lobby server before starting online."
+    elif phase == "countdown": detail = "Starting in %d... Cancel to change the party." % net.countdown_left()
+    elif phase == "preparing": detail = "Preparing dig - waiting for " + net.waiting_names()
+    elif phase == "running": detail = "Joining the active dig - waiting for the host to sync."
+    elif bool(net.readiness().get("canStart", false)): detail = "Everyone is Ready. The host can Start Dig."
+    elif net.waiting_names() == "": detail = "Waiting for the server to confirm the party."
+    text_at(Vector2(678, 752), detail, 22, YELLOW, false, 674)
+    draw_chat(Vector2(660, 798), 716, 1, false)
+    place_field(chat_edit, Vector2(656, 804), Vector2(720, 32), 19)
     window(Vector2(64, 846), Vector2(1312, 40), INK, EDGE, false)
     status_line(Vector2(80, 874))
     if net.reconnecting(): draw_reconnecting()

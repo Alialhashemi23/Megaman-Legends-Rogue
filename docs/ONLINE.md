@@ -53,7 +53,9 @@ On macOS/Linux the equivalent is `cd server && npm ci --omit=dev`, unzip `build/
 Open `https://your-domain/`. The first visit downloads about 13 MB (the server compresses the game). After that the browser revalidates instead of downloading it again. Use a desktop browser with keyboard and mouse: Chrome, Edge, Firefox or Safari.
 
 - **Create Public Lobby** lists your lobby in everyone's lobby browser. **Create Private Lobby** hides it, so only people with the link or the 5-letter code can join.
-- Everyone picks a digger (Mega, Roll, Tron or Servbot, each with a signature attack) in the lobby. Only the host can start the dig.
+- Everyone picks a digger (Mega, Roll, Tron or Servbot, each with a signature attack), then presses **Ready**, including the host. Duplicate diggers are welcome. The host's **Start Dig** becomes available once the whole party is Ready.
+- Start opens a three-second countdown. **Unready / Cancel**, **Cancel launch**, or **Esc / B** cancels before launch; changing the party or its loadout resets consent. **Change loadout** waits for cancellation/unready confirmation before opening the Workshop.
+- After countdown, **Preparing dig** names anyone still loading or confirming their account. Gameplay begins once everyone has prepared. Account errors offer Retry/Take over; they never silently switch an account to Guest. Canceling preparation preserves an older saved dig.
 - Friends can join a dig already underway. They arrive at the current descent with a fresh build.
 - In the dig, click once to capture the mouse for aiming. Browsers only allow mouse capture after a click.
 
