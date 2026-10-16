@@ -1,4 +1,5 @@
 extends Node3D
+signal launch_prepared(attempt_id: String)
 
 const ITEMS = {
 	"lens": {"name": "Sunken Lens", "desc": "+16% buster damage per stack.", "color": "ffca68", "unlock": 0},
@@ -84,6 +85,16 @@ var guest_meta: Dictionary = {}
 var account: DiverAccount
 var android_updates: DiverAndroidUpdates
 var account_starting = false
+var launch_attempt: Dictionary = {}
+var launch_context: Array = []
+var launch_snapshot: Dictionary = {}
+var launch_staged = false
+var launch_waiting_account = false
+var launch_lease_checked = false
+var start_controls_blocked = false
+var loadout_change_requested = false
+# An aborted preparation restores the inactive lobby view without touching disk.
+const PREPARATION_FIELDS = ["run_seed", "run_id", "party_size", "depth", "scrap", "kills", "run_time", "total_damage", "queue_level", "choice_queue", "pending_choices", "choice_source", "end_reason", "pickup_seq", "new_unlocks", "run_recorded", "zenny_earned", "roster"]
 var zenny_earned = 0
 var run_recorded = false
 var screenshot_timer = -1.0
@@ -171,6 +182,9 @@ func _ready() -> void:
 	account.cache_root = DiverPaths.pick("res://save/accounts", "user://accounts")
 	account.message.connect(func(text): notify("ACCOUNT", text))
 	add_child(account)
+	account.changed.connect(func():
+		if not in_run(): net.publish_selection()
+	)
 	android_updates = DiverAndroidUpdates.new()
 	android_updates.game = self
 	add_child(android_updates)
@@ -314,6 +328,13 @@ func start_run(seed_value: int = 0, party: int = 1, id: String = "") -> void:
 	run_id = id if id != "" else new_run_id(run_seed)
 	if profile_source == "account": account.attach_world(run_id)
 	retire_saved_dig(run_id)
+	configure_run(run_seed, party, run_id)
+	activate_run()
+
+# Shared deterministic world construction; callers decide when it becomes live.
+func configure_run(seed_value: int, party: int, id: String) -> void:
+	run_seed = seed_value
+	run_id = id
 	if not net.active(): roster.clear()
 	rng.seed = run_seed
 	party_size = clampi(party, 1, DiverNet.MAX_PLAYERS)
@@ -334,6 +355,8 @@ func start_run(seed_value: int = 0, party: int = 1, id: String = "") -> void:
 	build_floor(false)
 	player.weapon = selected_weapon
 	player.hp = player.max_hp()
+
+func activate_run() -> void:
 	mode = "play"
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if OS.has_feature("web") and net.active() else Input.MOUSE_MODE_CAPTURED
 	notify("DESCENT 01 / " + DEPTH_NAMES[0], "Search the chambers. Defeat the guardian. Find the lift." if party_size == 1 else "Dig together. Stand beside a downed teammate to revive them.")
@@ -508,6 +531,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 # Gameplay actions from any device. Returns true when the action was used.
 func game_action(id: String) -> bool:
+	if start_controls_blocked: return true
 	match id:
 		"chat":
 			if mode == "play" and net.active():
@@ -606,10 +630,16 @@ func resume_game() -> void:
 # Solo menus pause the dig. Online, the ruins keep moving behind the menus,
 # except while reconnecting, when everything waits for the resync.
 func world_running() -> bool:
+	if start_controls_blocked or not launch_attempt.is_empty(): return false
+	if net.awaiting_run_sync: return false
 	if net.active() and not net.connected(): return false
 	return mode == "play" or (net.active() and mode in OVERLAY_MODES)
 
 func _process(dt: float) -> void:
+	if start_controls_blocked and launch_inputs_released(): start_controls_blocked = false
+	if launch_waiting_account and not account_starting and launch_is_current():
+		launch_waiting_account = false
+		continue_launch_preparation()
 	hurt_flash = maxf(0, hurt_flash - dt)
 	message_time = maxf(0, message_time - dt)
 	poll_pad(dt)
@@ -636,7 +666,7 @@ func _process(dt: float) -> void:
 		awaiting_checkpoint -= dt
 		if awaiting_checkpoint <= 0: resolve_takeover({})
 	if is_instance_valid(world): update_pings(dt)
-	guard_page(in_run() or mode == "lobby")
+	guard_page(in_run() or mode in ["lobby", "launch_preparing"])
 	if screenshot_timer >= 0:
 		screenshot_timer -= dt
 		if screenshot_timer < 0: capture_image.call_deferred()
@@ -1202,6 +1232,7 @@ func item_unlocked(id: String) -> bool:
 	return int(meta.kills) >= ITEMS[id].unlock or id in meta.legacy_unlocks or ("salvage" in DiverProgression.owned(meta, selected_character) and id == DiverProgression.RESEARCH[selected_character])
 
 func buy_skill(character: int, id: String) -> bool:
+	if net.active() and (net.loadout_locked() or net.own_ready()): return false
 	if in_run() or not DiverProgression.can_buy(meta, character, id): return false
 	if profile_source == "account": return account.purchase(character, id)
 	var before = meta.duplicate(true)
@@ -1212,6 +1243,7 @@ func buy_skill(character: int, id: String) -> bool:
 	if not save_meta():
 		meta = before
 		return false
+	net.publish_selection()
 	return true
 
 func import_progress(data: Dictionary) -> bool:
@@ -1523,6 +1555,7 @@ func equipped_spec(character: int) -> String:
 
 # Free to change between digs; a dig keeps the one it started with.
 func equip_spec(character: int, id: String) -> bool:
+	if net.active() and (net.loadout_locked() or net.own_ready()): return false
 	if in_run() or (id != "" and DiverProgression.usable_spec(meta, character, id) == ""): return false
 	if id == "": settings.specs.erase(str(character))
 	else: settings.specs[str(character)] = id
@@ -1740,7 +1773,11 @@ func retire_saved_dig(new_run_id: String) -> void:
 # Restore a whole dig: the floor, then this digger's build and everyone else's.
 func restore_checkpoint(cp: Dictionary) -> void:
 	if profile_source == "account" and account.server_run == "" and not account.resume_world(str(cp.run_id)):
-		account.begin_run(func(): restore_checkpoint(cp))
+		var context = net.context()
+		var online = net.active()
+		account.begin_run(func():
+			if not online or net.current_context(context): restore_checkpoint(cp)
+		)
 		return
 	if profile_source == "account": account.attach_world(str(cp.run_id))
 	if cp.get("roster") is Dictionary: roster = (cp.roster as Dictionary).duplicate(true)
@@ -1753,6 +1790,7 @@ func restore_checkpoint(cp: Dictionary) -> void:
 	else: player.weapon = selected_weapon
 	notify("DIG RESUMED", "B%d · %s. Your build is back." % [depth, DEPTH_NAMES[depth - 1]])
 	print("ONLINE: dig restored run=%s depth=%d parts=%d" % [run_id, depth, player.items.size()])
+	net.awaiting_run_sync = false
 	if net.active():
 		net.report_status("run", depth)
 		send_info()
@@ -1789,6 +1827,7 @@ func send_info() -> void:
 	if net.active():
 		roster[net.player_id] = build
 		net.broadcast([DiverNet.M_INFO, build])
+		if not in_run(): net.publish_selection()
 
 func send_state() -> void:
 	var p = player
@@ -1857,25 +1896,151 @@ func new_run_id(seed_value: int) -> String:
 	return "%d-%d-%d" % [seed_value, int(Time.get_unix_time_from_system()), randi() % 100000]
 
 func host_start_run() -> void:
-	if not net.is_host(): return
-	if profile_source == "account" and account.server_run == "":
-		if account_starting: return
-		account_starting = true
-		account.begin_run(host_start_run)
-		return
+	if not net.can_start(): return
 	var seed_value = randi() % 1000000 + 1
-	var party = maxi(1, net.members().size())
-	var id = new_run_id(seed_value)
-	net.broadcast([DiverNet.M_START, seed_value, party, id])
-	start_run(seed_value, party, id)
+	net.send_command({"t": "start_request", "setupRev": int(net.readiness().setupRev), "seed": seed_value, "runId": new_run_id(seed_value)})
+
+func launch_is_current() -> bool:
+	return not launch_attempt.is_empty() and net.current_context(launch_context) and launch_attempt.get("attemptId") == net.launch_payload.get("attemptId")
+
+func account_ready_to_prepare() -> bool:
+	if account.state == "restoring" or (account.state == "needs_sign_in" and account.identity.is_empty()): return false
+	return profile_source != "account" or account.signed_in()
+
+func prepare_launch(payload: Dictionary, context: Array) -> void:
+	if in_run() or not launch_attempt.is_empty(): return
+	launch_snapshot = {"rng_seed": rng.seed, "rng_state": rng.state}
+	for field in PREPARATION_FIELDS:
+		var value: Variant = get(field)
+		launch_snapshot[field] = value.duplicate(true) if value is Array or value is Dictionary else value
+	launch_attempt = payload.duplicate(true)
+	launch_context = context.duplicate()
+	launch_staged = false
+	launch_lease_checked = false
+	mode = "launch_preparing"
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	continue_launch_preparation()
+
+func continue_launch_preparation() -> void:
+	if not launch_is_current() or launch_staged: return
+	if not account_ready_to_prepare():
+		fail_launch("account", "Confirm the saved account or leave the lobby and explicitly choose Guest before starting.")
+		return
+	var attempt = str(launch_attempt.attemptId)
+	var context = launch_context.duplicate()
+	if profile_source == "account":
+		if not account.signed_in():
+			fail_launch("account", "Sign in again before preparing an account dig. Leave the lobby to sign in.")
+			return
+		if account.server_run == "":
+			# A canceled request may still finish and leave a reusable, unplayed lease.
+			if account_starting:
+				launch_waiting_account = true
+				return
+			account_starting = true
+			account.begin_run(func():
+				if net.current_context(context) and launch_attempt.get("attemptId") == attempt: continue_launch_preparation()
+			, false, func(code):
+				if net.current_context(context) and launch_attempt.get("attemptId") == attempt: fail_launch(code, "Account preparation failed. Retry the account dig, then Ready again.")
+			)
+			return
+		if not launch_lease_checked:
+			if account_starting:
+				launch_waiting_account = true
+				return
+			account.confirm_run_lease(func():
+				if net.current_context(context) and launch_attempt.get("attemptId") == attempt:
+					launch_lease_checked = true
+					continue_launch_preparation()
+			, func(code):
+				if net.current_context(context) and launch_attempt.get("attemptId") == attempt: fail_launch(code, "Account lease could not be confirmed. Retry or take over, then Ready again.")
+			)
+			return
+		if not account.persist_pending():
+			fail_launch("storage", "Could not store account data. Free device storage and retry.")
+			return
+	if not net.selection_acknowledged():
+		fail_launch("load", "The selected loadout changed. Review it and Ready again.")
+		return
+	configure_run(int(launch_attempt.seed), int(launch_attempt.party), str(launch_attempt.runId))
+	launch_staged = true
+	position_title_camera()
+	launch_prepared.emit(attempt)
+	net.send_command({"t": "launch_prepared", "attemptId": attempt, "setupRev": int(launch_attempt.setupRev)})
+	print("ONLINE: launch prepared attempt=%s seed=%d party=%d slot=%d" % [attempt, run_seed, party_size, net.slot])
+
+func fail_launch(code: String, detail: String) -> void:
+	if not launch_is_current(): return
+	net.error_text = detail
+	net.send_command({"t": "launch_failed", "attemptId": str(launch_attempt.attemptId), "code": code})
+
+func abort_launch(reason: String) -> void:
+	if launch_attempt.is_empty(): return
+	var rebuild = launch_staged
+	launch_attempt = {}
+	launch_context = []
+	launch_staged = false
+	launch_waiting_account = false
+	for field in PREPARATION_FIELDS:
+		if launch_snapshot.has(field): set(field, launch_snapshot[field])
+	if not launch_snapshot.is_empty():
+		rng.seed = launch_snapshot.rng_seed
+		rng.state = launch_snapshot.rng_state
+	mode = "lobby" if net.active() else "title"
+	if rebuild: build_floor(false)
+	if not launch_snapshot.is_empty(): rng.state = launch_snapshot.rng_state
+	launch_snapshot = {}
+	position_title_camera()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if reason != "":
+		var explanation = "A player could not prepare. Retry the account dig if needed, then Ready again." if reason == "preparation_failed" else "A player took too long to prepare. Ready again when everyone is available." if reason == "preparation_timeout" else "The party launch was canceled. Review the party and Ready again."
+		notify("DIG NOT STARTED", explanation)
+
+func commit_launch(payload: Dictionary) -> bool:
+	if not launch_is_current() or not launch_staged or payload.attemptId != launch_attempt.attemptId: return false
+	if profile_source == "account" and not account.attach_world(str(payload.runId)):
+		net.error_text = "Could not store the committed dig. Rejoin after freeing device storage."
+		abort_launch("")
+		net.recovery_expected = true
+		return false
+	retire_saved_dig(str(payload.runId))
+	launch_attempt = {}
+	launch_context = []
+	launch_snapshot = {}
+	launch_staged = false
+	launch_waiting_account = false
+	start_controls_blocked = true
+	player.update_camera(1)
+	activate_run()
+	return true
+
+func launch_inputs_released() -> bool:
+	for action in ["nav_accept", "nav_back", "jump", "fire", "dash", "menu", "move_forward", "move_back", "move_left", "move_right"]:
+		if Input.is_action_pressed(action): return false
+	return true
+
+func request_loadout_change() -> void:
+	if net.ready_phase() == "running": return
+	loadout_change_requested = true
+	if net.loadout_locked(): net.cancel_launch()
+	elif net.own_ready(): net.set_ready(false)
+	else: open_lobby_workshop()
+
+func open_lobby_workshop() -> void:
+	if not loadout_change_requested or net.loadout_locked() or net.own_ready() or in_run(): return
+	loadout_change_requested = false
+	mode = "lobby"
+	hud.activate("workshop")
 
 func enter_lobby_room() -> void:
 	mode = "lobby"
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	position_title_camera()
 	send_info()
+	net.publish_selection()
 
 func leave_online() -> void:
+	loadout_change_requested = false
 	net.leave_lobby()
 	peers.clear()
 	pending_restore = {}
@@ -1896,14 +2061,16 @@ func lobby_entered(info: Dictionary) -> void:
 		if bool(info.get("checkpoint", false)):
 			awaiting_checkpoint = 3.0
 			return
-		resolve_takeover({})
+		# Reconnecting an idle lobby isn't consent to resume an older local dig.
+		if net.recovery_expected: resolve_takeover({})
+		else: enter_lobby_room()
 		return
 	if in_run(): return  # Rejoined a live dig; the host will resync us.
 	if mode in ["title", "online", "end", "archive"]: enter_lobby_room()
 
 # The server handed us the last host's checkpoint (or it never came).
 func server_checkpoint(data: Dictionary) -> void:
-	if awaiting_checkpoint <= 0 or not valid_checkpoint(data): return
+	if awaiting_checkpoint <= 0 or not net.recovery_expected or not valid_checkpoint(data) or data.get("lobby_code") != net.lobby_code: return
 	resolve_takeover(data)
 
 func resolve_takeover(server_copy: Dictionary) -> void:
@@ -1921,6 +2088,7 @@ func resolve_takeover(server_copy: Dictionary) -> void:
 	restore_checkpoint(best)
 
 func become_host(title: String, detail: String) -> void:
+	net.awaiting_run_sync = false
 	# Robots and loot now run here, starting from the positions we last saw.
 	var top = pickup_seq
 	for p in pickups: top = maxi(top, int(p.net_id))
@@ -1939,6 +2107,7 @@ func host_changed() -> void:
 	if in_run() and net.is_host(): become_host("YOU'RE HOSTING NOW", "The host left, so the dig moved to you. Keep going!")
 
 func lobby_updated() -> void:
+	if loadout_change_requested: open_lobby_workshop()
 	var present = []
 	for member in net.members(): present.append(int(member.slot))
 	for member_slot in peers.keys():
@@ -2003,11 +2172,15 @@ func save_checkpoint_offline() -> void:
 	DirAccess.rename_absolute(ProjectSettings.globalize_path(checkpoint_path + ".tmp"), ProjectSettings.globalize_path(checkpoint_path))
 
 func apply_sync(m: Array) -> void:
+	if not net.can_recover_sync(m[1]): return
+	var context = net.context()
 	if profile_source == "account" and account.server_run == "": account.resume_world(str(m[1].get("run_id", "")))
 	if profile_source == "account" and account.server_run == "":
 		if account_starting: return
 		account_starting = true
-		account.begin_run(func(): apply_sync(m))
+		account.begin_run(func():
+			if net.current_context(context): apply_sync(m)
+		)
 		return
 	var w: Dictionary = m[1]
 	var build: Dictionary = m[2]
@@ -2023,8 +2196,10 @@ func apply_sync(m: Array) -> void:
 		player.weapon = selected_weapon
 		notify("JOINED THE DIG", "B%d · %s. Catch up with your team!" % [depth, DEPTH_NAMES[depth - 1]])
 	print("ONLINE: synced into dig run=%s depth=%d parts=%d" % [run_id, depth, player.items.size()])
+	net.awaiting_run_sync = false
 	build_changed()
 	save_checkpoint()
+	net.recovery_expected = false
 
 func enemy_by_id(id: int) -> DiverEnemy:
 	if id < 0 or id >= enemies.size(): return null
@@ -2187,11 +2362,9 @@ func net_message(from_slot: int, m: Array) -> void:
 			spawn_bolt(m[2], m[3], 0, false, m[4], clampi(int(m[5]), 0, 1), sender(from_slot), true)
 			if sender(from_slot): sender(from_slot).remote_shot(m[2])
 		DiverNet.M_START:
-			if from_host:
-				retire_saved_dig(str(m[3]))
-				start_run(int(m[1]), int(m[2]), str(m[3]))
+			return # Fresh digs require the relay's JSON launch_commit.
 		DiverNet.M_SYNC:
-			if from_host: apply_sync(m)
+			if from_host and net.can_recover_sync(m[1]): apply_sync(m)
 		DiverNet.M_FLOOR:
 			if from_host and in_run():
 				depth = clampi(int(m[1]), 1, 3)

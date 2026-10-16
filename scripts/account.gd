@@ -33,6 +33,7 @@ var server_run = ""
 var last_result_run = ""
 var start_intent: Dictionary = {}
 var pending_run_callback: Callable
+var lease_retry: Callable
 var takeover_needed = false
 var migration: Dictionary = {}
 var requests: Array = []
@@ -373,17 +374,20 @@ func discover(id: String) -> void:
 		if op.path == "/api/v1/discoveries" and id in op.body.parts: return
 	enqueue("/api/v1/discoveries", {"op_id": uuid(), "parts": [id]})
 
-func begin_run(callback: Callable, takeover: bool = false) -> void:
+func begin_run(callback: Callable, takeover: bool = false, failed: Callable = Callable()) -> void:
+	lease_retry = Callable()
 	pending_run_callback = callback
 	if not signed_in():
 		game.account_starting = false
 		message.emit("Sign in again, or leave the lobby and choose Play as Guest.")
+		if failed.is_valid(): failed.call("account")
 		return
 	if start_intent.is_empty() or bool(start_intent.takeover) != takeover:
 		start_intent = {"op_id": uuid(), "platform": platform_id(), "game_version": DiverNet.NET_VERSION, "takeover": takeover}
 	if not write_file("active.json", {"start": start_intent}):
 		game.account_starting = false
 		message.emit("Could not store account dig. Free device storage before starting.")
+		if failed.is_valid(): failed.call("storage")
 		return
 	request("/api/v1/runs", start_intent.duplicate(true), func(code, data, _headers):
 		game.account_starting = false
@@ -392,6 +396,7 @@ func begin_run(callback: Callable, takeover: bool = false) -> void:
 			if not write_file("active.json", {"run_id": server_run}):
 				message.emit("Could not store account dig. Retry before playing.")
 				server_run = ""
+				if failed.is_valid(): failed.call("storage")
 				return
 			start_intent = {}
 			takeover_needed = false
@@ -409,11 +414,50 @@ func begin_run(callback: Callable, takeover: bool = false) -> void:
 			var detail = "Another device has an active dig. Choose Take over to start here." if takeover_needed else "Account dig could not start. Retry, or leave the lobby and choose Play as Guest."
 			message.emit(detail)
 			if game.net.active(): game.net.error_text = detail
-			if not game.net.active(): game.mode = "account"
+			if failed.is_valid(): failed.call("account")
+			elif not game.net.active(): game.mode = "account"
 	)
 
 func retry_run(takeover: bool = false) -> void:
-	if pending_run_callback.is_valid(): begin_run(pending_run_callback, takeover)
+	if game.account_starting: return
+	if lease_retry.is_valid() and not takeover:
+		lease_retry.call()
+	elif pending_run_callback.is_valid():
+		game.account_starting = true
+		begin_run(pending_run_callback, takeover)
+
+# A canceled preparation may leave a lease waiting in the lobby. Confirm it is
+# still ours before reusing it; the existing heartbeat API also renews it.
+func confirm_run_lease(callback: Callable, failed: Callable) -> void:
+	var expected = server_run
+	if expected == "":
+		failed.call("account")
+		return
+	game.account_starting = true
+	pending_run_callback = callback
+	lease_retry = func(): confirm_run_lease(callback, failed)
+	request("/api/v1/runs/" + expected + "/heartbeat", null, func(code, data, _headers):
+		game.account_starting = false
+		if server_run != expected: return
+		if code == 200 and str(data.get("run", {}).get("id", "")) == expected:
+			lease_retry = Callable()
+			pending_run_callback = Callable()
+			status = "Synced" if outbox.is_empty() else "Saving"
+			heartbeat_clock = 0
+			callback.call()
+		else:
+			status = "Offline"
+			if code == 401:
+				state = "needs_sign_in"
+				status = "Sign-in needed"
+			if code in [404, 409]:
+				server_run = ""
+				start_intent = {}
+				lease_retry = Callable()
+				takeover_needed = code == 409
+			message.emit("The account dig could not be confirmed. Retry, take over if needed, or leave the lobby to sign in.")
+			failed.call("account")
+	)
 
 func result(outcome: Dictionary) -> bool:
 	if server_run == "": return false
@@ -424,8 +468,8 @@ func result(outcome: Dictionary) -> bool:
 		write_file("active.json", {})
 	return ok
 
-func attach_world(world_id: String) -> void:
-	if server_run != "": write_file("active.json", {"run_id": server_run, "world_run": world_id})
+func attach_world(world_id: String) -> bool:
+	return server_run != "" and write_file("active.json", {"run_id": server_run, "world_run": world_id})
 
 func resume_world(world_id: String) -> bool:
 	var active: Dictionary = read_file("active.json", {})
@@ -639,6 +683,8 @@ func sign_out() -> void:
 	start_intent = {}
 	last_result_run = ""
 	pending_run_callback = Callable()
+	lease_retry = Callable()
+	game.account_starting = false
 	takeover_needed = false
 	foreground_seconds = 0
 	state = "guest"

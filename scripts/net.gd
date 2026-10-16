@@ -10,7 +10,8 @@ class_name DiverNet
 
 enum {M_INFO, M_STATE, M_SHOT, M_START, M_SNAP, M_ATTACK, M_RESOLVE, M_DAMAGE, M_DIE, M_PICKUP, M_PICKUP_GONE, M_USED, M_HIT, M_INTERACT, M_FROST, M_HEAL, M_ITEM, M_XP, M_CHOICE, M_NOTIFY, M_FLOOR, M_END, M_SYNC, M_LIGHTNING, M_CLEARED, M_RESTORE, M_CHAT, M_PING, M_VISITED}
 # Bump when game messages change so mismatched builds can't share a lobby.
-const NET_VERSION = 10
+const NET_VERSION = 11
+const READY_FEATURE = "ready_v1"
 const CHECKPOINT_TARGET = 255
 const DEFAULT_SERVER = "ws://127.0.0.1:8080/ws"
 const PROFILE_PATH = "res://save/online.json"
@@ -26,6 +27,17 @@ const ERRORS = {
 	"locked": "That lobby is locked by its host.",
 	"password": "Wrong lobby password.",
 	"banned": "You were removed from that lobby.",
+	"ready_feature": "The game and lobby server need compatible readiness updates. Update both before starting online.",
+}
+const READY_ERRORS = {
+	"ready_stale": "The party changed. Review the current loadout and Ready again.",
+	"ready_selection_required": "Waiting for the server to confirm your loadout.",
+	"ready_not_host": "Only the host can start or cancel the party countdown.",
+	"ready_waiting": "Everyone must Ready before the host starts.",
+	"ready_phase": "Wait for the current launch to finish or cancel it.",
+	"ready_attempt": "That launch is no longer current.",
+	"ready_invalid": "The server could not accept that readiness request.",
+	"ready_feature": "Update the game and lobby server before starting online.",
 }
 
 var game: Node
@@ -54,6 +66,22 @@ var guest_id = ""
 var reconnect_clock = 0.0
 var reconnect_wait = 0.0
 var reconnect_attempts = 0
+var command_transport: Callable # Isolated client checks; normal play uses the socket.
+var server_ready = false
+var connection_epoch = 0
+var lobby_epoch = 0
+var ready_state_rev = 0
+var selection_seq = 0
+var build_revision = 0
+var sent_selection: Dictionary = {}
+var selection_fingerprint: Dictionary = {}
+var launch_payload: Dictionary = {}
+var committed_attempt = ""
+var recovery_expected = false
+var awaiting_run_sync = false
+var first_snapshot = true
+var countdown_seen = 0
+var countdown_attempt = ""
 
 func _ready() -> void:
 	profile_path = DiverPaths.pick(PROFILE_PATH, "user://online.json")
@@ -121,6 +149,8 @@ func connect_server() -> void:
 	if OS.has_feature("android") and game.android_updates.blocks_online():
 		error_text = "Update Android from " + game.account.base_url() + "/downloads/android/ before joining online. Guest solo remains available."
 		return
+	connection_epoch += 1
+	server_ready = false
 	socket = WebSocketPeer.new()
 	socket.inbound_buffer_size = 1 << 21
 	socket.outbound_buffer_size = 1 << 21
@@ -141,6 +171,7 @@ func disconnect_server() -> void:
 	reset_lobby()
 
 func reset_lobby() -> void:
+	clear_readiness()
 	slot = 0
 	host_slot = 0
 	lobby_code = ""
@@ -151,6 +182,7 @@ func reset_lobby() -> void:
 
 # Send a lobby command now if connected; returns false when there's no live socket.
 func send_command(message: Dictionary) -> bool:
+	if command_transport.is_valid(): return bool(command_transport.call(message))
 	if not connected() or socket == null or socket.get_ready_state() != WebSocketPeer.STATE_OPEN: return false
 	socket.send_text(JSON.stringify(message))
 	return true
@@ -162,15 +194,18 @@ func command(message: Dictionary) -> void:
 		connect_server()
 
 func create_lobby(title: String, public_lobby: bool, password: String = "") -> void:
+	recovery_expected = false
 	error_text = ""
 	command({"t": "create", "name": title, "public": public_lobby, "password": password.strip_edges().left(24)})
 
 func join_lobby(code: String, password: String = "") -> void:
+	recovery_expected = false
 	error_text = ""
 	command({"t": "join", "code": code.strip_edges().to_upper(), "password": password.strip_edges().left(24)})
 
 # Rejoin a lobby, recreating it under the same code if the server forgot it.
 func resume_lobby(code: String, title: String, public_lobby: bool, password: String) -> void:
+	recovery_expected = true
 	error_text = ""
 	command(resume_message(code, title, public_lobby, password))
 
@@ -259,7 +294,7 @@ func _process(dt: float) -> void:
 				hello_pending = false
 				status = "online"
 				connected_once = true
-				var hello = {"t": "hello", "name": player_name, "id": guest_id, "v": NET_VERSION}
+				var hello = {"t": "hello", "name": player_name, "id": guest_id, "v": NET_VERSION, "features": [READY_FEATURE]}
 				if OS.has_feature("android"):
 					hello.platform = "android"
 					hello.androidVersionCode = game.android_updates.installed_code
@@ -290,6 +325,11 @@ func _process(dt: float) -> void:
 			list_clock += dt
 			if list_clock > 4.0: refresh_list()
 	elif state == WebSocketPeer.STATE_CLOSED:
+		awaiting_run_sync = game.in_run()
+		recovery_expected = game.in_run() or recovery_expected
+		clear_readiness(false)
+		connection_epoch += 1
+		server_ready = false
 		hello_pending = false
 		socket = null
 		outbox.clear()
@@ -328,11 +368,16 @@ func handle_command(message) -> void:
 	if not message is Dictionary: return
 	match str(message.get("t", "")):
 		"welcome":
+			server_ready = message.get("features") is Array and READY_FEATURE in message.features
+			if not server_ready: error_text = ERRORS.ready_feature
 			account_confirmed = bool(message.get("account", false))
 			player_id = "acct:" + str(game.account.identity.id) if account_confirmed else guest_id
 		"lobbies":
 			if message.get("lobbies") is Array: public_lobbies = message.lobbies
 		"joined":
+			var recovering = recovery_expected or game.in_run()
+			clear_readiness(false)
+			recovery_expected = recovering or bool(message.get("checkpoint", false))
 			slot = int(message.get("slot", 0))
 			host_slot = int(message.get("hostSlot", 1))
 			lobby_code = str(message.get("code", ""))
@@ -342,10 +387,18 @@ func handle_command(message) -> void:
 			set_page_lobby(lobby_code)
 			if is_instance_valid(game): game.lobby_entered(message)
 		"lobby":
-			if message.get("lobby") is Dictionary:
-				lobby = message.lobby
-				host_slot = int(lobby.get("hostSlot", host_slot))
-			if is_instance_valid(game): game.lobby_updated()
+			accept_lobby(message.get("lobby"))
+		"ready_error":
+			if not active() or not integer(message.get("setupRev"), 0): return
+			if message.has("attemptId") and message.attemptId != readiness().get("attemptId", ""): return
+			error_text = READY_ERRORS.get(str(message.get("code", "")), "Readiness request was refused.")
+		"launch_prepare", "launch_commit":
+			accept_launch(message)
+		"launch_aborted":
+			if message.get("code") != lobby_code or not message.get("attemptId") is String: return
+			if message.attemptId != launch_payload.get("attemptId", readiness().get("attemptId", "")): return
+			game.abort_launch(str(message.get("reason", "cancel")))
+			launch_payload = {}
 		"host":
 			host_slot = int(message.get("slot", host_slot))
 			if is_instance_valid(game): game.host_changed()
@@ -376,13 +429,190 @@ func handle_command(message) -> void:
 				else: disconnect_server()
 				game.notify("UPDATE ANDROID", error_text)
 				return
-			if status == "reconnecting" or (active() and code in ["banned", "version", "full", "locked"]):
+			if status == "reconnecting" or (active() and code in ["banned", "version", "full", "locked", "ready_feature"]):
 				give_up(error_text)
-			elif code in ["not_found", "full", "locked", "password", "banned", "version"]:
+			elif code in ["not_found", "full", "locked", "password", "banned", "version", "ready_feature"]:
 				set_page_lobby("")
 			if is_instance_valid(game): game.join_failed(code)
 		"pong":
 			ping_ms = Time.get_ticks_msec() - int(message.get("time", 0))
+
+# Readiness is connection/lobby state, never checkpoint/profile data.
+func clear_readiness(clear_recovery: bool = true) -> void:
+	if is_instance_valid(game): game.abort_launch("")
+	lobby_epoch += 1
+	ready_state_rev = 0
+	selection_seq = 0
+	sent_selection = {}
+	selection_fingerprint = {}
+	launch_payload = {}
+	committed_attempt = ""
+	countdown_attempt = ""
+	first_snapshot = true
+	if clear_recovery:
+		recovery_expected = false
+		awaiting_run_sync = false
+	# Keep the old lobby summary for reconnect, but discard its expired consent.
+	lobby.erase("readiness")
+
+func context() -> Array:
+	return [connection_epoch, lobby_epoch, lobby_code, socket]
+
+func current_context(value: Array) -> bool:
+	return active() and connected() and value == context()
+
+static func integer(value: Variant, minimum: int, maximum: int = 9007199254740991) -> bool:
+	return (value is int or value is float) and is_finite(float(value)) and float(value) == floor(float(value)) and value >= minimum and value <= maximum
+
+func readiness() -> Dictionary:
+	return lobby.get("readiness", {})
+
+func ready_phase() -> String:
+	return str(readiness().get("phase", "idle"))
+
+func loadout_locked() -> bool:
+	return active() and ready_phase() in ["countdown", "preparing"]
+
+func own_member() -> Dictionary:
+	for member in members():
+		if int(member.slot) == slot: return member
+	return {}
+
+func own_ready() -> bool:
+	return bool(own_member().get("ready", false))
+
+func current_selection() -> Dictionary:
+	return {"character": game.selected_character, "weapon": game.selected_weapon, "spec": game.equipped_spec(game.selected_character), "skills": DiverProgression.owned(game.meta, game.selected_character).duplicate()}
+
+func publish_selection() -> void:
+	if not active() or not connected() or not server_ready or readiness().is_empty() or loadout_locked(): return
+	var fingerprint = current_selection()
+	if fingerprint == selection_fingerprint and selection_seq > 0: return
+	var revision = build_revision + 1
+	var next = {"t": "selection", "seq": selection_seq + 1, "character": fingerprint.character, "weapon": fingerprint.weapon, "spec": fingerprint.spec, "buildRev": revision}
+	if not send_command(next): return
+	build_revision = revision
+	selection_seq += 1
+	selection_fingerprint = fingerprint
+	sent_selection = next.duplicate()
+	sent_selection.erase("t")
+
+func selection_acknowledged() -> bool:
+	return selection_seq > 0 and own_member().get("selection", {}) == sent_selection and current_selection() == selection_fingerprint
+
+func set_ready(value: bool) -> void:
+	if not active() or not connected() or not server_ready or readiness().is_empty(): return
+	if value and (ready_phase() != "idle" or not selection_acknowledged() or not game.account_ready_to_prepare()): return
+	send_command({"t": "ready", "setupRev": int(readiness().setupRev), "ready": value})
+
+func can_start() -> bool:
+	return server_ready and connected() and is_host() and selection_acknowledged() and bool(readiness().get("canStart", false)) and ready_phase() == "idle"
+
+func cancel_launch() -> void:
+	if not loadout_locked(): return
+	if is_host(): send_command({"t": "start_cancel", "attemptId": str(readiness().get("attemptId", ""))})
+	else: set_ready(false)
+
+func waiting_names() -> String:
+	var names: Array[String] = []
+	for member_slot in readiness().get("waitingSlots", []): names.append(member_name(int(member_slot)))
+	return ", ".join(names)
+
+func countdown_left() -> int:
+	# Approximate presentation only: the relay's prepare/commit authorizes launch.
+	return maxi(0, 3 - int((Time.get_ticks_msec() - countdown_seen) / 1000))
+
+func valid_ready_lobby(value: Dictionary) -> bool:
+	var r: Variant = value.get("readiness")
+	if not r is Dictionary or r.get("v") != 1 or not value.get("players") is Array: return false
+	if not integer(r.get("setupRev"), 1) or not integer(r.get("stateRev"), 1): return false
+	if not r.get("phase") in ["idle", "countdown", "preparing", "running"] or not r.get("attemptId") is String or not r.get("canStart") is bool: return false
+	if not integer(r.get("deadlineMs"), 0) or not integer(r.get("prepareDeadlineMs"), 0) or not r.get("waitingSlots") is Array: return false
+	if (r.phase in ["countdown", "preparing"]) != (r.attemptId.length() > 0 and r.attemptId.length() <= 64): return false
+	var slots = []
+	if value.players.is_empty() or value.players.size() > MAX_PLAYERS: return false
+	for member in value.players:
+		if not member is Dictionary or not integer(member.get("slot"), 1, MAX_PLAYERS) or int(member.slot) in slots: return false
+		if not member.get("id") is String or not member.get("name") is String or not member.get("ready") is bool: return false
+		slots.append(int(member.slot))
+		if member.has("selection"):
+			var s: Variant = member.selection
+			if not s is Dictionary or not integer(s.get("seq"), 1) or not integer(s.get("character"), 0, 3) or not integer(s.get("weapon"), 0, 3) or not integer(s.get("buildRev"), 0) or not s.get("spec") in ["", "spec_a", "spec_b"]: return false
+		elif member.ready: return false
+	if not integer(value.get("hostSlot"), 1, MAX_PLAYERS) or not int(value.hostSlot) in slots or not slot in slots: return false
+	for member_slot in r.waitingSlots:
+		if not integer(member_slot, 1, MAX_PLAYERS) or not int(member_slot) in slots: return false
+	return value.get("state") in ["lobby", "run"]
+
+func accept_lobby(value: Variant) -> void:
+	if not active() or not value is Dictionary or value.get("code") != lobby_code: return
+	if not server_ready or not valid_ready_lobby(value):
+		error_text = ERRORS.ready_feature
+		return
+	var r: Dictionary = value.readiness
+	if int(r.stateRev) < ready_state_rev: return
+	if first_snapshot and value.state == "run" and r.phase == "running": recovery_expected = true
+	first_snapshot = false
+	ready_state_rev = int(r.stateRev)
+	lobby = value.duplicate(true)
+	# JSON numbers arrive as floats. Canonicalize after validating their shape;
+	# dictionary equality otherwise rejects an acknowledged integer loadout.
+	for key in ["setupRev", "stateRev", "deadlineMs", "prepareDeadlineMs"]: lobby.readiness[key] = int(lobby.readiness[key])
+	lobby.readiness.waitingSlots = lobby.readiness.waitingSlots.map(func(member_slot): return int(member_slot))
+	for member in lobby.players:
+		member.slot = int(member.slot)
+		if member.has("selection"):
+			for key in ["seq", "character", "weapon", "buildRev"]: member.selection[key] = int(member.selection[key])
+	host_slot = int(lobby.hostSlot)
+	if r.phase == "countdown" and r.attemptId != countdown_attempt:
+		countdown_attempt = r.attemptId
+		countdown_seen = Time.get_ticks_msec()
+	if not launch_payload.is_empty() and (r.phase == "idle" or int(r.setupRev) != int(launch_payload.setupRev)):
+		game.abort_launch("")
+		launch_payload = {}
+	game.lobby_updated()
+	if not game.in_run(): publish_selection()
+
+func valid_launch(value: Dictionary) -> bool:
+	if not server_ready or not active() or not connected() or value.get("code") != lobby_code: return false
+	if not value.get("attemptId") is String or value.attemptId.is_empty() or value.attemptId.length() > 64: return false
+	if not integer(value.get("setupRev"), 1) or int(value.setupRev) != int(readiness().get("setupRev", 0)): return false
+	if not integer(value.get("seed"), 1, 1000000) or not integer(value.get("party"), 1, MAX_PLAYERS) or not integer(value.get("hostSlot"), 1, MAX_PLAYERS) or int(value.hostSlot) != host_slot: return false
+	if not value.get("runId") is String or value.runId.is_empty() or value.runId.length() > 96: return false
+	for c in value.runId:
+		if c.unicode_at(0) < 32 or c.unicode_at(0) > 126: return false
+	if not value.get("slots") is Array or value.slots.size() != int(value.party) or value.slots.size() != members().size(): return false
+	var expected = []
+	for member in members(): expected.append(int(member.slot))
+	expected.sort()
+	var received = []
+	for member_slot in value.slots:
+		if not integer(member_slot, 1, MAX_PLAYERS): return false
+		received.append(int(member_slot))
+	return received == expected and slot in received
+
+func accept_launch(value: Dictionary) -> void:
+	if not valid_launch(value): return
+	if value.attemptId == committed_attempt: return
+	if value.t == "launch_prepare":
+		if not integer(value.get("timeoutMs"), 1, 300000) or game.in_run(): return
+		if value.attemptId != readiness().get("attemptId") or not ready_phase() in ["countdown", "preparing"] or not selection_acknowledged(): return
+		if not launch_payload.is_empty(): return
+		launch_payload = value.duplicate(true)
+		game.prepare_launch(launch_payload, context())
+	else:
+		if launch_payload.is_empty() or game.in_run(): return
+		for key in ["code", "attemptId", "setupRev", "hostSlot", "slots", "seed", "party", "runId"]:
+			if value[key] != launch_payload[key]: return
+		if game.commit_launch(value):
+			committed_attempt = value.attemptId
+			launch_payload = {}
+			recovery_expected = false
+
+func can_recover_sync(world: Dictionary) -> bool:
+	if not launch_payload.is_empty() or loadout_locked(): return false
+	if game.in_run(): return str(world.get("run_id", "")) == game.run_id
+	return recovery_expected and (ready_phase() == "running" or not game.pending_restore.is_empty())
 
 func load_profile() -> void:
 	if not FileAccess.file_exists(profile_path): return
