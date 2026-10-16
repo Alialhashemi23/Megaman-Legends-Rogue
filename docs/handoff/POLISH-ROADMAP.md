@@ -1,8 +1,8 @@
 # Polish roadmap — 2026-10-15
 
 Status: P1–P6 are implemented and verified (builds 23–28) and pushed to `main`
-(2026-10-15). P1–P5 are deployed; P6's deploy waits until the owner finishes
-playtesting the live build. Next is P7 (dash
+(2026-10-15). All six are deployed; P6 went live after the owner's playtest
+session. Next is P7 (dash
 animation first). Still pending: owner sign-off on visuals and specialization or
 milestone balance, browser frame-time measurement, Retroid checks and an Android
 APK rebuild (needed for profile 4 and protocol 10).

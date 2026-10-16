@@ -17,7 +17,8 @@ Effects are host-side in `enemy.take_damage()`/`die()` for Arc, Wildfire,
 Fortune, Salvo and Scavenger, and in `player.gd` for Bulwark, Second Wind,
 Kinetic, Glacier and Twin. Final-guardian decision: no milestone, because the
 dig ends there. Protocol 10. `tests/milestone_checks.gd`; `tests/net_driver.gd`
-now checks that host and guest each get their own milestone. Next phase: P7
+now checks that host and guest each get their own milestone. Deployed from `31a36e2`
+(container healthy; local and public `index.pck` match the export; live boot checked). Next phase: P7
 (dash animation first).
 
 ## Polish P5 specializations — 2026-10-15 (build 27)
