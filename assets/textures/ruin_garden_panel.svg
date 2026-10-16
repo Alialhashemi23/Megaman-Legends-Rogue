@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" shape-rendering="crispEdges">
+<!-- Garden: copper ventilation fan with painted growth at the edges. -->
+<rect width="128" height="128" fill="#677c6a"/>
+<path d="M12 3H116L124 11V117L116 125H12L4 117V11Z" fill="#c5b58c"/>
+<path d="M15 8H111L117 13H18V112H10V16Z" fill="#e5d2a5"/>
+<path d="M118 17H123V114L113 123H18V116H110L118 108Z" fill="#8f956d"/>
+<path d="M35 22H92L107 37V89L92 104H35L20 89V37Z" fill="#526f65"/>
+<path d="M39 28H88L100 40V85L88 97H39L27 85V40Z" fill="#c0c5a2"/>
+<path d="M42 34H85L94 43V82L85 91H42L33 82V43Z" fill="#3d605d"/>
+<path d="M62 58L44 38H66L77 48L71 59ZM69 61L90 44V66L80 76L69 70ZM65 70L82 87H60L49 77L57 68ZM57 65L36 81V60L46 49L58 57Z" fill="#88aa8c"/>
+<path d="M61 55H68L74 61V68L68 74H61L55 68V61Z" fill="#d7b76c"/>
+<path d="M61 59H67V65H61Z" fill="#f0d49b"/>
+<path d="M8 124L16 104L13 87L22 72M105 7L108 24L117 35L114 53" fill="none" stroke="#456b56" stroke-width="3"/>
+<path d="M14 106L5 98L6 88L15 93ZM15 96L26 84L31 88L23 98ZM110 26L98 22L96 14L108 18ZM116 41L125 32L127 40L118 49Z" fill="#749963"/>
+<path d="M12 16H17V21H12ZM109 109H114V114H109ZM31 112H49V115H31Z" fill="#efe0b2"/>
+<path d="M81 9L74 21M8 63L20 60M95 115L101 123" fill="none" stroke="#a19068" stroke-width="2"/>
+</svg>

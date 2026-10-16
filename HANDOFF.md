@@ -1,5 +1,50 @@
 # Relic Diver handoff
 
+## Polish P1 UI + P2 ruins — 2026-10-15 (tested; build 23)
+
+Verified and shipped per [CLAUDE-POLISH-TEST.md](docs/handoff/CLAUDE-POLISH-TEST.md)
+after the owner lifted the no-testing restriction. `scripts/hud.gd`: Workshop
+focus/digger switching, Credits position, account-state wording. `scripts/ruins.gd`,
+`scripts/art.gd` and nine painted SVGs: per-descent palettes, batched wall/fixture
+markings and room crests. Details are in AUDIO-UI.md and ART-ANIMATION.md.
+
+Validated: the SVGs import cleanly; UI/options/account/progression (8 new
+Workshop/account checks)/character/combat/resume checks pass; movement,
+persistence and smoke tests pass. Seeded layouts, RNG state, colliders,
+interactables and enemies match the previous commit exactly (4 seeds × 3
+descents). Native draw calls are about 15% lower with frame time no worse. Rooms
+from all three descents, plus the title/Workshop at 1440×900 and 960×600, were
+rendered and reviewed.
+
+Test isolation fix: `game._ready()` used to replace a `save_path`/`checkpoint_path`
+that a test set before adding the game (a regression since the Android build),
+so progression checks wrote their fixture into the desktop `save/archive.json`.
+It now keeps pre-assigned paths. On 2026-10-15 that file contained the fixture
+(1234 Zenny); its earlier contents are unknown.
+
+Still pending: the owner's visual sign-off on the ruins, browser frame-time
+measurement, real Retroid checks, and an Android APK rebuild. The APK is still
+code 4 and lacks these visual changes, which are cosmetic only; protocol,
+checkpoint and profile are unchanged. Dash animation (P7) is not addressed.
+
+## Latest polish roadmap and deployment authorization — 2026-10-15
+
+The owner completed a design questionnaire in Codex. See
+[POLISH-ROADMAP.md](docs/handoff/POLISH-ROADMAP.md) for phases P0–P7 and
+[POLISH-PROGRESSION.md](docs/handoff/POLISH-PROGRESSION.md) for the accepted
+per-character, fully unlockable Sphere Grids, guardian build milestones, faithful
+PS1 ruins, and music polish. Existing melodies are liked; the owner rates current
+music at roughly 50% of the desired quality and wants significant refinement.
+P1 and P2 are now tested and shipped as build 23 (see above).
+
+The owner explicitly authorizes updating this hosting checkout, pushing GitHub
+`main`, and deploying each completed implementation phase to the existing local
+container behind `megaman.galosengen.dev`, followed by a short explanation.
+This supersedes earlier "future deployments need authorization" / "user deploys"
+wording for these phases. Preserve account Compose overlays, database volumes,
+secrets, backups, tunnel and concurrent work; follow the roadmap shipping steps.
+The new P0–P8 labels are separate from the earlier account/Android phases below.
+
 Current state of the project for a new session. Updated 2026-10-14. Game direction is in [DESIGN.md](DESIGN.md); what's next is in [docs/handoff/ROADMAP.md](docs/handoff/ROADMAP.md); build history is in [CHANGELOG.md](CHANGELOG.md).
 
 **Current continuation brief:** [docs/handoff/CLAUDE-NEXT.md](docs/handoff/CLAUDE-NEXT.md) records the exact merged/live split, completed validation, operational traps and the owner's latest decision to test the browser updater before considering an in-game progress bar.

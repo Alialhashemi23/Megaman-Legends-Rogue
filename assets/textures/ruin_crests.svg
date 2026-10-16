@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="384" height="288" viewBox="0 0 384 288" shape-rendering="crispEdges">
+<!-- 4 x 3 atlas. Room functions left-to-right: landing, pillars, relay,
+storage, coolant, foundry, vault, terrace, concourse, guardian, fork, salvage. -->
+<defs><g id="frame">
+<rect width="96" height="96" fill="#b2b9a8"/>
+<path d="M8 4H88L92 8V88L88 92H8L4 88V8Z" fill="#435d78"/>
+<path d="M12 8H84V12H12V84H8V12Z" fill="#ded7b6"/>
+<path d="M85 15H89V85L85 89H15V85H85Z" fill="#7b969d"/>
+<path d="M16 20H20V24H16ZM76 72H80V76H76ZM24 83H30V86H24Z" fill="#9bafad"/>
+</g></defs>
+<g><use xlink:href="#frame"/><path d="M28 33H68L76 41V63L68 71H28L20 63V41Z" fill="none" stroke="#dfca91" stroke-width="5"/><path d="M36 43H60V61H36ZM39 27L48 18L57 27M39 78L48 69L57 78" fill="none" stroke="#a7cbc3" stroke-width="4"/></g>
+<g transform="translate(96 0)"><use xlink:href="#frame"/><path d="M23 28H73V35H23ZM25 38H35V66H25ZM43 38H53V66H43ZM61 38H71V66H61ZM21 69H75V76H21Z" fill="#d9c796"/><path d="M27 40V63M45 40V63M63 40V63" stroke="#f0dfb5" stroke-width="2"/></g>
+<g transform="translate(192 0)"><use xlink:href="#frame"/><path d="M27 30L48 49L70 29M48 49V73" fill="none" stroke="#a3c5c2" stroke-width="6"/><path d="M20 23H35V38H20ZM61 21H77V37H61ZM40 65H56V79H40ZM38 41H58V58H38Z" fill="#d8bd7e"/><path d="M43 45H52V53H43Z" fill="#e9ddb5"/></g>
+<g transform="translate(288 0)"><use xlink:href="#frame"/><path d="M23 24H73V74H23ZM23 49H73M48 24V74" fill="none" stroke="#a8c4ba" stroke-width="5"/><path d="M30 31H41V42H30ZM55 31H66V42H55ZM30 56H41V67H30ZM55 56H66V67H55Z" fill="#debd80"/></g>
+<g transform="translate(0 96)"><use xlink:href="#frame"/><path d="M48 21L65 43V55L58 62H38L31 55V43Z" fill="#a0c9c6"/><path d="M21 72H35L42 67H54L61 72H75" fill="none" stroke="#e0c897" stroke-width="5"/><path d="M43 36L37 46V52" fill="none" stroke="#e1e0bf" stroke-width="3"/></g>
+<g transform="translate(96 96)"><use xlink:href="#frame"/><path d="M25 26H68V37H57V47H38V37H25ZM43 49H53V68H43ZM24 70H72V77H24Z" fill="#d7bc85"/><path d="M65 49L73 43M24 51L18 45M65 59H77" fill="none" stroke="#aec8be" stroke-width="4"/></g>
+<g transform="translate(192 96)"><use xlink:href="#frame"/><path d="M22 74V60H37V46H52V32H73V74Z" fill="#b4c9ba"/><path d="M23 60H37V46H52V32H73" fill="none" stroke="#edcf8c" stroke-width="5"/><path d="M28 33L40 21L48 28" fill="none" stroke="#edcf8c" stroke-width="4"/></g>
+<g transform="translate(288 96)"><use xlink:href="#frame"/><path d="M19 71L38 47H76V55H43L28 75ZM22 33H73V41H22Z" fill="#d6c397"/><path d="M49 56V74M65 56V74M39 75H76" fill="none" stroke="#a0c2bd" stroke-width="5"/></g>
+<g transform="translate(0 192)"><use xlink:href="#frame"/><path d="M23 75V39L36 24H60L73 39V75H61V44L55 37H41L35 44V75Z" fill="#d8c99f"/><path d="M23 76H35M61 76H73M38 65H58" stroke="#acc7c0" stroke-width="5"/></g>
+<g transform="translate(96 192)"><use xlink:href="#frame"/><path d="M24 25L39 31H57L72 25V58L60 74H36L24 58Z" fill="#c2c6ae"/><path d="M29 40L43 44V52H32ZM67 40L53 44V52H64Z" fill="#3f5e79"/><path d="M41 61H55V68H41ZM44 24H52V37H44Z" fill="#d7af6b"/></g>
+<g transform="translate(192 192)"><use xlink:href="#frame"/><path d="M48 76V48M48 48L26 27M48 48L70 27M23 40V24H39M57 24H73V40" fill="none" stroke="#b0cac0" stroke-width="7"/><path d="M48 40L57 49L48 58L39 49Z" fill="#edce8a"/></g>
+<g transform="translate(288 192)"><use xlink:href="#frame"/><path d="M25 39L32 29H64L71 39V70H25Z" fill="#b4c4b4"/><path d="M26 46H70M35 30V69M61 30V69" fill="none" stroke="#4b6c7b" stroke-width="5"/><path d="M42 41H54V55H42Z" fill="#e8c780"/></g>
+</svg>

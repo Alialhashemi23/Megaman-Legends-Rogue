@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" shape-rendering="crispEdges">
+<!-- Archive: ceramic tide gauge and old pump manifold. -->
+<rect width="128" height="128" fill="#6c7c7d"/>
+<path d="M12 2H116L125 11V117L116 126H12L3 117V11Z" fill="#c3c4ad"/>
+<path d="M15 7H112L117 12H17V113H9V15Z" fill="#e5ddbf"/>
+<path d="M118 16H123V115L113 123H17V117H111L118 110Z" fill="#839a99"/>
+<rect x="22" y="20" width="84" height="88" fill="#3e6278"/>
+<path d="M27 25H101V103H27Z" fill="#638f9c"/>
+<path d="M37 31H86L95 40V70L86 79H37L30 70V40Z" fill="#b9cbb8"/>
+<path d="M40 35H83L89 41V66L82 73H41L36 68V42Z" fill="#344f68"/>
+<path d="M43 40H79L84 45V65H43Z" fill="#79b3b0"/>
+<path d="M43 56H84V65H43Z" fill="#4f7e96"/>
+<path d="M43 56H55L60 51H70L75 56H84" fill="none" stroke="#d9dec1" stroke-width="3"/>
+<path d="M49 42V47M60 42V47M71 42V47" stroke="#dbce9c" stroke-width="3"/>
+<path d="M43 81V94H84V81" fill="none" stroke="#314b62" stroke-width="9"/>
+<path d="M42 80V92H82V80" fill="none" stroke="#b3bda6" stroke-width="5"/>
+<path d="M55 87H69V99H55Z" fill="#d0a46c"/>
+<path d="M57 89H67V93H57Z" fill="#edcf8f"/>
+<path d="M12 15H16V19H12ZM111 15H115V19H111ZM12 109H16V113H12ZM111 109H115V113H111Z" fill="#627b7c"/>
+<path d="M77 8L72 19M8 87L20 81M100 111H111V115H100" fill="none" stroke="#9b987e" stroke-width="2"/>
+</svg>

@@ -16,6 +16,7 @@ static func painted(kind: String, tint: Color = Color.WHITE, world_scale: float 
 	m.albedo_texture = load("res://assets/textures/%s.svg" % kind)
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	m.roughness = 1.0
+	m.metallic_specular = 0.0
 	if world_scale > 0:
 		m.uv1_triplanar = true
 		m.uv1_world_triplanar = true
@@ -50,6 +51,33 @@ static func tiles(parent: Node3D, positions: Array, tints: Array, size: Vector3)
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(node)
 	return node
+
+# Flat painted reliefs on existing walls: one batch per material, no extra
+# colliders, dynamic lights, transparency sorting or per-panel shadow passes.
+static func panels(parent: Node3D, faces: Array, mat: StandardMaterial3D) -> void:
+	if faces.is_empty(): return
+	var shape = QuadMesh.new()
+	shape.size = Vector2.ONE
+	var multi = MultiMesh.new()
+	multi.transform_format = MultiMesh.TRANSFORM_3D
+	multi.mesh = shape
+	multi.instance_count = faces.size()
+	for i in faces.size(): multi.set_instance_transform(i, faces[i])
+	var node = MultiMeshInstance3D.new()
+	node.multimesh = multi
+	node.material_override = mat
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(node)
+
+# Twelve room-purpose emblems, authored as a 4-column / 3-row painted atlas.
+static func room_crest(cell: int) -> StandardMaterial3D:
+	var key = "room_crest_%d" % cell
+	if texture_materials.has(key): return texture_materials[key]
+	var mat = painted("ruin_crests").duplicate() as StandardMaterial3D
+	mat.uv1_scale = Vector3(0.25, 1.0 / 3.0, 1)
+	mat.uv1_offset = Vector3((cell % 4) * 0.25, floori(cell / 4.0) / 3.0, 0)
+	texture_materials[key] = mat
+	return mat
 
 static func wall(parent: Node3D, pos: Vector3, size: Vector3, tint: Color, solid: bool = true) -> MeshInstance3D:
 	var mesh = box(parent, pos, size, tint, solid)

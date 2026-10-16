@@ -1,5 +1,15 @@
 # Local build history
 
+## 23 — Polish P1 UI fixes and P2 ruins
+
+- Workshop opens on a skill: the first affordable node, else the first unfitted one. Left/Right, the stick and LB/RB (or C/Y) switch diggers and refocus that digger's tree.
+- Title Credits no longer overlaps the Dig Record panel. The account button and caption show Guest, checking, signing in, restoring/offline, signed in with sync status, or sign-in needed. Stale session checks are ignored and long names are trimmed.
+- Archive, Garden and Core now have their own painted palettes, lamp tints and machinery panels. Ceramic wall bands, floor seals and a twelve-emblem room crest atlas are drawn on existing walls and cover. Painted surfaces are matte.
+- No new lights or colliders. Seeded layouts, RNG, colliders, interactables and enemy spawns match the previous build for four seeds × three descents. Native renders use about 15% fewer draw calls per descent, with frame time no worse.
+- Tests that set their own save/checkpoint paths keep them again. Since the Android build, startup replaced those paths, so progression and other checks could overwrite the desktop `save/archive.json`.
+- Game protocol 7, checkpoint 3 and profile 2 are unchanged. The Android test APK (code 4) was not rebuilt and does not include these visual changes yet.
+- Checks: UI 47, options 39, account 37, progression 146 (8 new Workshop/account checks), character, combat, resume 24, movement, persistence and smoke. Rooms from all three descents and the title/Workshop at 1440×900 and 960×600 were rendered for review.
+
 ## 22 — Owner dashboard and account readiness fixes
 
 - Read-only owner dashboard at `/admin`: live players and lobbies, daily/weekly/monthly active accounts, registrations, logins by method, account digs, digger usage, platforms, versions and sync health, plus player search and detail. Owner only, with an authenticator app; emails masked in lists. Detailed records kept 30 days, activity 90 days, daily summaries 12 months; no IP addresses or device fingerprints.

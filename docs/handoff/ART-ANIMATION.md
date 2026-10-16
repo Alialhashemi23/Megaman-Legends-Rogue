@@ -1,5 +1,43 @@
 # Art and animation handoff
 
+## Polish P2 ruins — shipped in build 23 (2026-10-15)
+
+- `ruins.gd` gives each descent its own look: warm archive stone with blue
+  ceramic pumps, green garden stone with copper fans, and pale indigo core
+  stone with refractor regulators. Existing lamps get per-descent tints; no
+  lights are added.
+- Redrawn wall/floor/metal paintings, plus six new SVGs: machinery panels,
+  ceramic borders, a floor seal and a 4×3 room-purpose crest atlas (ordering in
+  `assets/textures/README.md`).
+- `DiverArt.panels()` batches opaque QuadMeshes per material.
+  `DiverArt.room_crest()` caches cropped atlas materials. Painted materials use
+  nearest filtering, full roughness and zero specular.
+- Details lie on existing wall and cover surfaces, with no new colliders or RNG
+  draws. Protocol and checkpoint are unchanged.
+
+Verified: clean SVG import. A dump of rooms, RNG state, every collision shape,
+interactables and enemies for 4 seeds × 3 descents matches the previous commit
+exactly; the only differing line is the player capsule's settle height, which
+also varies between two runs of the baseline. Native draw calls dropped about
+15% per descent (e.g. 1016 → 859 on B1), and frame time was the same or lower.
+Contact-sheet renders of every room kind on all three descents show correct
+panel/crest orientation and no z-fighting. The owner's visual approval and a
+browser frame-time comparison are still pending.
+
+## Planned polish P7 — animation and movement
+
+The owner requested a dedicated phase and reports **the dash has no visible
+animation**. Address that first. `character.gd` already selects a `dash` clip;
+do not assume the asset is absent. Inspect authored poses, blending, dash state
+duration/activation and aim-layer interaction, including remote co-op players.
+Every digger needs a visible dash onset, travel pose and recovery, preserving
+responsive controls and stable buster aim.
+
+Then refine start/stop and directional transitions, planted feet, jump/landing
+motion and personality with the supplied rigs and compact PS1 Legends energy.
+P2 changes no animation code and does not fix the dash. See POLISH-ROADMAP.md;
+final balance is now P8.
+
 The user's direction is the original Mega Man Legends PS1 look, not a generic low-poly approximation. They specifically rejected the former blocky player model and later asked for movement to be less stiff while staying realistic to the original game.
 
 ## Source assets

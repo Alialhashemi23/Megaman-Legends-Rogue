@@ -136,8 +136,9 @@ var leave_guard = false
 var logged_checkpoint = ""
 
 func _ready() -> void:
-	save_path = DiverPaths.pick(SAVE_PATH, WEB_SAVE_PATH)
-	checkpoint_path = DiverPaths.pick(CHECKPOINT_PATH, WEB_CHECKPOINT_PATH)
+	# Keep paths a test assigned before adding the game, so checks never touch real saves.
+	if save_path == SAVE_PATH: save_path = DiverPaths.pick(SAVE_PATH, WEB_SAVE_PATH)
+	if checkpoint_path == CHECKPOINT_PATH: checkpoint_path = DiverPaths.pick(CHECKPOINT_PATH, WEB_CHECKPOINT_PATH)
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--checkpoint-path="): checkpoint_path = arg.substr(18)
 	load_meta()

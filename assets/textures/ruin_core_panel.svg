@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" shape-rendering="crispEdges">
+<!-- Core: a sealed refractor regulator, not a modern display screen. -->
+<rect width="128" height="128" fill="#526580"/>
+<path d="M13 3H115L124 12V116L115 125H13L4 116V12Z" fill="#aab9cc"/>
+<path d="M16 8H110L117 15H19V110H10V18Z" fill="#dedacb"/>
+<path d="M118 20H123V113L112 123H20V116H108L118 106Z" fill="#7487a2"/>
+<path d="M33 21H95L108 34V94L95 107H33L20 94V34Z" fill="#344b71"/>
+<path d="M43 29H85L99 43V85L85 99H43L29 85V43Z" fill="#8199b7"/>
+<path d="M47 37H81L91 47V81L81 91H47L37 81V47Z" fill="#475e82"/>
+<path d="M64 40L83 64L64 88L45 64Z" fill="#b7c7ce"/>
+<path d="M64 46L77 64L64 81L51 64Z" fill="#739cbb"/>
+<path d="M64 46V64H51Z" fill="#dbdec7"/>
+<path d="M54 15H74V27H54ZM54 101H74V113H54ZM15 54H27V74H15ZM101 54H113V74H101Z" fill="#d4b47e"/>
+<path d="M57 17H71V21H57ZM17 57H21V71H17ZM104 57H108V71H104ZM57 103H71V107H57Z" fill="#f0d5a2"/>
+<path d="M12 16H17V21H12ZM109 109H114V114H109Z" fill="#4c637e"/>
+<path d="M85 8L79 19M7 93L20 85M95 113L100 123" fill="none" stroke="#7b8b9f" stroke-width="2"/>
+</svg>

@@ -139,6 +139,43 @@ func run() -> void:
 	await process_frame
 	await process_frame
 	verify(game.mode == "workshop" and game.hud.hits.size() == 12, "Workshop provides diggers, nodes and navigation")
+	# Entry and digger switches focus a skill node, never the digger tabs.
+	var tabs = DiverCharacter.COUNT
+	var first = game.hud.workshop_first_node()
+	verify(game.hud.focus_index == tabs + first, "Workshop entry focuses the first useful node")
+	verify(DiverProgression.can_buy(game.meta, game.hud.workshop_character, DiverProgression.NODES[first].id), "Focused node is affordable when one is")
+	var start_character = game.hud.workshop_character
+	game.hud.navigate(1, true)
+	game.hud.queue_redraw()
+	await process_frame
+	await process_frame
+	verify(game.hud.workshop_character == wrapi(start_character + 1, 0, tabs), "Right switches Workshop digger")
+	verify(game.hud.focus_index == tabs + game.hud.workshop_first_node(), "Switching digger refocuses its tree")
+	var shoulder = InputEventJoypadButton.new()
+	shoulder.button_index = JOY_BUTTON_LEFT_SHOULDER
+	shoulder.pressed = true
+	root.push_input(shoulder, true)
+	game.hud.queue_redraw()
+	await process_frame
+	await process_frame
+	verify(game.hud.workshop_character == start_character, "LB switches Workshop digger back")
+	var wallet = game.meta.zenny
+	game.meta.zenny = 0
+	game.hud.select_workshop_character(start_character)
+	game.hud.queue_redraw()
+	await process_frame
+	await process_frame
+	var fitted = DiverProgression.owned(game.meta, start_character)
+	verify(game.hud.focus_index >= tabs and not DiverProgression.NODES[game.hud.focus_index - tabs].id in fitted or fitted.size() == DiverProgression.NODES.size(), "Unaffordable tree focuses first unfitted node")
+	game.meta.zenny = wallet
+	# Title account copy ignores stale profile requests from an old generation.
+	var account = game.account
+	var saved_requests = account.requests
+	account.requests = [{"path": "/api/v1/profile", "generation": account.generation - 1}]
+	verify(game.hud.title_account_copy().label.begins_with("Guest") or account.state != "guest", "Stale request does not show an account check")
+	account.requests = [{"path": "/api/v1/profile", "generation": account.generation}]
+	verify(game.hud.title_account_copy().label == "Checking account…" or account.state != "guest", "Current profile request shows an account check")
+	account.requests = saved_requests
 	game.hud.activate("save_codes")
 	game.hud.queue_redraw()
 	await process_frame

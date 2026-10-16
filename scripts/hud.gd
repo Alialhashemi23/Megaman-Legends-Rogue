@@ -63,6 +63,7 @@ var options_return = "title"
 var workshop_return = "title"
 var workshop_character = 0
 var workshop_message = ""
+var workshop_focus_pending = false
 var save_edit: LineEdit
 var save_message = "Export a code to keep a backup outside this browser."
 var pending_import: Dictionary = {}
@@ -166,6 +167,39 @@ func select_character(index: int) -> void:
     game.player.set_character(game.selected_character)
     game.player.visual.preview(0)
     game.send_info()
+
+func select_workshop_character(index: int) -> void:
+    workshop_character = wrapi(index, 0, DiverCharacter.COUNT)
+    workshop_message = ""
+    pointer = Vector2(-100, -100)
+    workshop_focus_pending = true
+
+func workshop_first_node() -> int:
+    var owned = DiverProgression.owned(game.meta, workshop_character)
+    var first_unowned = -1
+    for i in DiverProgression.NODES.size():
+        var id = DiverProgression.NODES[i].id
+        if id not in owned and first_unowned < 0: first_unowned = i
+        if DiverProgression.can_buy(game.meta, workshop_character, id): return i
+    # Keep the skills inspectable even when nothing is affordable or all are fitted.
+    return maxi(0, first_unowned)
+
+func title_account_copy() -> Dictionary:
+    var a = game.account
+    if a.state == "restoring":
+        return {"label": "Account offline / Retry" if a.status == "Offline" else "Restoring account…", "detail": "Saved sign-in awaiting confirmation"}
+    if a.state == "signing_in":
+        return {"label": "Finish signing in…", "detail": "Approve this device in your browser"}
+    if a.state == "needs_sign_in":
+        return {"label": "Sign in again", "detail": "Cloud progress / Sign-in needed" if game.profile_source == "account" else "Saved sign-in needs renewal"}
+    if a.signed_in():
+        return {"label": "Signed in as " + str(a.identity.get("name", "Digger")), "detail": "Cloud progress / " + a.status if game.profile_source == "account" else "Guest progress / Account signed in"}
+    # Browser session discovery starts while Guest is still the active profile.
+    # Ignore obsolete requests left over from a cancelled sign-in/sign-out.
+    for request in a.requests:
+        if request.generation == a.generation and request.path == "/api/v1/profile":
+            return {"label": "Checking account…", "detail": "Guest progress until confirmed"}
+    return {"label": "Guest / Sign in to sync", "detail": "Guest progress / this device"}
 
 func text_at(pos: Vector2, value: String, size: int = 24, color: Color = WHITE, display: bool = false, width: float = -1) -> void:
     var face: Font = heading if display else font
@@ -278,13 +312,19 @@ func _input(event: InputEvent) -> void:
     if event is InputEventJoypadMotion or not event.is_pressed() or event.is_echo(): return
     if not game.mode in MENU_MODES or editing(): return
     if event is InputEventMouseButton: return
+    if game.mode == "workshop" and event is InputEventJoypadButton:
+        if event.button_index in [JOY_BUTTON_LEFT_SHOULDER, JOY_BUTTON_RIGHT_SHOULDER]:
+            navigate(-1 if event.button_index == JOY_BUTTON_LEFT_SHOULDER else 1, true)
+            get_viewport().set_input_as_handled()
+            return
     for dir in [["nav_up", -1, false], ["nav_down", 1, false], ["nav_left", -1, true], ["nav_right", 1, true]]:
         if event.is_action_pressed(dir[0]):
             navigate(dir[1], dir[2])
             get_viewport().set_input_as_handled()
             return
-    if event.is_action_pressed("switch_digger") and game.mode == "title":
-        select_character(game.selected_character + 1)
+    if event.is_action_pressed("switch_digger") and game.mode in ["title", "workshop"]:
+        if game.mode == "workshop": select_workshop_character(workshop_character + 1)
+        else: select_character(game.selected_character + 1)
         game.sound.play("menu_confirm")
         get_viewport().set_input_as_handled()
     elif event.is_action_pressed("nav_accept"):
@@ -303,6 +343,8 @@ func navigate(delta: int, horizontal: bool) -> void:
         focus_index = clampi(focus_index + delta * 2, focus_index % 2, hits.size() - 1)
     elif game.mode == "choice": choice_preview = wrapi(choice_preview + delta, 0, 3)
     elif game.mode in ["archive", "inventory"]: select_part(delta)
+    elif game.mode == "workshop" and horizontal:
+        select_workshop_character(workshop_character + delta)
     elif game.mode == "title" and horizontal:
         if not hits.is_empty() and hits[clampi(focus_index, 0, hits.size()-1)].action == "character":
             select_character(game.selected_character + 1)
@@ -428,7 +470,7 @@ func activate(action: String, value: int = 0) -> void:
                 workshop_character = game.selected_character
                 workshop_message = ""
             game.mode = "workshop"
-        "tree_character": workshop_character = value
+        "tree_character": select_workshop_character(value)
         "buy_skill":
             var id = DiverProgression.NODES[value].id
             var accepted = game.buy_skill(workshop_character, id)
@@ -538,6 +580,7 @@ func _draw() -> void:
         list_scroll = 0
         choice_preview = 0
         pointer = Vector2(-100, -100)
+        if game.mode == "workshop": workshop_focus_pending = true
     hits.clear()
     copied_time = maxf(0, copied_time - get_process_delta_time())
     confirm_time -= get_process_delta_time()
@@ -636,7 +679,8 @@ func draw_title() -> void:
     window(Vector2(64, 315), Vector2(476, 46), BLUE)
     text_at(Vector2(86, 347), "THE TIDAL ARCHIVE", 24, WHITE, true)
     text_at(Vector2(66, 399), "A dungeon-crawling fan adventure", 25, MUTED)
-    text_at(Vector2(1042, 237), "Guest progress / this device" if game.profile_source == "guest" else game.account.status, 23, CYAN)
+    var account_copy = title_account_copy()
+    text_at(Vector2(1042, 237), account_copy.detail, 23, CYAN, false, 328)
     var menu_y = 418
     var saved: Dictionary = game.saved_dig
     if not saved.is_empty():
@@ -684,8 +728,8 @@ func draw_title() -> void:
         keycap(Vector2(1044, y), p(controls[i][0]), 76)
         text_at(Vector2(1140, y + 23), controls[i][1], 23)
 
-    button(Vector2(1020, 154), Vector2(372, 50), "Sign In / Play as Guest" if game.profile_source == "guest" else str(game.account.identity.get("name", "Digger")) + " / Account", "account")
-    small_button(Vector2(1020, 94), Vector2(372, 42), "Credits / Licenses", "credits")
+    button(Vector2(1020, 154), Vector2(372, 50), account_copy.label, "account")
+    small_button(Vector2(1020, 274), Vector2(372, 42), "Credits / Licenses", "credits")
 
 func draw_hud() -> void:
     var p = game.player
@@ -1395,6 +1439,9 @@ func draw_workshop() -> void:
     page_title("THE WORKSHOP", "Permanent circuits / Each digger has their own tree. Parts and levels reset each dig.")
     text_at(Vector2(1090, 232), "%d ZENNY" % game.meta.zenny, 30, YELLOW, true)
     if game.profile_source == "account": text_at(Vector2(64, 262), "%s / +%d pending" % [game.account.status, game.account.pending_zenny()], 21, CYAN)
+    text_at(Vector2(824, 262), "LB / RB: Digger   Up / Down: Navigate" if pad() else "Left / Right: Digger   Up / Down: Navigate", 20, MUTED, false, 552)
+    var first_node = workshop_first_node() if workshop_focus_pending else -1
+    if workshop_focus_pending: focus_index = -1
     for i in DiverCharacter.COUNT:
         button(Vector2(64 + i * 328, 278), Vector2(312, 62), DiverCharacter.DISPLAY_NAMES[i], "tree_character", i, workshop_character == i)
     window(Vector2(64, 366), Vector2(300, 414))
@@ -1411,7 +1458,9 @@ func draw_workshop() -> void:
         var detail = DiverProgression.ABILITIES[workshop_character] if entry.id == "ability" else "Adds %s to this digger's drop pool." % game.ITEMS[DiverProgression.RESEARCH[workshop_character]].name if entry.id == "salvage" else entry.desc
         text_at(pos + Vector2(18, 56), detail, 21, MUTED, false, 715)
         var label = "Fitted" if owned else "%d Z / Buy" % entry.cost if available else "%d Z / Locked" % entry.cost
+        if workshop_focus_pending and i == first_node: focus_index = hits.size()
         button(pos + Vector2(748, 12), Vector2(216, 48), label, "buy_skill", i)
+    workshop_focus_pending = false
     text_at(Vector2(394, 802), workshop_message if workshop_message != "" else "Frame > Mobility + Research > Signature Circuit > Master Mechanic", 22, CYAN)
     button(Vector2(64, 828), Vector2(300, 56), "Save Codes / Backup", "save_codes")
     button(Vector2(394, 828), Vector2(460, 56), "Return to Lobby" if game.net.active() else "Start Another Dig", "lobby_room" if game.net.active() else "start", 0, true)

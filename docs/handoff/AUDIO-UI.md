@@ -1,5 +1,37 @@
 # Audio and UI handoff
 
+## Polish P1 UI — shipped in build 23 (2026-10-15)
+
+`scripts/hud.gd`:
+
+- Workshop entry and character selection focus the first affordable node,
+  falling back to the first unowned node, or the first node when all are fitted.
+  Left/Right, stick horizontal and LB/RB switch diggers from anywhere on the
+  page, and C/Y also works. Switching clears stale purchase messages. Focus
+  resolves against the newly drawn buttons after mode changes.
+- Title Credits moved from y=94 (overlapping Dig Record) to y=274. Start Dig
+  keeps the default focus. Account text is width-limited.
+- `title_account_copy()` words the account button/caption from the real auth
+  state: Guest, checking, signing in, restoring/offline, signed in with sync
+  status, or sign-in needed. It ignores profile requests from old generations.
+  This is wording only; account persistence is unchanged.
+
+Checks: `tests/progression_checks.gd` covers Workshop entry focus, Right/LB
+switching, unaffordable-tree fallback and stale vs current account checks.
+UI/options/account checks pass. The title (with/without a saved dig, signed in
+with a long name) and Workshop were rendered at 1440×900 and 960×600 with no
+overlaps. Not covered: real controllers and Retroid, or a live browser
+first-load session check.
+
+## Latest music feedback — 2026-10-15
+
+The user likes the current MIDI melodies and says they sound good, but estimates
+the music is only about 50% of their desired quality and needs significant polish.
+Preserve the melodies; improve arrangement, voicing, bass/percussion, phrasing,
+instrument balance, dynamics, loops and mix while retaining the Legends-era
+adventure sound. Update editable MIDI/composer sources and rendered runtime audio
+together. See [POLISH-ROADMAP.md](POLISH-ROADMAP.md), phase P3, for the work plan.
+
 ## Pass 16 UI additions
 
 Phase 4 adds the title Account panel and an `account` menu mode with native `nav_*` targets, Guest/cloud summaries, device codes, sync status/retry, takeover and migration confirmations, and safe local cleanup. Workshop/results show pending Zenny separately. Save-code imports cannot replace established cloud progress. See [ACCOUNT-SYNC.md](ACCOUNT-SYNC.md).

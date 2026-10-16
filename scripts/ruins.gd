@@ -3,7 +3,8 @@ class_name DiverRuins
 
 # Plans and builds a floor: chambers of several kinds, passages that fork or
 # dead-end, and the corridors joining them. Every machine builds the same floor
-# from the same seed, so all random choices come from game.rng in a fixed order.
+# from the same seed, so all gameplay random choices come from game.rng in a
+# fixed order. Painted decoration uses no random draws and changes no collisions.
 
 const CELL = 40.0
 const ROOM_HALF = 15.0
@@ -12,7 +13,14 @@ const DOOR_WIDTH = 5.2
 # Wall sides in order: north, east, south, west.
 const DIRECTIONS = [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
 const INWARD = [Vector3(0, 0, 1), Vector3(-1, 0, 0), Vector3(0, 0, -1), Vector3(1, 0, 0)]
-const PALETTES = [["b7c9c4", "ddd7bc", "667d78"], ["a5b6a4", "b8c5ac", "527f78"], ["a4aebb", "b7bfd1", "465f7b"]]
+const PALETTES = [["d2cbb5", "f0e1c3", "657e89"], ["bcc9b1", "d8e0bf", "5d8172"], ["bbc2d3", "cbd4e6", "607598"]]
+# Warm archive stone / copper garden machinery / indigo inner mechanisms.
+# Color is painted into the surfaces; keep lighting simple and matte.
+const THEMES = [
+	{"panel": "ruin_archive_panel", "trim": "b9d4d3", "fixture": "93afb8", "ceiling": "89968e", "lamp": "ffe0ae"},
+	{"panel": "ruin_garden_panel", "trim": "d8c59a", "fixture": "b8aa83", "ceiling": "849b82", "lamp": "f2e6bd"},
+	{"panel": "ruin_core_panel", "trim": "b6c5e2", "fixture": "8fa5cb", "ceiling": "78849d", "lamp": "d6e6ff"}
+]
 # Layouts 0-4 are the cover arrangements; these are the special chambers.
 const CLIMB = 5
 const TERRACE = 6
@@ -21,6 +29,7 @@ const HALL = 8
 
 var game: Node3D
 var palette: Array = PALETTES[0]
+var theme: Dictionary = THEMES[0]
 
 # --- Planning ---------------------------------------------------------------
 
@@ -175,6 +184,7 @@ func free_side(index: int) -> int:
 
 func build() -> void:
 	palette = PALETTES[game.depth - 1]
+	theme = THEMES[game.depth - 1]
 	for i in game.rooms.size(): build_room(i)
 	for link in game.links: build_corridor(link)
 
@@ -189,6 +199,35 @@ func wall_point(room: Dictionary, side: int, along: float, inset: float, y: floa
 func wall_size(side: int, along: float, height: float, depth: float) -> Vector3:
 	return Vector3(along, height, depth) if side % 2 == 0 else Vector3(depth, height, along)
 
+func room_crest_index(room: Dictionary) -> int:
+	match room.kind:
+		"landing": return 0
+		"guardian": return 9
+		"grand": return 8
+		"hall": return 11 if room.dead_end else 10
+	return clampi(int(room.layout) + 1, 1, 7)
+
+func wall_face(faces: Array, room: Dictionary, side: int, along: float, y: float, size: Vector2, inset: float = 0.365) -> void:
+	# QuadMesh faces +Z; clockwise walls face inward. Existing walls are 0.7 m
+	# thick, so the paint lies just inside their surface, never across an opening.
+	# Scale in the face's local axes before rotating (east/west walls included).
+	var basis = Basis(Vector3.UP, -side * PI / 2) * Basis.from_scale(Vector3(size.x, size.y, 1))
+	faces.append(Transform3D(basis, wall_point(room, side, along, inset, y)))
+
+func finish_wall_details(root: Node3D, room: Dictionary, details: Dictionary) -> void:
+	DiverArt.panels(root, details.panels, DiverArt.painted(str(theme.panel)))
+	DiverArt.panels(root, details.bands, DiverArt.painted("ruin_border", Color(theme.trim)))
+	DiverArt.panels(root, details.crests, DiverArt.room_crest(room_crest_index(room)))
+
+func fixture_faces(faces: Array, center: Vector3, size: Vector3) -> void:
+	# Paint the existing solid machines instead of adding non-solid prop clutter.
+	for side in 4:
+		var width = minf(1.6, (size.x if side % 2 == 0 else size.z) - 0.30)
+		var height = minf(1.6, size.y - 0.30)
+		var reach = (size.z if side % 2 == 0 else size.x) * 0.5 + 0.012
+		var basis = Basis(Vector3.UP, -side * PI / 2) * Basis.from_scale(Vector3(width, height, 1))
+		faces.append(Transform3D(basis, center + INWARD[side] * reach))
+
 func build_room(index: int) -> void:
 	var room: Dictionary = game.rooms[index]
 	var rng: RandomNumberGenerator = game.rng
@@ -201,7 +240,7 @@ func build_room(index: int) -> void:
 	var stone = Color(palette[0])
 	var floor_mesh = DiverArt.box(root, Vector3(0, -0.35, 0), Vector3(hx * 2, 0.7, hz * 2), stone, true)
 	floor_mesh.material_override = DiverArt.painted("ruin_floor", stone, 0.5)
-	DiverArt.box(root, Vector3(0, top + 0.15, 0), Vector3(hx * 2 + 0.4, 0.3, hz * 2 + 0.4), Color("687776"), true)
+	DiverArt.box(root, Vector3(0, top + 0.15, 0), Vector3(hx * 2 + 0.4, 0.3, hz * 2 + 0.4), Color(theme.ceiling), true)
 	var tile_positions = []
 	var tile_tints = []
 	for x in range(-int(hx) + 1, int(hx), 2):
@@ -210,11 +249,15 @@ func build_room(index: int) -> void:
 			tile_positions.append(Vector3(x, 0.005, z))
 	DiverArt.tiles(root, tile_positions, tile_tints, Vector3(1.94, 0.018, 1.94))
 	var doors = doors_of(index)
+	var landmark_side = free_side(index)
+	if landmark_side < 0: landmark_side = index % 4
+	var details = {"panels": [], "bands": [], "crests": [], "landmark_side": landmark_side}
 	for side in 4:
 		var offsets = []
 		for door in doors:
 			if door.side == side: offsets.append(door.along)
-		build_wall(root, room, side, offsets)
+		build_wall(root, room, side, offsets, details)
+	finish_wall_details(root, room, details)
 	if room.kind == "hall":
 		build_hall(root, room, doors.size())
 		return
@@ -224,7 +267,9 @@ func build_room(index: int) -> void:
 	if room.kind == "grand": lamps = [Vector3(-hx + 13, 0, -hz + 9), Vector3(hx - 13, 0, hz - 9), Vector3(-hx + 13, 0, hz - 9), Vector3(hx - 13, 0, -hz + 9)]
 	for at in lamps: lamp(root, at + Vector3(0, top - 1.7, 0), 22, 0.95)
 	# Inlaid circuit paths guide the eye toward the exits.
-	if room.kind != "grand": DiverArt.metal(root, Vector3(0, 0.03, 0), Vector3(9, 0.04, 9), Color(palette[1]))
+	if room.kind != "grand":
+		var seal = Transform3D(Basis(Vector3.RIGHT, -PI / 2) * Basis.from_scale(Vector3(8, 8, 1)), Vector3(0, 0.03, 0))
+		DiverArt.panels(root, [seal], DiverArt.painted("ruin_floor_seal", Color(palette[0])))
 	for sign_dir in [-1, 1]:
 		DiverArt.box(root, Vector3(sign_dir * 5.0, 0.025, 0), Vector3(0.09, 0.025, hz * 2 - 9), Color("638d83"))
 		DiverArt.box(root, Vector3(0, 0.025, sign_dir * 5.0), Vector3(hx * 2 - 9, 0.025, 0.09), Color("638d83"))
@@ -260,13 +305,13 @@ func lamp(root: Node3D, at: Vector3, reach: float, energy: float) -> void:
 	root.add_child(light)
 	light.position = at
 	light.omni_range = reach
-	light.light_color = Color("ffdfa6")
+	light.light_color = Color(theme.lamp)
 	light.light_energy = energy
 	DiverArt.cylinder(root, at + Vector3(0, 0.8, 0), 0.20, 0.20, DiverArt.INK)
 	DiverArt.orb(root, at + Vector3(0, 0.6, 0), 0.16, DiverArt.GOLD, 0.6)
 
 # One wall of a room, with an opening, posts and a lintel for each door on it.
-func build_wall(root: Node3D, room: Dictionary, side: int, door_offsets: Array) -> void:
+func build_wall(root: Node3D, room: Dictionary, side: int, door_offsets: Array, details: Dictionary) -> void:
 	var length: float = (room.half.x if side % 2 == 0 else room.half.y) * 2 + 0.5
 	var top: float = room.height
 	door_offsets.sort()
@@ -278,23 +323,37 @@ func build_wall(root: Node3D, room: Dictionary, side: int, door_offsets: Array) 
 	spans.append([cursor, length / 2])
 	# wall_point measures along the wall clockwise, so mirror the south and west sides back.
 	var flip = -1.0 if side >= 2 else 1.0
+	var widest = 0.0
+	var landmark_at = 0.0
 	for span in spans:
 		var size: float = span[1] - span[0]
 		if size < 0.05: continue
 		var middle: float = (span[0] + span[1]) / 2
 		DiverArt.wall(root, wall_point(room, side, middle * flip, 0, top / 2), wall_size(side, size, top, 0.7), Color(palette[1]), true)
-		if room.kind == "hall": continue
-		var panels = int(size / 6.0)
+		if size > widest:
+			widest = size
+			landmark_at = middle * flip
+		# Repeated painted ceramic bands give large walls a human-sized rhythm.
+		# Batch the little faces rather than adding dozens of nodes per chamber.
+		var band_count = maxi(1, ceili(size / 5.5))
+		var band_width = size / band_count
+		for n in band_count:
+			var at = (span[0] + (n + 0.5) * band_width) * flip
+			wall_face(details.bands, room, side, at, 0.75, Vector2(band_width, 0.38))
+			wall_face(details.bands, room, side, at, top - 0.45, Vector2(band_width, 0.30))
+		var panels = mini(4, int(size / 8.0)) if room.kind != "hall" else mini(1, int(size / 4.0))
 		for n in panels:
-			var at = (middle + (n - (panels - 1) * 0.5) * 6.0) * flip
-			DiverArt.metal(root, wall_point(room, side, at, 0.4, 1.8), wall_size(side, 1.5, 1.2, 0.12), Color(palette[1]))
-			DiverArt.box(root, wall_point(room, side, at, 0.4, 1.9), wall_size(side, 0.16, 0.8, 0.16), DiverArt.TEAL, false, 1)
+			var at = (middle + (n - (panels - 1) * 0.5) * 7.0) * flip
+			wall_face(details.panels, room, side, at, 2.0 if room.kind == "hall" else 2.25, Vector2(1.9, 2.0) if room.kind == "hall" else Vector2(2.3, 2.5))
+	if side == int(details.landmark_side) and widest >= 3.8:
+		wall_face(details.crests, room, side, landmark_at, 3.7 if room.kind == "hall" else top - 1.55, Vector2(1.4, 1.2) if room.kind == "hall" else Vector2(2.5, 1.9), 0.375)
 	for offset in door_offsets:
 		for edge in [-1, 1]:
 			var at = (offset + edge * 2.9) * flip
 			DiverArt.metal(root, wall_point(room, side, at, 0.2, top / 2), Vector3(0.5, top, 0.5), Color(palette[1]))
-			DiverArt.box(root, wall_point(room, side, at, 0.2, 2.0), Vector3(0.52, 0.65, 0.52), DiverArt.TEAL, false, 0.2)
+			DiverArt.box(root, wall_point(room, side, at, 0.2, 2.0), Vector3(0.52, 0.65, 0.52), Color(theme.trim))
 		DiverArt.metal(root, wall_point(room, side, offset * flip, 0, (top + 3.7) / 2), wall_size(side, 6.3, top - 3.7, 0.8), Color(palette[1]))
+		wall_face(details.crests, room, side, offset * flip, 4.15, Vector2(0.70, 0.70), 0.415)
 
 # A passage junction: forks get a floor ring, dead ends hide salvage.
 func build_hall(root: Node3D, room: Dictionary, door_count: int) -> void:
@@ -317,19 +376,35 @@ func build_corridor(link: Dictionary) -> void:
 	root.position = Vector3(middle.x, 0, middle.y)
 	var floor_mesh = DiverArt.box(root, Vector3(0, -0.35, 0), Vector3(length, 0.7, 6) if along_x else Vector3(6, 0.7, length), stone, true)
 	floor_mesh.material_override = DiverArt.painted("ruin_floor", stone, 0.5)
-	DiverArt.box(root, Vector3(0, 4.95, 0), Vector3(length, 0.3, 6.2) if along_x else Vector3(6.2, 0.3, length), Color("687776"), true)
+	DiverArt.box(root, Vector3(0, 4.95, 0), Vector3(length, 0.3, 6.2) if along_x else Vector3(6.2, 0.3, length), Color(theme.ceiling), true)
+	var panels: Array = []
+	var bands: Array = []
 	for edge in [-1, 1]:
 		DiverArt.wall(root, Vector3(0, 2.4, edge * 3.1) if along_x else Vector3(edge * 3.1, 2.4, 0), Vector3(length, 4.8, 0.4) if along_x else Vector3(0.4, 4.8, length), Color(palette[1]), true)
-	# Glowing sills mark the way along longer passages.
+		var angle = (PI if edge > 0 else 0.0) if along_x else (-PI / 2 if edge > 0 else PI / 2)
+		var basis = Basis(Vector3.UP, angle)
+		if length >= 3:
+			var pos = Vector3(0, 2.3, edge * 2.885) if along_x else Vector3(edge * 2.885, 2.3, 0)
+			panels.append(Transform3D(basis * Basis.from_scale(Vector3(1.7, 2.1, 1)), pos))
+		var count = maxi(1, ceili(length / 5.5))
+		var width = length / count
+		for n in count:
+			var at = -length / 2 + (n + 0.5) * width
+			var pos = Vector3(at, 0.75, edge * 2.885) if along_x else Vector3(edge * 2.885, 0.75, at)
+			bands.append(Transform3D(basis * Basis.from_scale(Vector3(width, 0.38, 1)), pos))
+	DiverArt.panels(root, panels, DiverArt.painted(str(theme.panel)))
+	DiverArt.panels(root, bands, DiverArt.painted("ruin_border", Color(theme.trim)))
+	# Painted cross-bands mark the way without competing with attack telegraphs.
 	var sills = maxi(1, int(length / 9.0))
 	for n in sills:
 		var at = (n - (sills - 1) * 0.5) * 9.0
-		DiverArt.box(root, Vector3(at, 0.03, 0) if along_x else Vector3(0, 0.03, at), Vector3(0.12, 0.04, 4.8) if along_x else Vector3(4.8, 0.04, 0.12), DiverArt.TEAL, false, 0.6)
+		DiverArt.box(root, Vector3(at, 0.03, 0) if along_x else Vector3(0, 0.03, at), Vector3(0.12, 0.04, 4.8) if along_x else Vector3(4.8, 0.04, 0.12), Color(theme.trim))
 
 # The five cover arrangements, spread out for the larger chambers.
 func furnish(root: Node3D, layout: int) -> void:
 	var stone = Color(palette[1])
-	var metal = Color("a8c6bd")
+	var metal = Color(theme.fixture)
+	var mechanism_faces: Array = []
 	match layout:
 		0:
 			for x in [-9.3, 9.3]:
@@ -339,6 +414,7 @@ func furnish(root: Node3D, layout: int) -> void:
 					DiverArt.box(root, Vector3(x, 2.6, z), Vector3(1.85, 0.18, 1.85), DiverArt.GOLD, false, 0.15)
 		1:
 			game.cover(root, Vector3(0, 1.3, 0), Vector3(2.8, 2.6, 2.8), metal)
+			fixture_faces(mechanism_faces, Vector3(0, 1.3, 0), Vector3(2.8, 2.6, 2.8))
 			DiverArt.cylinder(root, Vector3(0, 2.9, 0), 0.8, 0.45, DiverArt.INK)
 			DiverArt.orb(root, Vector3(0, 3.45, 0), 0.48, DiverArt.TEAL, 0.55)
 			for x in [-8.25, 8.25]:
@@ -349,11 +425,13 @@ func furnish(root: Node3D, layout: int) -> void:
 			for x in [-8.4, 8.4]:
 				for z in [-7.5, 0, 7.5]:
 					game.cover(root, Vector3(x, 0.95, z), Vector3(1.6, 1.9, 2.4), metal)
+					fixture_faces(mechanism_faces, Vector3(x, 0.95, z), Vector3(1.6, 1.9, 2.4))
 					for slot in [-0.7, 0, 0.7]:
 						DiverArt.box(root, Vector3(x - signf(x) * 0.83, 1.3, z + slot), Vector3(0.04, 0.3, 0.35), DiverArt.GOLD, false, 0.10)
 		3:
 			for x in [-7.8, 7.8]:
 				game.cover(root, Vector3(x, 1.2, 0), Vector3(2.8, 2.4, 2.8), metal)
+				fixture_faces(mechanism_faces, Vector3(x, 1.2, 0), Vector3(2.8, 2.4, 2.8))
 				DiverArt.cylinder(root, Vector3(x, 2.55, 0), 1.42, 0.25, DiverArt.INK)
 				DiverArt.cylinder(root, Vector3(x, 2.70, 0), 1.2, 0.08, Color("88d4b5"), 0.2)
 				for z in [-1.3, 1.3]: DiverArt.box(root, Vector3(x, 1.25, z), Vector3(1.6, 0.22, 0.08), DiverArt.TEAL, false, 0.2)
@@ -361,12 +439,14 @@ func furnish(root: Node3D, layout: int) -> void:
 		4:
 			for side in [-1, 1]:
 				game.cover(root, Vector3(side * 5.7, 0.65, side * 6.5), Vector3(2.6, 1.3, 2), metal)
+				fixture_faces(mechanism_faces, Vector3(side * 5.7, 0.65, side * 6.5), Vector3(2.6, 1.3, 2))
 				game.cover(root, Vector3(side * 10.2, 1.4, -side * 7.5), Vector3(1.6, 2.8, 1.6), stone, true)
 				# Overhead conduit, run above the door lintels so it never crosses a doorway.
 				var pipe = DiverArt.cylinder(root, Vector3(side * 14.0, 5.0, 0), 0.42, 24, Color("8b9b83"))
 				pipe.rotation.x = PI / 2
 				for z in [-9.0, 0.0, 9.0]: DiverArt.box(root, Vector3(side * 14.35, 5.0, z), Vector3(0.7, 0.9, 0.3), DiverArt.INK)
 			DiverArt.box(root, Vector3(0, 0.045, 0), Vector3(7.5, 0.035, 4.5), Color("6e8077"))
+	DiverArt.panels(root, mechanism_faces, DiverArt.room_crest(layout + 1))
 
 # Raised stonework diggers can stand on. Robots path around it unless it is
 # `walkable`, in which case they reach the top by its ramps.
@@ -419,7 +499,7 @@ func ramp(root: Node3D, top: Vector3, run: Vector3, length: float, width: float,
 
 # Jump puzzle: stepping blocks climb to a high ledge holding a free part cache.
 func build_climb(root: Node3D, room: Dictionary, side: int) -> void:
-	var metal = Color("a8c6bd")
+	var metal = Color(theme.fixture)
 	raise_block(root, wall_point(room, side, 0, 2.3), wall_size(side, 22, 3.2, 3.9), Color(palette[1]))
 	for mirror in [-1.0, 1.0]:
 		var steps = [[3.5, 11.0, 0.8], [7.7, 11.0, 1.6], [7.7, 6.9, 2.4]]
@@ -436,7 +516,7 @@ func build_climb(root: Node3D, room: Dictionary, side: int) -> void:
 
 # Elevation change: a raised terrace along one wall with a ramp at each end.
 func build_terrace(root: Node3D, room: Dictionary, side: int) -> void:
-	var metal = Color("a8c6bd")
+	var metal = Color(theme.fixture)
 	raise_block(root, wall_point(room, side, 0, 4.2), wall_size(side, 29.2, 1.6, 7.6), Color(palette[1]), true)
 	for along in [-9.0, 9.0]:
 		ramp(root, wall_point(room, side, along, 8.0, 1.6), INWARD[side], 6.0, 4.0, Color(palette[0]))
@@ -451,7 +531,7 @@ func build_terrace(root: Node3D, room: Dictionary, side: int) -> void:
 func build_grand(root: Node3D, room: Dictionary) -> void:
 	var long_x: bool = room.half.x > room.half.y
 	var top: float = room.height
-	var metal = Color("a8c6bd")
+	var metal = Color(theme.fixture)
 	var place = func(along: float, across: float, y: float = 0.0) -> Vector3: return Vector3(along, y, across) if long_x else Vector3(across, y, along)
 	var sized = func(along: float, height: float, across: float) -> Vector3: return Vector3(along, height, across) if long_x else Vector3(across, height, along)
 	for along in [-27.0, -9.0, 9.0, 27.0]:

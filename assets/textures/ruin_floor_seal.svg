@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" shape-rendering="crispEdges">
+<!-- Worn ceramic inlay; deliberately muted so danger telegraphs dominate. -->
+<rect width="128" height="128" fill="#aeb6a9"/>
+<path d="M1 1H127V127H1Z" fill="none" stroke="#819894" stroke-width="2"/>
+<path d="M32 12H96L116 32V96L96 116H32L12 96V32Z" fill="#738d93"/>
+<path d="M35 19H93L109 35V93L93 109H35L19 93V35Z" fill="#b8bca4"/>
+<path d="M40 26H88L102 40V88L88 102H40L26 88V40Z" fill="#7e9899"/>
+<path d="M46 35H82L93 46V82L82 93H46L35 82V46Z" fill="#9daea5"/>
+<path d="M58 43H70V58H85V70H70V85H58V70H43V58H58Z" fill="#c3c2a8"/>
+<path d="M58 8H70V26H58ZM102 58H120V70H102ZM58 102H70V120H58ZM8 58H26V70H8Z" fill="#c5c2a3"/>
+<path d="M8 14H22V18H8ZM107 109H121V113H107ZM6 100H15V104H6Z" fill="#c8cbb6"/>
+<path d="M88 2L83 19L88 32L79 43M128 86L107 81L94 89L84 85M19 116L26 104L22 94" fill="none" stroke="#8b9e97" stroke-width="2"/>
+</svg>
