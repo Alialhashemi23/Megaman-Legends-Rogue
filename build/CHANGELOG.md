@@ -1,5 +1,12 @@
 # Local build history
 
+## 31 — Deliberate Solo selection and confirmed co-op starts
+
+- Main-menu actions now include Account / Sign in. Solo opens a preparation screen with the original digger model, signature attack and equipped specialization. Accept the digger, then press again to start; Back restores useful focus. Held buttons and an idle mouse no longer activate the next screen or steal controller focus.
+- Every online player confirms their loadout with Ready. The host starts a cancellable countdown, then everyone prepares the same dig before it begins together. Changing a loadout clears consent. Account delays, cancellation and retries retain the existing unplayed lease without starting the dig early.
+- Existing Guest/sign-in, Workshop navigation, invites, late join, reconnect and host migration remain supported. Game protocol is now 11: refresh older browser tabs and update native clients before joining current lobbies. The published Android 0.19.0 APK remains an older client; a matching Android release is pending.
+- Validation: UI 93, Options 43, account 56, readiness 57, resume 24 and relay 41 checks passed; real two/four-client readiness, seven-role recovery and two-browser Ready/cancel/reload journeys passed. Physical controller and Retroid checks remain pending.
+
 ## 30 — In-game sign-in and one rule for Guest progress
 
 - Signing in no longer leaves the game. The account bar opens a panel over the title on browser, Windows and Android: email and password, then a 6-digit authenticator code (or a backup code) if the account uses one. Create an account or ask for a password reset from the same panel. Errors (wrong password, unconfirmed email, too many attempts, no connection) appear in the panel. Windows and Android no longer use the device code approved in a separate browser.
