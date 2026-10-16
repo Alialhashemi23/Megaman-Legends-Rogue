@@ -291,6 +291,12 @@ func show_title() -> void:
 	position_title_camera()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
+func show_solo_prep() -> void:
+	mode = "solo_prep"
+	position_title_camera()
+	player.camera.look_at(player.position + Vector3(0.4, 1.10, 0))
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
 func start_run(seed_value: int = 0, party: int = 1, id: String = "") -> void:
 	if account.state == "restoring" or (account.state == "needs_sign_in" and account.identity.is_empty()):
 		mode = "account"
@@ -512,7 +518,7 @@ func game_action(id: String) -> bool:
 				chat_open = true
 				return true
 			if mode == "title" or (mode == "end" and not net.active()):
-				start_run()
+				hud.open_solo()
 				return true
 		"ping":
 			if mode == "play": ping_here(); return true
@@ -617,7 +623,7 @@ func _process(dt: float) -> void:
 		if queue_level:
 			queue_level = false
 			open_level_choice()
-	elif mode == "title":
+	elif mode in ["title", "solo_prep"]:
 		title_clock += dt
 		player.art.root.rotation.y = -0.4 + sin(title_clock * .45) * .26
 		player.visual.preview(dt)

@@ -107,7 +107,7 @@ func save_settings() -> void:
 
 func desired_cue() -> String:
 	var game = get_parent()
-	if game.mode in ["title", "archive", "online", "lobby"]: return "title"
+	if game.mode in ["title", "solo_prep", "archive", "online", "lobby"]: return "title"
 	if game.mode == "end": return "clear" if game.outcome else "lost"
 	if game.mode in ["pause", "options", "controls", "inventory", "choice"]: return retained_cue
 	if not game.guardian_dead:
@@ -137,7 +137,7 @@ func _process(dt: float) -> void:
 		music_gains[i] = move_toward(music_gains[i], (0.42 if duck else 1.0) if i == active_music else 0.0, dt * 0.85)
 		music_players[i].volume_db = linear_to_db(maxf(0.0001, music_gains[i])) - 6
 		if i != active_music and music_gains[i] <= 0: music_players[i].stop()
-	var ambient_target = -27.0 if get_parent().mode in ["title", "archive", "end", "online", "lobby"] else -16.0 if duck else -9.0
+	var ambient_target = -27.0 if get_parent().mode in ["title", "solo_prep", "archive", "end", "online", "lobby"] else -16.0 if duck else -9.0
 	ambience.volume_db = move_toward(ambience.volume_db, ambient_target, dt * 14)
 	if not ambience.playing: ambience.play()
 

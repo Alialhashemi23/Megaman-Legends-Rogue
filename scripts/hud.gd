@@ -38,6 +38,7 @@ var portraits: Array[Texture2D] = []
 var pattern = preload("res://assets/ui/menu_pattern.svg")
 var hits: Array = []
 var pointer = Vector2(-100, -100)
+var pointer_travel = 0.0
 var ui_scale = 1.0
 var ui_offset = Vector2.ZERO
 var focus_index = 0
@@ -45,6 +46,11 @@ var selected_item = 0
 var list_scroll = 0
 var choice_preview = 0
 var previous_mode = ""
+# Keep semantic targets across page changes and account/roster redraws.
+var page_focus: Dictionary = {}
+var pending_focus: Dictionary = {}
+var accept_held = false
+var back_held = false
 var name_edit: LineEdit
 var code_edit: LineEdit
 var server_edit: LineEdit
@@ -56,7 +62,7 @@ var copied_time = 0.0
 const CONFIRM = ["leave_online", "leave_dig", "abandon", "kick", "discard", "start_new", "give_up", "reset_controls", "takeover", "clear_session"]
 # Options page rows: sound, display, then controls.
 const OPTIONS = ["master", "music", "effects", "ambience", "mute", "fullscreen", "camera", "fov", "mouse", "look", "invert", "vibration", "controls", "map_zoom", "back"]
-const MENU_MODES = ["title", "pause", "options", "controls", "choice", "inventory", "archive", "end", "online", "lobby", "workshop", "save_codes", "account", "android_update", "credits"]
+const MENU_MODES = ["title", "solo_prep", "pause", "options", "controls", "choice", "inventory", "archive", "end", "online", "lobby", "workshop", "save_codes", "account", "android_update", "credits"]
 var credits_lines: PackedStringArray = []
 var credits_page = 0
 var options_return = "title"
@@ -440,7 +446,27 @@ func button(pos: Vector2, size: Vector2, title: String, action: String, value: i
     hits.append({"rect": area, "action": action, "value": value})
 
 func _input(event: InputEvent) -> void:
+    # Release is observed even while a text field or a different page owns input.
+    # Repeated pressed events cannot carry a held A/Enter/B into the next layer.
+    if event.is_action("nav_accept") and not event.is_echo():
+        if not event.is_pressed(): accept_held = false
+        elif accept_held:
+            get_viewport().set_input_as_handled()
+            return
+        else: accept_held = true
+    if event.is_action("nav_back") and not event.is_echo():
+        if not event.is_pressed(): back_held = false
+        elif back_held:
+            get_viewport().set_input_as_handled()
+            return
+        else: back_held = true
     if event is InputEventMouseMotion:
+        # Window/viewport updates can emit motion at the stationary pointer.
+        if event.relative.is_zero_approx(): return
+        if pointer.x < -50 and not grid_dragging:
+            pointer_travel += event.relative.length()
+            if pointer_travel <= 4: return
+        game.settings.using_pad = false
         pointer = (event.position - ui_offset) / ui_scale
         if grid_dragging and game.mode == "workshop":
             grid_center -= event.relative / ui_scale / (GRID_CELL * grid_zoom())
@@ -455,6 +481,7 @@ func _input(event: InputEvent) -> void:
                     break
     if event is InputEventMouseButton and not event.pressed and event.button_index == MOUSE_BUTTON_LEFT: grid_dragging = false
     if event is InputEventMouseButton and event.pressed and game.mode != "play":
+        if game.mode != previous_mode: return
         var at = (event.position - ui_offset) / ui_scale
         if game.mode == "workshop" and GRID_RECT.has_point(at) and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
             grid_zoom_by(1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else -1)
@@ -473,8 +500,10 @@ func _input(event: InputEvent) -> void:
                 var owner_field: Control = get_viewport().gui_get_focus_owner()
                 if not owner_field.get_global_rect().has_point(event.position): get_viewport().gui_release_focus()
             var point = (event.position - ui_offset) / ui_scale
-            for hit in hits:
+            for i in hits.size():
+                var hit = hits[i]
                 if hit.rect.has_point(point):
+                    focus_index = i
                     activate(hit.action, hit.value)
                     get_viewport().set_input_as_handled()
                     break
@@ -483,8 +512,13 @@ func _input(event: InputEvent) -> void:
         return
     # Keys and controller buttons; stick motion is handled by game.pad_motion().
     if event is InputEventJoypadMotion or not event.is_pressed() or event.is_echo(): return
-    if not game.mode in MENU_MODES or editing(): return
+    if not game.mode in MENU_MODES: return
+    if editing():
+        if event.is_action_pressed("nav_back") and back(): get_viewport().set_input_as_handled()
+        return
     if event is InputEventMouseButton: return
+    pointer = Vector2(-100, -100)
+    pointer_travel = 0.0
     if game.mode == "workshop" and ((event is InputEventKey and event.keycode == KEY_Z) or (event is InputEventJoypadButton and event.button_index == JOY_BUTTON_X)):
         grid_zoom_by(1 if grid_zoom_step < GRID_ZOOMS.size() - 1 else -GRID_ZOOMS.size())
         game.sound.play("menu_move")
@@ -515,7 +549,9 @@ func _input(event: InputEvent) -> void:
 # Move the menu cursor (arrows, D-pad or left stick).
 func navigate(delta: int, horizontal: bool) -> void:
     if not listening.is_empty() or editing() or not game.mode in MENU_MODES: return
+    if game.mode != previous_mode: return
     pointer = Vector2(-100, -100)
+    pointer_travel = 0.0
     if game.mode == "options" and horizontal:
         if focus_index < OPTIONS.size(): adjust_option(focus_index, delta)
     elif game.mode == "controls" and not horizontal and focus_index < DiverSettings.ACTIONS.size() * 2:
@@ -523,16 +559,24 @@ func navigate(delta: int, horizontal: bool) -> void:
     elif game.mode == "choice": choice_preview = wrapi(choice_preview + delta, 0, 3)
     elif game.mode in ["archive", "inventory"]: select_part(delta)
     elif game.mode == "workshop": workshop_navigate(delta, horizontal)
-    elif game.mode == "title" and horizontal:
-        if not hits.is_empty() and hits[clampi(focus_index, 0, hits.size()-1)].action == "character":
-            select_character(game.selected_character + 1)
+    elif game.mode == "solo_prep":
+        if horizontal:
+            if focused_action() in ["solo_character", "solo_cycle"]: select_character(game.selected_character + delta)
         else:
-            select_character(game.selected_character + delta)
+            var regions = ["solo_character", "launch_solo", "title"]
+            var region = "solo_character" if focused_action() == "solo_cycle" else focused_action()
+            focus_action(regions[wrapi(regions.find(region) + delta, 0, regions.size())])
+    elif game.mode == "title" and horizontal: return
     else: move_focus(delta)
     game.sound.play("menu_move")
 
 func confirm() -> void:
-    if game.mode == "choice": activate("choice", choice_preview)
+    # Until the new page has drawn, its predecessor's hit targets are stale.
+    if game.mode != previous_mode: return
+    pointer = Vector2(-100, -100)
+    pointer_travel = 0.0
+    if game.mode == "solo_prep" and focused_action() == "solo_cycle": focus_action("launch_solo")
+    elif game.mode == "choice": activate("choice", choice_preview)
     elif game.mode in ["inventory", "archive"]: activate("resume" if game.mode == "inventory" else "title")
     elif not hits.is_empty():
         var hit = hits[clampi(focus_index, 0, hits.size() - 1)]
@@ -540,7 +584,14 @@ func confirm() -> void:
 
 # Esc / B: step back out of the current menu. Returns true when handled.
 func back() -> bool:
+    pointer = Vector2(-100, -100)
+    if editing():
+        get_viewport().gui_release_focus()
+        return true
     match game.mode:
+        "solo_prep":
+            page_focus.title = {"action": "solo", "value": 0}
+            activate("title")
         "android_update": game.android_updates.later()
         "credits": activate("title")
         "account":
@@ -583,14 +634,34 @@ func move_focus(delta: int) -> void:
     if choices.is_empty(): return
     focus_index = choices[wrapi(choices.find(focus_index) + delta, 0, choices.size())]
 
+func focused_action() -> String:
+    return str(hits[focus_index].action) if focus_index >= 0 and focus_index < hits.size() else ""
+
+func remember_focus(mode: String) -> void:
+    if focus_index >= 0 and focus_index < hits.size():
+        page_focus[mode] = {"action": hits[focus_index].action, "value": hits[focus_index].value}
+
+func focus_action(action: String, value: int = 0) -> bool:
+    for i in hits.size():
+        if hits[i].action == action and hits[i].value == value:
+            focus_index = i
+            return true
+    return false
+
+func open_solo() -> void:
+    page_focus.title = {"action": "solo", "value": 0}
+    page_focus.solo_prep = {"action": "solo_character", "value": 0}
+    game.show_solo_prep()
+
 func select_part(delta: int) -> void:
     var count = game.ITEMS.size() if game.mode == "archive" else game.player.items.size()
     if count > 0: selected_item = clampi(selected_item + delta, 0, count - 1)
 
 func confirm_label(action: String, value: int, normal: String) -> String:
-    return "Click again to confirm" if confirming == "%s:%d" % [action, value] else normal
+    return "Press again to confirm" if confirming == "%s:%d" % [action, value] else normal
 
 func activate(action: String, value: int = 0) -> void:
+    if game.mode == previous_mode: remember_focus(game.mode)
     game.sound.play("menu_confirm")
     if action in CONFIRM and confirming != "%s:%d" % [action, value]:
         confirming = "%s:%d" % [action, value]
@@ -644,7 +715,14 @@ func activate(action: String, value: int = 0) -> void:
         "invite_continue":
             game.mode = "online"
             game.net.join_lobby(game.net.invited_code(), game.net.url_param("key"))
-        "start": game.start_run()
+        "start", "solo": open_solo()
+        "solo_character": focus_action("launch_solo")
+        "solo_cycle":
+            select_character(game.selected_character + value)
+            focus_action("solo_character")
+        "launch_solo":
+            if game.saved_dig.is_empty(): game.start_run()
+            else: activate("start_new")
         "start_new": game.start_run()
         "continue": game.continue_saved_dig()
         "discard": game.discard_saved_dig()
@@ -655,6 +733,7 @@ func activate(action: String, value: int = 0) -> void:
         "choice": game.choose(value)
         "workshop":
             if game.mode != "save_codes":
+                page_focus.erase("workshop")
                 workshop_return = game.mode
                 workshop_character = game.selected_character
                 workshop_message = ""
@@ -708,7 +787,6 @@ func activate(action: String, value: int = 0) -> void:
         "options":
             if game.mode in ["title", "pause"]: options_return = game.mode
             game.mode = "options"
-            focus_index = 0
         "option": activate_option(value)
         "controls": game.mode = "controls"
         "bind": listening = {"id": DiverSettings.ACTIONS[value / 2].id, "column": "kb" if value % 2 == 0 else "pad", "time": 6.0}
@@ -764,13 +842,20 @@ func _draw() -> void:
     ui_offset = (get_viewport_rect().size - BASE * ui_scale) * 0.5
     draw_set_transform(ui_offset, 0, Vector2.ONE * ui_scale)
     if game.mode != previous_mode:
+        if previous_mode != "": remember_focus(previous_mode)
         previous_mode = game.mode
         focus_index = 0
+        pending_focus = page_focus.get(game.mode, {}).duplicate()
         selected_item = 0
         list_scroll = 0
         choice_preview = 0
         pointer = Vector2(-100, -100)
-        if game.mode == "workshop": workshop_focus_pending = true
+        pointer_travel = 0.0
+        if game.mode == "workshop": workshop_focus_pending = pending_focus.is_empty()
+    else:
+        remember_focus(game.mode)
+        pending_focus = page_focus.get(game.mode, {}).duplicate()
+    if game.mode == "workshop" and workshop_focus_pending: pending_focus = {}
     hits.clear()
     copied_time = maxf(0, copied_time - get_process_delta_time())
     confirm_time -= get_process_delta_time()
@@ -788,6 +873,7 @@ func _draw() -> void:
     match game.mode:
         "model_preview": return
         "title": draw_title()
+        "solo_prep": draw_solo_prep()
         "online": draw_online()
         "lobby": draw_lobby()
         "archive": draw_parts(true)
@@ -803,6 +889,9 @@ func _draw() -> void:
         "android_update": draw_android_update()
         "credits": draw_credits()
         _: draw_hud()
+    if not pending_focus.is_empty() and not focus_action(pending_focus.action, pending_focus.value): focus_index = 0
+    focus_index = clampi(focus_index, 0, maxi(0, hits.size() - 1))
+    pending_focus = {}
 
 func backdrop() -> void:
     var extra = ui_offset / ui_scale
@@ -872,48 +961,29 @@ func draw_title() -> void:
     text_at(Vector2(86, 347), "THE TIDAL ARCHIVE", 24, WHITE, true)
     text_at(Vector2(66, 399), "A dungeon-crawling fan adventure", 25, MUTED)
     var account_copy = title_account_copy()
-    text_at(Vector2(1042, 237), account_copy.detail, 23, CYAN, false, 328)
     var menu_y = 418
     var saved: Dictionary = game.saved_dig
     if not saved.is_empty():
         var w: Dictionary = saved.world
         var detail = "B%d · %02d:%02d" % [int(w.get("depth", 1)), int(w.get("run_time", 0)) / 60, int(w.get("run_time", 0)) % 60]
-        button(Vector2(64, menu_y), Vector2(476, 48), ("Rejoin Dig %s  (%s)" % [saved.lobby_code, detail]) if saved.get("online", false) else "Continue Dig  (%s)" % detail, "continue", 0, true)
-        menu_y += 56
-        button(Vector2(64, menu_y), Vector2(476, 48), confirm_label("start_new", 0, "New Dig (ends the saved one)"), "start_new")
-    else: button(Vector2(64, menu_y), Vector2(476, 48), "Start Dig", "start", 0, true)
-    menu_y += 56
-    button(Vector2(64, menu_y), Vector2(476, 48), "Play Online", "online", 0, saved.is_empty())
-    menu_y += 56
-    button(Vector2(64, menu_y), Vector2(476, 48), "Parts Collection", "archive")
-    menu_y += 56
-    if OS.has_feature("web"): button(Vector2(64, menu_y), Vector2(476, 48), "Options", "options")
-    else:
-        button(Vector2(64, menu_y), Vector2(230, 48), "Options", "options")
-        button(Vector2(310, menu_y), Vector2(230, 48), "Quit", "quit")
-    window(Vector2(48, 690), Vector2(508, 156))
-    text_at(Vector2(68, 723), "SIGNATURE ATTACK", 21, WHITE, true)
-    var equipped = DiverProgression.spec(game.selected_character, game.equipped_spec(game.selected_character))
-    if not equipped.is_empty(): text_at(Vector2(300, 723), "+ " + equipped.name, 20, CYAN, true, 236)
-    button(Vector2(68, 854), Vector2(472, 40), "Workshop / Zenny & Skill Trees", "workshop")
-    text_at(Vector2(72, 766), game.WEAPONS[game.selected_weapon], 28, YELLOW, true)
-    paragraph(Vector2(72, 808), DiverPlayer.ATTACK_DETAILS[game.selected_character], 460, 22, MUTED, 2)
-    window(Vector2(1080, 32), Vector2(312, 104), Color(0.06, 0.16, 0.40, 0.92))
-    icon(Vector2(1098, 51), "record", 48)
-    text_at(Vector2(1162, 65), "DIG RECORD", 21, WHITE, true)
-    text_at(Vector2(1162, 101), "%d digs   /   %d clears" % [game.meta.runs, game.meta.wins], 24, YELLOW)
+        button(Vector2(64, menu_y), Vector2(476, 40), ("Rejoin Dig %s  (%s)" % [saved.lobby_code, detail]) if saved.get("online", false) else "Continue Dig  (%s)" % detail, "continue", 0, true)
+        menu_y += 46
+    var actions = [["Solo Dig" if saved.is_empty() else "Solo Dig / New Dig", "solo"], ["Play Online", "online"], ["Workshop", "workshop"], ["Options", "options"], [account_copy.label, "account"], ["Credits / Licenses", "credits"], ["Parts Collection", "archive"]]
+    if not OS.has_feature("web"): actions.append(["Quit", "quit"])
+    for entry in actions:
+        button(Vector2(64, menu_y), Vector2(476, 40), entry[0], entry[1], 0, entry[1] == "solo")
+        menu_y += 46
+    window(Vector2(1020, 32), Vector2(372, 104), Color(0.06, 0.16, 0.40, 0.92))
+    icon(Vector2(1038, 51), "record", 48)
+    text_at(Vector2(1102, 65), "DIG RECORD", 21, WHITE, true)
+    text_at(Vector2(1102, 101), "%d digs   /   %d clears" % [game.meta.runs, game.meta.wins], 24, YELLOW)
+    window(Vector2(1020, 164), Vector2(372, 112))
+    text_at(Vector2(1042, 200), "ACCOUNT", 22, WHITE, true)
+    paragraph(Vector2(1042, 237), account_copy.detail, 328, 23, CYAN, 2)
     window(Vector2(1020, 348), Vector2(372, 200), Color(0.06, 0.16, 0.40, 0.96))
-    text_at(Vector2(1042, 382), "SELECT DIGGER", 22, WHITE, true)
-    keycap(Vector2(1336, 360), "Y" if pad() else "C", 34)
-    for i in DiverCharacter.COUNT:
-        var pos = Vector2(1038 + (i % 2) * 172, 399 + (i / 2) * 70)
-        var selected = game.selected_character == i
-        var hot = not underlay and (focus_index == hits.size() or Rect2(pos, Vector2(162, 64)).has_point(pointer))
-        window(pos, Vector2(162, 64), SELECT if selected else INK, YELLOW if selected or hot else EDGE)
-        draw_texture_rect(portraits[i], Rect2(pos + Vector2(2, 3), Vector2(52, 58)), false)
-        text_at(pos + Vector2(60, 41), DiverCharacter.SHORT_NAMES[i].capitalize(), 25 if i < 3 else 21, WHITE, true)
-        if hot: cursor(pos + Vector2(-22, 20), 24)
-        hits.append({"rect": Rect2(pos, Vector2(162, 64)), "action": "character", "value": i})
+    draw_texture_rect(portraits[game.selected_character], Rect2(1042, 370, 80, 90), false)
+    text_at(Vector2(1136, 410), DiverCharacter.DISPLAY_NAMES[game.selected_character], 25, YELLOW, true, 236)
+    paragraph(Vector2(1042, 498), "Choose your digger in Solo preparation or the online lobby.", 328, 23, MUTED, 2)
     window(Vector2(1020, 574), Vector2(372, 274), Color(0.06, 0.16, 0.40, 0.94))
     text_at(Vector2(1044, 613), "CONTROLLER" if pad() else "CONTROLS", 24, WHITE, true)
     var controls = [["move", "Move"], ["fire", "Fire buster"], ["dash", "Dash"], ["jump", "Jump"], ["interact", "Salvage / use"], ["lock_on", "Lock on"]]
@@ -922,8 +992,36 @@ func draw_title() -> void:
         keycap(Vector2(1044, y), p(controls[i][0]), 76)
         text_at(Vector2(1140, y + 23), controls[i][1], 23)
 
-    button(Vector2(1020, 154), Vector2(372, 50), account_copy.label, "account")
-    small_button(Vector2(1020, 274), Vector2(372, 42), "Credits / Licenses", "credits")
+func draw_solo_prep() -> void:
+    # Keep the supplied model and ruins visible between the cobalt side panels.
+    text_at(Vector2(64, 110), "SOLO DIG", 48, YELLOW, true)
+    text_at(Vector2(66, 157), "Choose your digger. Run parts and levels reset each dig.", 26, WHITE)
+    window(Vector2(64, 210), Vector2(490, 594))
+    var character = game.selected_character
+    text_at(Vector2(90, 260), DiverCharacter.DISPLAY_NAMES[character], 34, YELLOW, true, 438)
+    text_at(Vector2(90, 320), "SIGNATURE ATTACK", 22, CYAN, true)
+    text_at(Vector2(90, 366), game.WEAPONS[game.selected_weapon], 28, WHITE, true, 438)
+    paragraph(Vector2(90, 410), DiverPlayer.ATTACK_DETAILS[character], 438, 25, WHITE, 3)
+    rect(Vector2(90, 492), Vector2(438, 2), EDGE)
+    text_at(Vector2(90, 542), "EQUIPPED SPECIALIZATION", 22, CYAN, true)
+    var equipped = DiverProgression.spec(character, game.equipped_spec(character))
+    text_at(Vector2(90, 588), equipped.get("name", "None equipped"), 28, YELLOW, true, 438)
+    paragraph(Vector2(90, 632), equipped.get("desc", "Unlock and equip specializations in the Workshop."), 438, 24, MUTED, 5)
+    var area = Rect2(600, 210, 390, 524)
+    var hot = focus_index in [0, 1, 2, 3]
+    draw_rect(area, YELLOW if hot else EDGE, false, 3)
+    text_at(Vector2(620, 710), DiverCharacter.DISPLAY_NAMES[character], 28, YELLOW, true, 350)
+    hits.append({"rect": area, "action": "solo_character", "value": 0})
+    small_button(Vector2(600, 756), Vector2(64, 48), "<", "solo_cycle", -1)
+    button(Vector2(680, 756), Vector2(230, 48), "Accept digger", "solo_character")
+    small_button(Vector2(926, 756), Vector2(64, 48), ">", "solo_cycle", 1)
+    window(Vector2(1020, 560), Vector2(372, 244))
+    button(Vector2(1042, 584), Vector2(328, 64), confirm_label("start_new", 0, "Start Dig"), "launch_solo", 0, true)
+    button(Vector2(1042, 714), Vector2(328, 64), "Back to Title", "title")
+    paragraph(Vector2(1042, 678), "Starts a new dig." if game.saved_dig.is_empty() else "Replaces your saved dig.", 328, 22, MUTED, 1)
+    window(Vector2(64, 830), Vector2(1312, 54), INK, EDGE, false)
+    text_at(Vector2(84, 865), "Left / Right: Digger    Up / Down: Selection / Start / Back", 23, WHITE)
+    text_at(Vector2(832, 865), "A: Accept / Start    B: Back" if pad() else "Enter: Accept / Start    Esc: Back", 23, YELLOW)
 
 func draw_hud() -> void:
     var p = game.player
@@ -1546,7 +1644,7 @@ func draw_online() -> void:
 # Compact button for rows like the lobby's kick controls.
 func small_button(pos: Vector2, size: Vector2, title: String, action: String, value: int = 0, color: Color = PANEL) -> void:
     var area = Rect2(pos, size)
-    var hot = not underlay and area.has_point(pointer)
+    var hot = not underlay and (focus_index == hits.size() or area.has_point(pointer))
     window(pos, size, SELECT if hot else color, YELLOW if hot else EDGE, false)
     text_at(pos + Vector2(12, size.y / 2 + 7), title, 19, WHITE, false, size.x - 20)
     hits.append({"rect": area, "action": action, "value": value})

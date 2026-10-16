@@ -50,9 +50,9 @@ func key(code: int) -> void:
 func run() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://save"))
 	game = load("res://main.tscn").instantiate()
-	root.add_child(game)
 	game.save_path = "res://save/options-test-archive.json"
 	game.checkpoint_path = "res://save/options-test-run.dat"
+	root.add_child(game)
 	game.sound.muted = true
 	var s: DiverSettings = game.settings
 	s.path = "res://save/options-test.json"
@@ -85,7 +85,19 @@ func run() -> void:
 	await refresh()
 	await tap(JOY_BUTTON_A)
 	await refresh()
-	verify(game.mode == "play", "A starts the dig")
+	verify(game.mode == "solo_prep", "A opens Solo preparation after title Y selection")
+	await tap(JOY_BUTTON_DPAD_LEFT)
+	verify(game.selected_character == 1, "Left cycles in the character region")
+	button(JOY_BUTTON_A, true)
+	await refresh()
+	verify(game.mode == "solo_prep" and game.hud.focused_action() == "launch_solo", "A accepts the displayed digger and focuses Start")
+	button(JOY_BUTTON_A, true)
+	await refresh()
+	verify(game.mode == "solo_prep", "Holding A cannot launch")
+	button(JOY_BUTTON_A, false)
+	await tap(JOY_BUTTON_A)
+	await refresh()
+	verify(game.mode == "play" and game.player.character == 1, "A fresh A press starts the selected digger")
 	verify(not game.persisting() and not FileAccess.file_exists(game.checkpoint_path), "Solo digs don't keep a mid-run save")
 
 	# Playing with a controller.
