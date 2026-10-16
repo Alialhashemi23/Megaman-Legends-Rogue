@@ -16,6 +16,14 @@ descents). Native draw calls are about 15% lower with frame time no worse. Rooms
 from all three descents, plus the title/Workshop at 1440×900 and 960×600, were
 rendered and reviewed.
 
+Deployed 2026-10-15 from commit `f175fe1` with `docker compose up -d --build
+relic-diver` (default `.env` overlays; Postgres, backups and tunnel untouched;
+migrations exited 0). The container is healthy. Local and public `/healthz` return
+200, and the served `index.pck` SHA-256 `187f0a5a…a7983d` matches the export.
+The live site booted to the new title and a solo B1 dig in a browser. The
+Playwright two-browser lobby/rejoin e2e was not run because Playwright is not
+installed on this PC.
+
 Test isolation fix: `game._ready()` used to replace a `save_path`/`checkpoint_path`
 that a test set before adding the game (a regression since the Android build),
 so progression checks wrote their fixture into the desktop `save/archive.json`.
