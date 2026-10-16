@@ -1,5 +1,12 @@
 # Local build history
 
+## 28 — Polish P6 guardian milestones
+
+- The first and second guardians give each digger a personal milestone: a choice of three major upgrades lasting the rest of the dig. Offers are weighted toward fitted parts, but every milestone works without them. Ten milestones: Arc Conductor (lightning chains), Wildfire Core (burns that spread on kills), Glacier Drive (dash slows nearby machines), Twin Capacitor (+35% second-bolt chance), Fortune Prism (+15% crits that triple), Bulwark Frame (-25% damage above half Life), Scavenger's Instinct (repair and part chance on kills), Opening Salvo (+35% against healthy machines), Second Wind (survive one downing hit per descent) and Kinetic Loader (+30% fire rate after dashing). Values are tuning proposals.
+- The final guardian ends the dig, so it keeps its part reward and gives no milestone. Regular parts and level-ups are unchanged.
+- In co-op, each client grants its own player's milestone once it sees the guardian fall. Picks can be put aside like cache picks. Builds and checkpoints carry taken and waiting milestones; offers are seeded per dig, descent and digger, so a rejoin sees the same three. Duplicates are impossible and every dig starts without milestones. Co-op protocol 10.
+- Checks: new milestone checks 59 (catalogue, weighting, grant once per guardian, final-guardian rule, deferral, rejoin, forged builds, effects, reset), every existing client suite, the multi-process co-op test (now also checking that host and guest each get their own milestone), and a live-dig soak with every milestone.
+
 ## 27 — Polish P5 character specializations
 
 - Each digger's grid ends in two specialization circuits (600 Zenny each). Owning one unlocks it; equip one in the Workshop for the next dig, and switch freely between digs. With none equipped, the dig uses the default loadout. Only the equipped specialization applies, even with both owned.

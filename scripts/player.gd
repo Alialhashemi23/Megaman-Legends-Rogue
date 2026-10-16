@@ -34,6 +34,11 @@ var focus_target: Node3D
 var focus_stacks = 0
 var last_hurt = -100000
 var medic_glow = 0.0
+# Guardian milestones taken this dig, and which descents granted them.
+var milestones: Array = []
+var milestone_depths: Array = []
+var kinetic_time = 0.0
+var second_wind_depth = 0
 var shot_count = 0
 var repair_cooldown = 0.0
 const SIGNATURES = [0, 1, 2, 3]
@@ -125,6 +130,9 @@ func medic_nearby() -> bool:
 		if is_instance_valid(other) and not other.downed and other.character == 1 and other.specialization() == "medic" and other.global_position.distance_to(global_position) < 6.0: return true
 	return false
 
+func has_milestone(id: String) -> bool:
+	return id in milestones
+
 func max_hp() -> float:
 	var starting_life = 65.0 if character == 3 else 100.0
 	return base_health - 100.0 + starting_life * life_bonus() + 20 * count("heart")
@@ -138,7 +146,7 @@ func speed() -> float:
 func fire_delay() -> float:
 	var base = [0.25, 0.13, 0.65, 0.75][weapon]
 	var workshop = (DiverProgression.BONUS.mastery if "mastery" in skills else 1.0) * (DiverProgression.BONUS.loader if "loader" in skills else 1.0)
-	return base / (fire_multiplier * workshop * (1.0 + 0.14 * count("spring")) * (1.0 + storm_heat))
+	return base / (fire_multiplier * workshop * (1.0 + 0.14 * count("spring")) * (1.0 + storm_heat) * (1.3 if kinetic_time > 0 else 1.0))
 
 func _physics_process(dt: float) -> void:
 	if not game.world_running(): return
@@ -152,6 +160,7 @@ func _physics_process(dt: float) -> void:
 	invincible -= dt
 	dash_cooldown -= dt
 	dash_time -= dt
+	kinetic_time -= dt
 	# Needle Storm cools off shortly after the trigger is released.
 	if cooldown < -0.35: storm_heat = move_toward(storm_heat, 0.0, dt * 0.6)
 	if not downed and hp < max_hp() and Time.get_ticks_msec() - last_hurt > 2000 and medic_nearby():
@@ -192,7 +201,11 @@ func _physics_process(dt: float) -> void:
 			heal(DiverProgression.BONUS.repair_life_2 if "ability2" in skills else DiverProgression.BONUS.repair_life)
 			repair_cooldown = DiverProgression.BONUS.repair_delay
 			game.burst(global_position + Vector3.UP, Color("9cde70"), 6)
-		if count("frost") > 0: game.frost_burst(position, 2 + count("frost"))
+		if has_milestone("kinetic"): kinetic_time = 2.5
+		if has_milestone("glacier"):
+			game.frost_burst(position, 3.0 + count("frost"))
+			game.impact_ring(Vector3(position.x, game.floor_height(position) + 0.08, position.z), 6.0, Color("b2e4ef"), 0.22)
+		elif count("frost") > 0: game.frost_burst(position, 2 + count("frost"))
 	if dash_time > 0:
 		velocity.x = dash_direction.x * 19
 		velocity.z = dash_direction.z * 19
@@ -313,7 +326,7 @@ func shoot() -> void:
 	if character == 0 and "ability" in skills and shot_count % interval == 0: amount *= DiverProgression.BONUS.pulse_power
 	game.spawn_bolt(start, direction, amount, false, weapon >= 2, 1 if weapon == 3 else 0, self)
 	game.build_changed()
-	if count("echo") > 0 and game.rng.randf() < minf(0.8, 0.12 * count("echo")):
+	if (count("echo") > 0 or has_milestone("twin")) and game.rng.randf() < minf(0.8, 0.12 * count("echo") + (0.35 if has_milestone("twin") else 0.0)):
 		game.spawn_bolt(start + Vector3.UP * 0.18, direction.rotated(Vector3.UP, 0.025), amount * 0.7, false, weapon >= 2, 1 if weapon == 3 else 0, self)
 	if count("split") > 0:
 		for sign_dir in [-1, 1]:
@@ -324,6 +337,14 @@ func hurt(amount: float) -> void:
 	# Online part and level choices don't pause the dig, so choosing is protected.
 	if game.mode == "choice": return
 	amount *= 1.0 / (1 + count("shell") * 0.18)
+	if has_milestone("bulwark") and hp > max_hp() * 0.5: amount *= 0.75
+	if has_milestone("second_wind") and hp - amount <= 0 and second_wind_depth != game.depth:
+		second_wind_depth = game.depth
+		amount = 0.0
+		hp = max_hp() * 0.3
+		game.float_text(global_position + Vector3.UP * 2.4, "SECOND WIND", Color("9cde70"))
+		game.burst(global_position + Vector3.UP, Color("9cde70"), 10)
+		game.build_changed()
 	hp = maxf(0, hp - amount)
 	last_hurt = Time.get_ticks_msec()
 	visual.hurt()

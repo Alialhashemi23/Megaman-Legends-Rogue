@@ -1311,6 +1311,9 @@ func draw_choice() -> void:
     backdrop()
     stats_header()
     var relic = game.choice_kind == "relic"
+    if game.choice_kind == "milestone":
+        draw_milestone_choice()
+        return
     page_title("CHOOSE A PART" if relic else "LEVEL UP!", "Fit one part. Finding duplicates strengthens their effect." if relic else "Choose an upgrade for this dig.")
     for i in 3:
         var pos = Vector2(64, 288 + i * 128)
@@ -1354,6 +1357,51 @@ func draw_choice() -> void:
         text_at(Vector2(708, 865), "Choose later", 22)
     keycap(Vector2(1050, 842), "A" if pad() else "ENTER", 76)
     text_at(Vector2(1142, 865), "Fit selected part", 22)
+
+# Which of a milestone's favoured parts this digger has fitted.
+func milestone_match(id: String) -> String:
+    var names = []
+    for part in game.MILESTONES[id].affinity:
+        if game.player.count(part) > 0: names.append(game.ITEMS[part].name)
+    return "Matches your " + ", ".join(names) if not names.is_empty() else "Works with any build"
+
+func draw_milestone_choice() -> void:
+    page_title("GUARDIAN MILESTONE", "A major upgrade for the rest of this dig, shaped by your fitted parts.")
+    var count = game.choice_items.size()
+    for i in count:
+        var pos = Vector2(64, 288 + i * 128)
+        var id: String = game.choice_items[i]
+        var entry: Dictionary = game.MILESTONES[id]
+        var selected = i == choice_preview
+        window(pos, Vector2(664, 112), SELECT if selected else PANEL, YELLOW if selected else Color("e7b85a"))
+        if selected: cursor(pos + Vector2(-31, 37))
+        icon(pos + Vector2(23, 19), entry.icon, 74, Color("ffe7a8"))
+        text_at(pos + Vector2(122, 42), entry.name, 29, YELLOW, true, 455)
+        text_at(pos + Vector2(122, 79), milestone_match(id), 22, GREEN if milestone_match(id).begins_with("Matches") else CYAN, false, 455)
+        badge(pos + Vector2(589, 39), str(i + 1), 44)
+        hits.append({"rect": Rect2(pos, Vector2(664, 112)), "action": "choice", "value": i})
+    choice_preview = clampi(choice_preview, 0, maxi(0, count - 1))
+    var chosen: Dictionary = game.MILESTONES[game.choice_items[choice_preview]]
+    window(Vector2(768, 280), Vector2(608, 488), PANEL, Color("e7b85a"))
+    text_at(Vector2(800, 329), chosen.name, 32, YELLOW, true, 544)
+    window(Vector2(968, 356), Vector2(208, 166), INK, Color("e7b85a"), false)
+    icon(Vector2(1000, 367), chosen.icon, 144, Color("ffe7a8"))
+    paragraph(Vector2(800, 564), chosen.desc, 544, 27, WHITE, 4)
+    text_at(Vector2(800, 682), "Lasts until this dig ends  ·  milestone %d of %d" % [game.player.milestones.size() + 1, game.MILESTONE_DEPTHS.size()], 23, YELLOW, false, 544)
+    button(Vector2(800, 706), Vector2(544, 48), "Take This Milestone", "choice", choice_preview)
+    window(Vector2(64, 706), Vector2(664, 62))
+    var taken = []
+    for id in game.player.milestones: taken.append(game.MILESTONES[id].name)
+    text_at(Vector2(86, 747), "Taken: " + ", ".join(taken) if not taken.is_empty() else "Regular parts and level-ups still stack as usual.", 23, MUTED, false, 620)
+    keycap(Vector2(64, 842), "D-PAD" if pad() else "1 2 3", 86)
+    text_at(Vector2(168, 865), "Quick select", 22)
+    keycap(Vector2(382, 842), "D-PAD" if pad() else "↑↓", 46)
+    text_at(Vector2(443, 865), "Browse", 22)
+    if game.can_defer_choice():
+        keycap(Vector2(640, 842), p("parts"), 54)
+        text_at(Vector2(708, 865), "Choose later", 22)
+    keycap(Vector2(1050, 842), "A" if pad() else "ENTER", 76)
+    text_at(Vector2(1142, 865), "Take milestone", 22)
 
 func draw_end() -> void:
     backdrop()

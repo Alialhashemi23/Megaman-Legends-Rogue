@@ -10,7 +10,7 @@ class_name DiverNet
 
 enum {M_INFO, M_STATE, M_SHOT, M_START, M_SNAP, M_ATTACK, M_RESOLVE, M_DAMAGE, M_DIE, M_PICKUP, M_PICKUP_GONE, M_USED, M_HIT, M_INTERACT, M_FROST, M_HEAL, M_ITEM, M_XP, M_CHOICE, M_NOTIFY, M_FLOOR, M_END, M_SYNC, M_LIGHTNING, M_CLEARED, M_RESTORE, M_CHAT, M_PING, M_VISITED}
 # Bump when game messages change so mismatched builds can't share a lobby.
-const NET_VERSION = 9
+const NET_VERSION = 10
 const CHECKPOINT_TARGET = 255
 const DEFAULT_SERVER = "ws://127.0.0.1:8080/ws"
 const PROFILE_PATH = "res://save/online.json"

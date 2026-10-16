@@ -126,6 +126,8 @@ func host_step() -> void:
 			if wait(p != null and p.global_position.distance_to(lift()) < 7, "guest at lift"):
 				game.perform_interact(game.interactables[1], game.player)
 				if game.depth != 2: fail("lift should descend once everyone is aboard")
+				if not game.milestone_owed_or_taken(1): fail("host should be offered a guardian milestone")
+				print("CHECK host has a personal guardian milestone")
 				print("FINGERPRINT host " + fingerprint())
 		10:
 			game.enemies[2].take_damage(1000000, false)
@@ -186,7 +188,11 @@ func guest_step() -> void:
 			if wait(not game.player.downed and game.player.hp > 0, "revive"): print("CHECK guest revived hp=%d" % int(game.player.hp))
 		8:
 			if game.guardian_dead: game.player.position = lift() + Vector3(1.5, 0.12, 1.5)
-			if wait(game.depth == 2, "descent", 30): print("FINGERPRINT guest " + fingerprint())
+			if wait(game.depth == 2, "descent", 30):
+				print("FINGERPRINT guest " + fingerprint())
+				# Each digger earns their own guardian milestone (shown now or waiting).
+				if not game.milestone_owed_or_taken(1): fail("guest should be offered a guardian milestone")
+				print("CHECK guest has a personal guardian milestone")
 		9:
 			if wait(proxy(3) != null, "late joiner seen", 40):
 				game.save_checkpoint()

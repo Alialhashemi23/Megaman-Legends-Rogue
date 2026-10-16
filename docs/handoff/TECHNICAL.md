@@ -74,6 +74,7 @@ $env:LOCALAPPDATA = $env:APPDATA
 | UI and menus | `tests/ui_checks.gd`, renders via `tests/ui_preview.gd` |
 | Controls and Options | `tests/options_checks.gd` (simulated controller), renders via `tests/options_preview.gd` |
 | Audio | `tests/audio_checks.gd` |
+| Guardian milestones | `tests/milestone_checks.gd` |
 | Progression, Workshop, save codes | `tests/progression_checks.gd`, `--persistence-test`; browser: `tests/web_progression.mjs` |
 | Co-op map and part picks | `tests/coop_feedback_checks.gd`, renders via `tests/coop_feedback_preview.gd` |
 | Accounts server | `server/` `npm test` runs `rules.test.js` always and `accounts.test.js` when `TEST_DATABASE_URL` points at a PostgreSQL server (see the file header for a one-line Docker command) |

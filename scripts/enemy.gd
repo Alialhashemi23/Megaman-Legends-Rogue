@@ -369,14 +369,15 @@ func take_damage(amount: float, effects: bool = true, source: Node3D = null) -> 
 			source.focus_stacks = 0
 		amount *= 1.0 + 0.08 * source.focus_stacks
 	if exposed > 0: amount *= 1.2
+	if effects and source.has_milestone("salvo") and health > max_health * 0.75: amount *= 1.35
 	if effects and key == "storm":
 		needle_hits += 1
 		if needle_hits % 6 == 0:
 			exposed = 3.0
 			game.float_text(global_position + Vector3.UP * (4.0 if kind == 3 else 2.6), "EXPOSED", Color("ffdc68"))
 	var crit = false
-	if effects and game.rng.randf() < minf(0.6, source.count("prism") * 0.08):
-		amount *= 2
+	if effects and game.rng.randf() < minf(0.6, source.count("prism") * 0.08 + (0.15 if source.has_milestone("fortune") else 0.0)):
+		amount *= 3 if source.has_milestone("fortune") else 2
 		crit = true
 	health -= amount
 	if kind == 3 and not overdrive_triggered and health > 0 and health < max_health * 0.5:
@@ -390,10 +391,10 @@ func take_damage(amount: float, effects: bool = true, source: Node3D = null) -> 
 	if game.net.is_host(): game.net.broadcast([DiverNet.M_DAMAGE, game.depth, net_id, amount, crit, source.slot if effects else 0])
 	if effects and local_shot: game.player.add_trauma(0.025)
 	if effects:
-		if source.count("ember") > 0:
+		if source.count("ember") > 0 or source.has_milestone("wildfire"):
 			burn_time = 3
-			burn_damage = 2.0 * source.count("ember")
-		if source.count("coil") > 0 and game.rng.randf() < minf(0.75, 0.18 * source.count("coil")):
+			burn_damage = 2.0 * maxi(1, source.count("ember"))
+		if (source.count("coil") > 0 or source.has_milestone("arc")) and game.rng.randf() < minf(0.75, 0.18 * source.count("coil") + (0.25 if source.has_milestone("arc") else 0.0)):
 			var candidates = game.enemies.duplicate()
 			var chains = 0
 			for other in candidates:
@@ -422,6 +423,14 @@ func die() -> void:
 	game.drop_pickup(position + Vector3.UP * 0.5, "xp", 18 if kind == 3 else 5 if kind == 2 else 3)
 	game.drop_pickup(position + Vector3(0.4, 0.5, 0), "scrap", (30 if kind == 3 else game.rng.randi_range(2, 5)) + (2 if killer.specialization() == "runner" else 0))
 	if killer.count("moss") > 0: game.heal_player(killer, 1.5 * killer.count("moss"))
+	if killer.has_milestone("scavenger"): game.heal_player(killer, 3.0)
+	# Wildfire Core: a burning machine spreads its fire as it falls.
+	if burn_time > 0 and killer.has_milestone("wildfire"):
+		for other in game.enemies:
+			if other != self and is_instance_valid(other) and not other.dead and other.global_position.distance_to(global_position) < 4.0:
+				other.burn_time = 3
+				other.burn_damage = maxf(other.burn_damage, burn_damage)
+				game.burst(other.global_position + Vector3.UP, Color("f99668"), 5)
 	if game.rng.randf() < 0.12: game.drop_pickup(position + Vector3(-0.4, 0.5, 0), "health", 12)
 	if kind == 3:
 		game.guardian_dead = true
@@ -430,7 +439,7 @@ func die() -> void:
 		var diggers = game.all_players()
 		for i in diggers.size():
 			game.drop_relic(position + Vector3((i - (diggers.size() - 1) * 0.5) * 1.3, 0.8, 1), diggers[i].player_id if diggers.size() > 1 else "")
-	elif game.rng.randf() < 0.07 + killer.count("clover") * 0.025:
+	elif game.rng.randf() < 0.07 + killer.count("clover") * 0.025 + (0.05 if killer.has_milestone("scavenger") else 0.0):
 		game.drop_relic(position + Vector3.UP)
 	queue_free()
 

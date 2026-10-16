@@ -1,5 +1,25 @@
 # Relic Diver handoff
 
+## Polish P6 guardian milestones — 2026-10-15 (build 28)
+
+`game.MILESTONES` (10 entries with icon/affinity/desc) and `MILESTONE_DEPTHS = [1, 2]`.
+Each client grants its own milestone from `_process` once `guardian_dead` is set
+on a milestone descent (`milestone_owed_or_taken()` dedupes against taken, open
+and pending picks), so no new network message is needed. A grant opens a choice
+straight away in play, otherwise it waits as a pending pick. `milestone_offer()`
+weights the three picks by fitted affinity parts with an RNG seeded by run id,
+descent, player id and character, so it never touches gameplay RNG. Picks reuse
+the relic choice flow with `choice_kind == "milestone"` (`clean_pending()`
+validates both kinds), and they can be deferred online.
+`player.milestones/milestone_depths/second_wind_depth` ride in builds (`clean_milestones()`).
+
+Effects are host-side in `enemy.take_damage()`/`die()` for Arc, Wildfire,
+Fortune, Salvo and Scavenger, and in `player.gd` for Bulwark, Second Wind,
+Kinetic, Glacier and Twin. Final-guardian decision: no milestone, because the
+dig ends there. Protocol 10. `tests/milestone_checks.gd`; `tests/net_driver.gd`
+now checks that host and guest each get their own milestone. Next phase: P7
+(dash animation first).
+
 ## Polish P5 specializations — 2026-10-15 (build 27)
 
 `DiverProgression.SPECS` holds two specializations per digger, keyed by the grid

@@ -112,6 +112,23 @@ var choice_queue: Array = []
 var pending_choices: Array = []
 var choice_source: Dictionary = {}
 const MAX_PENDING = 24
+# Guardian milestones (polish P6): a major personal upgrade for the rest of the
+# dig, offered when the first and second guardians fall. The final guardian
+# ends the dig, so it keeps its part reward instead. Offers lean toward the
+# parts a digger has fitted (`affinity`), but every milestone works without them.
+const MILESTONE_DEPTHS = [1, 2]
+const MILESTONES = {
+	"arc": {"name": "Arc Conductor", "icon": "coil", "affinity": ["coil", "echo"], "desc": "+25% chance on every hit to chain lightning to nearby machines (stacks with Storm Coil)."},
+	"wildfire": {"name": "Wildfire Core", "icon": "ember", "affinity": ["ember", "split"], "desc": "Hits set machines burning, and a burning machine that falls ignites everything within 4 m."},
+	"glacier": {"name": "Glacier Drive", "icon": "frost", "affinity": ["frost", "boots"], "desc": "Every dash slows machines within 6 m for 3 s (longer with Winter Flywheels)."},
+	"twin": {"name": "Twin Capacitor", "icon": "echo", "affinity": ["echo", "split", "spring"], "desc": "+35% chance for each shot to fire a second bolt at 70% damage (stacks with Echo Circuits)."},
+	"fortune": {"name": "Fortune Prism", "icon": "prism", "affinity": ["prism", "clover", "lens"], "desc": "+15% critical chance, and critical hits deal triple damage instead of double."},
+	"bulwark": {"name": "Bulwark Frame", "icon": "shell", "affinity": ["shell", "heart"], "desc": "Take 25% less damage while above half Life."},
+	"scavenger": {"name": "Scavenger's Instinct", "icon": "moss", "affinity": ["moss", "clover"], "desc": "Each machine you defeat restores 3 Life and is 5 points likelier to drop a part."},
+	"salvo": {"name": "Opening Salvo", "icon": "lens", "affinity": ["lens", "prism"], "desc": "+35% damage against machines above 75% health."},
+	"second_wind": {"name": "Second Wind", "icon": "heart", "affinity": ["heart", "moss", "shell"], "desc": "Once per descent, a hit that would down you leaves you at 30% Life instead."},
+	"kinetic": {"name": "Kinetic Loader", "icon": "spring", "affinity": ["boots", "spring"], "desc": "For 2.5 s after each dash, fire 30% faster."}
+}
 var net_clock = 0.0
 var end_reason = ""
 var net_test = ""
@@ -595,6 +612,7 @@ func _process(dt: float) -> void:
 		kill_confirm = maxf(0, kill_confirm - dt)
 		run_time += dt
 		update_world(dt)
+		if guardian_dead and depth in MILESTONE_DEPTHS and not milestone_owed_or_taken(depth): grant_milestone(depth)
 		if net.active(): net_tick(dt)
 		if queue_level:
 			queue_level = false
@@ -794,7 +812,53 @@ func pool() -> Array:
 		if item_unlocked(id): result.append(id)
 	return result
 
+# True once this digger has taken, deferred or been shown this descent's milestone.
+func milestone_owed_or_taken(at_depth: int) -> bool:
+	if not is_instance_valid(player) or at_depth in player.milestone_depths: return true
+	if mode == "choice" and choice_kind == "milestone" and int(choice_source.get("depth", 0)) == at_depth: return true
+	for entry in pending_choices:
+		if str(entry.get("kind", "")) == "milestone" and int(entry.depth) == at_depth: return true
+	return false
+
+# Three distinct milestones, weighted by fitted parts. Seeded by the dig, the
+# descent and the digger, so a rejoin or reload sees the same offer.
+func milestone_offer(at_depth: int, who: DiverPlayer) -> Array:
+	var picker = RandomNumberGenerator.new()
+	picker.seed = hash("%s/%d/%s/%d" % [run_id, at_depth, who.player_id, who.character])
+	var options = []
+	var weights = []
+	for id in MILESTONES:
+		if id in who.milestones: continue
+		var weight = 1.0
+		for part in MILESTONES[id].affinity: weight += 2.0 * who.count(part)
+		options.append(id)
+		weights.append(weight)
+	var result = []
+	while result.size() < 3 and not options.is_empty():
+		var index = picker.rand_weighted(PackedFloat32Array(weights))
+		result.append(options[index])
+		options.remove_at(index)
+		weights.remove_at(index)
+	return result
+
+func grant_milestone(at_depth: int) -> void:
+	var entry = {"kind": "milestone", "depth": at_depth, "cache": -1, "items": milestone_offer(at_depth, player)}
+	if mode == "play": open_relic_choice(entry)
+	else:
+		pending_choices.push_front(entry)
+		notify("MILESTONE READY", "Press %s to choose your guardian milestone." % settings.prompt("parts"))
+	build_changed()
+
 func open_relic_choice(source: Dictionary = {}) -> void:
+	if str(source.get("kind", "")) == "milestone" and mode != "choice":
+		choice_kind = "milestone"
+		choice_source = source
+		choice_items = (source.items as Array).duplicate()
+		mode = "choice"
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		sound.play("level")
+		checkpoint_dirty = true
+		return
 	if mode == "choice":
 		if source.is_empty(): choice_queue.append("relic")
 		else: pending_choices.push_front(source)
@@ -845,7 +909,7 @@ func open_pending_choice() -> bool:
 # Online the dig keeps going behind menus, so a cache pick can be put back
 # for later (the same three parts stay on offer).
 func can_defer_choice() -> bool:
-	return mode == "choice" and choice_kind == "relic" and net.active()
+	return mode == "choice" and choice_kind in ["relic", "milestone"] and net.active()
 
 func defer_choice() -> void:
 	if not can_defer_choice(): return
@@ -861,7 +925,7 @@ func defer_choice() -> void:
 func choice_waiting(cache: int) -> bool:
 	if mode == "choice" and int(choice_source.get("depth", 0)) == depth and int(choice_source.get("cache", -1)) == cache: return true
 	for entry in pending_choices:
-		if int(entry.depth) == depth and int(entry.cache) == cache: return true
+		if str(entry.get("kind", "")) != "milestone" and int(entry.depth) == depth and int(entry.cache) == cache: return true
 	return false
 
 # Checkpoint/roster data comes from other machines: keep only well-formed picks.
@@ -871,16 +935,30 @@ func clean_pending(value: Variant) -> Array:
 	for entry in value:
 		if result.size() >= MAX_PENDING: break
 		if not entry is Dictionary: continue
+		var milestone = str(entry.get("kind", "")) == "milestone"
+		var catalogue = MILESTONES if milestone else ITEMS
 		var items = []
 		if entry.get("items") is Array and (entry.items as Array).size() == 3:
 			for id in entry.items:
-				if id is String and ITEMS.has(id): items.append(id)
+				if id is String and catalogue.has(id) and id not in items: items.append(id)
+		if milestone:
+			if items.size() == 3: result.append({"kind": "milestone", "depth": clampi(int(entry.get("depth", 1)), 1, 3), "cache": -1, "items": items})
+			continue
 		result.append({"depth": clampi(int(entry.get("depth", 1)), 1, 3), "cache": int(entry.get("cache", -1)), "items": items if items.size() == 3 else []})
 	return result
 
 func choose(index: int) -> void:
 	if index < 0 or index >= choice_items.size() or mode != "choice": return
-	if choice_kind == "relic":
+	if choice_kind == "milestone":
+		var id: String = choice_items[index]
+		var at_depth = int(choice_source.get("depth", depth))
+		choice_source = {}
+		if id not in player.milestones and at_depth not in player.milestone_depths:
+			player.milestones.append(id)
+			player.milestone_depths.append(at_depth)
+			sound.play("win")
+			notify("MILESTONE / " + MILESTONES[id].name.to_upper(), MILESTONES[id].desc)
+	elif choice_kind == "relic":
 		choice_source = {}
 		player.add_item(choice_items[index])
 	else:
@@ -1405,6 +1483,13 @@ func local_player_down() -> void:
 # --- builds and world snapshots --------------------------------------------
 
 # Everything needed to hand a digger back their exact build.
+func clean_milestones(value: Variant) -> Array:
+	var result = []
+	if value is Array:
+		for id in value:
+			if id is String and MILESTONES.has(id) and id not in result and result.size() < MILESTONE_DEPTHS.size(): result.append(id)
+	return result
+
 func clean_spec(value: Variant, skills: Array) -> String:
 	return value if value is String and value in DiverProgression.SPEC_NODES and value in skills else ""
 
@@ -1432,7 +1517,7 @@ func build_state() -> Dictionary:
 	var p = player
 	var queue = choice_queue.duplicate()
 	if queue_level: queue.append("level")
-	return {"id": net.player_id, "name": net.player_name, "character": p.character, "weapon": p.weapon, "skills": p.skills.duplicate(), "spec": p.spec, "shot_count": p.shot_count, "repair_cooldown": p.repair_cooldown, "items": p.items.duplicate(), "level": p.level, "xp": p.xp, "xp_required": p.xp_required, "base_health": p.base_health, "base_damage": p.base_damage, "fire_multiplier": p.fire_multiplier, "hp": p.hp, "downed": p.downed, "choice": {"kind": choice_kind, "items": choice_items.duplicate(), "depth": int(choice_source.get("depth", depth)), "cache": int(choice_source.get("cache", -1)), "sourced": not choice_source.is_empty()} if mode == "choice" else {}, "queue": queue, "pending": pending_choices.duplicate(true)}
+	return {"id": net.player_id, "name": net.player_name, "character": p.character, "weapon": p.weapon, "skills": p.skills.duplicate(), "spec": p.spec, "milestones": p.milestones.duplicate(), "milestone_depths": p.milestone_depths.duplicate(), "second_wind_depth": p.second_wind_depth, "shot_count": p.shot_count, "repair_cooldown": p.repair_cooldown, "items": p.items.duplicate(), "level": p.level, "xp": p.xp, "xp_required": p.xp_required, "base_health": p.base_health, "base_damage": p.base_damage, "fire_multiplier": p.fire_multiplier, "hp": p.hp, "downed": p.downed, "choice": {"kind": choice_kind, "items": choice_items.duplicate(), "depth": int(choice_source.get("depth", depth)), "cache": int(choice_source.get("cache", -1)), "sourced": not choice_source.is_empty()} if mode == "choice" else {}, "queue": queue, "pending": pending_choices.duplicate(true)}
 
 func apply_build(b: Dictionary) -> void:
 	var p = player
@@ -1441,6 +1526,12 @@ func apply_build(b: Dictionary) -> void:
 	p.weapon = DiverPlayer.SIGNATURES[p.character]
 	p.skills = clean_skills(b.get("skills", []))
 	p.spec = clean_spec(b.get("spec", ""), p.skills)
+	p.milestones = clean_milestones(b.get("milestones", []))
+	p.milestone_depths = []
+	if b.get("milestone_depths") is Array:
+		for d in b.milestone_depths:
+			if (d is int or d is float) and int(d) in MILESTONE_DEPTHS and int(d) not in p.milestone_depths: p.milestone_depths.append(int(d))
+	p.second_wind_depth = int(b.get("second_wind_depth", 0))
 	p.shot_count = maxi(0, int(b.get("shot_count", 0)))
 	p.repair_cooldown = clampf(float(b.get("repair_cooldown", 0)), 0, DiverProgression.BONUS.repair_delay)
 	p.items = (b.get("items", {}) as Dictionary).duplicate() if b.get("items") is Dictionary else {}
@@ -1463,6 +1554,12 @@ func apply_build(b: Dictionary) -> void:
 		choice_items = (choice.items as Array).duplicate()
 		if choice_kind == "relic" and bool(choice.get("sourced", false)):
 			choice_source = {"depth": clampi(int(choice.get("depth", depth)), 1, 3), "cache": int(choice.get("cache", -1)), "items": choice_items.duplicate()}
+		if choice_kind == "milestone":
+			var offer = clean_pending([{"kind": "milestone", "depth": choice.get("depth", depth), "items": choice_items}])
+			if offer.is_empty():
+				choice_kind = "level"
+				choice_items = ["power", "vitality", "haste"]
+			else: choice_source = offer[0]
 		mode = "choice"
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	elif not choice_queue.is_empty():
@@ -1692,6 +1789,7 @@ func create_remote_player(member_slot: int) -> DiverPlayer:
 	proxy.weapon = DiverPlayer.SIGNATURES[proxy.character]
 	proxy.skills = clean_skills(info.get("skills", []))
 	proxy.spec = clean_spec(info.get("spec", ""), proxy.skills)
+	proxy.milestones = clean_milestones(info.get("milestones", []))
 	proxy.items = (info.get("items", {}) as Dictionary).duplicate() if info.get("items") is Dictionary else {}
 	proxy.level = int(info.get("level", 1))
 	world.add_child(proxy)
@@ -2050,6 +2148,7 @@ func net_message(from_slot: int, m: Array) -> void:
 				proxy.weapon = DiverPlayer.SIGNATURES[proxy.character]
 				proxy.skills = clean_skills(b.get("skills", []))
 				proxy.spec = clean_spec(b.get("spec", ""), proxy.skills)
+				proxy.milestones = clean_milestones(b.get("milestones", []))
 				proxy.items = (b.items as Dictionary).duplicate()
 				proxy.level = int(b.get("level", 1))
 		DiverNet.M_STATE:

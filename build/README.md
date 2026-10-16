@@ -55,6 +55,7 @@ Menus: arrows or the mouse to browse, Enter to confirm, Escape to go back (contr
 4. Clear a room to unlock its cache and earn five bonus scrap. Spend scrap on a choice of three parts, or save it for a restoration well. Vessels hold free salvage.
 5. Levelling up offers a choice of damage, Life or fire-rate upgrades.
 6. Defeat the guardian to power the lift. You can keep exploring first. Lifts keep your build and restore 25% Life.
+   The first and second guardians also give each digger a **guardian milestone**: a choice of three major upgrades for the rest of the dig, weighted toward parts you have fitted (each also works without them). They are Arc Conductor, Wildfire Core, Glacier Drive, Twin Capacitor, Fortune Prism, Bulwark Frame, Scavenger's Instinct, Opening Salvo, Second Wind and Kinetic Loader. The final guardian ends the dig, so it gives its part reward only. Regular parts and level-ups still stack as before.
 7. Survive three descents and activate the extraction beacon to win.
 
 There is no countdown or time-based difficulty. Explore at your own pace; difficulty rises with each descent.
@@ -125,7 +126,7 @@ Saves from earlier builds keep every unlock they had already earned.
 
 Up to four diggers in the browser or the Windows build. **Play Online** creates a public or private lobby, lists open lobbies or joins by code; **Copy Invite Link** opens the game straight into your lobby, and friends can join a dig already underway.
 
-The run is shared (same ruins and robots, shared scrap and experience) while builds are personal: every cache and guardian core gives each digger their own pick. When a teammate opens a cache, your pick waits until you press **Tab / Select**, and online you can put a pick aside to finish a fight. Everyone shares one map, which also marks part caches. Robots scale with party size. A digger at 0 Life goes down until a teammate stands beside them; the dig ends only when everyone is down, and the lift waits for the team. Online menus don't pause. Refreshes, crashes, dropped connections and a leaving host don't end the dig. Hosts can remove players, lock the lobby or set a password.
+The run is shared (same ruins and robots, shared scrap and experience) while builds are personal: every cache, guardian core and guardian milestone gives each digger their own pick. When a teammate opens a cache, your pick waits until you press **Tab / Select**, and online you can put a pick aside to finish a fight. Everyone shares one map, which also marks part caches. Robots scale with party size. A digger at 0 Life goes down until a teammate stands beside them; the dig ends only when everyone is down, and the lift waits for the team. Online menus don't pause. Refreshes, crashes, dropped connections and a leaving host don't end the dig. Hosts can remove players, lock the lobby or set a password.
 
 Hosting it on your own domain (Docker Compose + Cloudflare Tunnel, or **Host-Online.cmd**) and the full rules are in [docs/ONLINE.md](docs/ONLINE.md).
 
