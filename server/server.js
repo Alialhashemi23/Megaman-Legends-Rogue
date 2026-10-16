@@ -17,12 +17,13 @@ import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { WebSocketServer } from "ws";
-import { LobbyRegistry, CHECKPOINT_TARGET, cleanCode, cleanText, routePacket } from "./lobby.js";
+import { LobbyRegistry, CHECKPOINT_TARGET, READY_COMMANDS, READY_FEATURE, cleanCode, cleanText, routePacket } from "./lobby.js";
 import { createAccounts } from "./accounts/api.js";
 import { androidReleases } from "./android-updates.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PROTOCOL_VERSION = 2;
+const SERVER_FEATURES = [READY_FEATURE];
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -39,9 +40,17 @@ const MIME = {
 };
 const COMPRESSIBLE = new Set([".html", ".js", ".wasm", ".pck", ".json", ".svg", ".txt", ".css", ".md", ".ttf"]);
 
-export function createServer({ port = 8080, webRoot = path.join(here, "..", "build", "web"), maxLobbies = 200, log = console.log, runGraceMs, idleGraceMs, accounts = null, androidReleaseDir = process.env.ANDROID_RELEASE_DIR } = {}) {
+// `readiness` overrides the launch clock for tests: { now, timers, countdownMs, prepareTimeoutMs, newAttemptId }.
+export function createServer({ port = 8080, webRoot = path.join(here, "..", "build", "web"), maxLobbies = 200, log = console.log, runGraceMs, idleGraceMs, accounts = null, androidReleaseDir = process.env.ANDROID_RELEASE_DIR, readiness = {} } = {}) {
   const android = androidReleases(androidReleaseDir);
-  const registry = new LobbyRegistry({ maxLobbies, runGraceMs, idleGraceMs });
+  const registry = new LobbyRegistry({
+    maxLobbies,
+    runGraceMs,
+    idleGraceMs,
+    ...readiness,
+    emit: (lobby, message) => { for (const member of lobby.members.values()) send(member, message); },
+    changed: (lobby) => broadcastLobby(lobby),
+  });
   const compressed = new Map();
   const root = path.resolve(webRoot);
 
@@ -205,8 +214,11 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
     announceLeave(registry.leave(client));
   }
 
-  function enter(client, outcome, extra = {}) {
+  // `resumed` marks an explicit dig-recovery entry: that connection may report an
+  // existing run without a fresh readiness launch (see LobbyRegistry.reportStatus).
+  function enter(client, outcome, extra = {}, resumed = false) {
     const { lobby, takeover, replaced, replacedResult } = outcome;
+    client.recovery = Boolean(lobby.readiness) && (resumed || takeover);
     if (replaced) {
       send(replaced, { t: "replaced" });
       announceLeave(replacedResult);
@@ -220,6 +232,22 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
 
   function isHost(client) {
     return client.lobby && client.slot === client.lobby.hostSlot;
+  }
+
+  // Readiness commands (QOL-READY-CONTRACT v1). Errors go to the sender with its
+  // current snapshot; accepted changes reach everyone.
+  function handleReadiness(client, message) {
+    const lobby = client.lobby;
+    const result = registry.readinessCommand(client, message);
+    if (result.error) {
+      const r = lobby?.readiness;
+      const error = { t: "ready_error", code: result.error, setupRev: r ? r.setupRev : 0 };
+      if (r?.attempt) error.attemptId = r.attempt.id;
+      send(client, error);
+    }
+    if (!lobby || !lobby.readiness) return;
+    if (result.changed) return broadcastLobby(lobby);
+    send(client, { t: "lobby", lobby: registry.describe(lobby), slot: client.slot });
   }
 
   function handleCommand(client, message) {
@@ -238,7 +266,8 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
         client.playerId = guestId && !guestId.startsWith("acct:") ? guestId : `anon-${client.id}`;
         client.accountId = null;
         client.version = Number.isInteger(message.v) ? message.v : 0;
-        if (message.ticket === undefined || !accounts) return send(client, { t: "welcome", id: client.id, v: PROTOCOL_VERSION });
+        client.readyV1 = Array.isArray(message.features) && message.features.includes(READY_FEATURE);
+        if (message.ticket === undefined || !accounts) return send(client, { t: "welcome", id: client.id, v: PROTOCOL_VERSION, features: SERVER_FEATURES });
         // Commands that arrive while the ticket is checked wait their turn.
         client.waiting = [];
         accounts.redeemTicket(message.ticket).catch(() => null).then((accountId) => {
@@ -246,7 +275,7 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
             client.accountId = accountId;
             client.playerId = `acct:${accountId}`;
           } else send(client, { t: "error", code: "bad_ticket" });
-          send(client, { t: "welcome", id: client.id, v: PROTOCOL_VERSION, account: Boolean(accountId) });
+          send(client, { t: "welcome", id: client.id, v: PROTOCOL_VERSION, account: Boolean(accountId), features: SERVER_FEATURES });
           const queued = client.waiting;
           client.waiting = null;
           for (const next of queued) handleCommand(client, next);
@@ -275,10 +304,10 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
         // Resuming a lobby the server forgot (e.g. after a restart) recreates it under the same code.
         if (outcome.error === "not_found" && message.t === "resume") {
           outcome = registry.create(client, { name: message.name, isPublic: message.public, password: message.password, code });
-          if (!outcome.error) return enter(client, outcome, { recreated: true });
+          if (!outcome.error) return enter(client, outcome, { recreated: true }, true);
         }
         if (outcome.error) return send(client, { t: "error", code: outcome.error });
-        return enter(client, outcome);
+        return enter(client, outcome, {}, message.t === "resume");
       }
       case "leave":
         return leave(client);
@@ -295,20 +324,19 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
         return broadcastLobby(client.lobby);
       case "status":
         // The host reports whether a run is underway so the browser can show it.
-        if (!isHost(client)) return;
-        client.lobby.state = message.state === "run" ? "run" : "lobby";
-        client.lobby.depth = Math.max(1, Math.min(3, Number(message.depth) || 1));
-        if (client.lobby.state === "lobby") client.lobby.checkpoint = null;
+        // In a readiness lobby this never launches a fresh dig by itself.
+        if (!registry.reportStatus(client, message.state, message.depth)) return;
         return broadcastLobby(client.lobby);
       case "ping":
         return send(client, { t: "pong", time: message.time });
       default:
+        if (READY_COMMANDS.has(message.t)) return handleReadiness(client, message);
         return send(client, { t: "error", code: "unknown_command" });
     }
   }
 
   wss.on("connection", (ws) => {
-    const client = { id: nextId++, ws, name: "Digger", playerId: "", accountId: null, waiting: null, version: 0, lobby: null, slot: 0, tokens: 480, stamp: Date.now() };
+    const client = { id: nextId++, ws, name: "Digger", playerId: "", accountId: null, waiting: null, version: 0, readyV1: false, recovery: false, lobby: null, slot: 0, tokens: 480, stamp: Date.now() };
     client.playerId = `anon-${client.id}`;
     clients.add(client);
     ws.on("message", (data, isBinary) => {
@@ -371,6 +399,7 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
       return new Promise((resolve) => server.listen(port, () => resolve(server.address().port)));
     },
     close() {
+      registry.dispose();
       for (const ws of wss.clients) ws.terminate();
       return new Promise((resolve) => server.close(() => resolve())).then(() => accounts?.close());
     },
