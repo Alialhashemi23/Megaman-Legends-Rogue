@@ -1,5 +1,13 @@
 # Local build history
 
+## 25 — Polish P3 music
+
+- All seven cues re-arranged around their unchanged melodies and chords. Each cue now builds through intro, full band, call-and-response and climax sections.
+- Each cue has its own groove, comping, voice-led chords, moving bass lines with approach notes, rotating drum fills, harmony lines and colour instruments (strings, flute, harp, woodwinds, timpani, crystal arpeggios).
+- Phrase dynamics, light humanisation, per-instrument reverb and per-cue mixes. Loudness matches the old cues, so the music/effects balance is unchanged.
+- Extraction and defeat stingers have fuller endings. Sound effects and ambience are unchanged.
+- Checks: audio 66, audio data validator (8 Ogg files, 29 effects, loop seams, captured in-game mix with no clipping), melody-identity check. The owner listened and approved.
+
 ## 24 — Workshop controller navigation
 
 - The Workshop has three rows. On the digger headers, Left/Right moves between diggers and Down enters that digger's skills. Up from the top skill returns to the selected header instead of jumping to another digger. On the bottom buttons, Left/Right moves between Save Codes, Start and Back. LB/RB always switch digger.

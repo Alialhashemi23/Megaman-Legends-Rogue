@@ -29,7 +29,19 @@ with a long name) and Workshop were rendered at 1440×900 and 960×600 with no
 overlaps. Not covered: real controllers and Retroid, or a live browser
 first-load session check.
 
-## Latest music feedback — 2026-10-15
+## Polish P3 music — shipped in build 25 (2026-10-15)
+
+The owner approved the re-arranged soundtrack after listening to before/after
+excerpts. Melodies and harmonies are untouched. `tools/audio/compose.py` now
+arranges per cue (`STYLES`, `arrange()`, `stinger()`). See
+`assets/audio/AUDIO-NOTES.md` § Arrangement. Regenerating also re-encodes
+`ambience/ruin_air.ogg` with different bytes from the same source; restore that
+file from Git unless the ambience itself changed. Run `validate.py` from Bash's
+Python, which has NumPy; PowerShell's Python lacks it. `tests/audio_preview.gd`
+does not isolate saves, so set `save_path`/`checkpoint_path` before adding the
+game when capturing `in-game-mix.wav`.
+
+## Earlier music feedback — 2026-10-15
 
 The user likes the current MIDI melodies and says they sound good, but estimates
 the music is only about 50% of their desired quality and needs significant polish.

@@ -78,11 +78,13 @@ def varlen(n):
         result.insert(0, 128 | (n & 127))
     return bytes(result)
 
-def midi(path, score, bpm, beats, instruments):
+def midi(path, score, bpm, beats, instruments, controls=()):
     # Editable type-0 MIDI, 480 ticks per quarter note.
     events = [(0, b"\xff\x51\x03" + int(60000000 / bpm).to_bytes(3, "big"))]
     for ch, preset in instruments.items():
         events += [(0, bytes([0xC0 | ch, preset])), (0, bytes([0xB0 | ch, 10, PANS.get(ch, 64)]))]
+    for beat, ch, control, value in controls:
+        events.append((round(beat * 480), bytes([0xB0 | ch, control, value])))
     for beat, duration, ch, note, vel in score:
         events += [(round(beat * 480), bytes([0x90 | ch, note, vel])),
                    (round((beat + duration) * 480), bytes([0x80 | ch, note, 0]))]
@@ -94,16 +96,19 @@ def midi(path, score, bpm, beats, instruments):
     buf += varlen(max(0, round(beats * 480) - previous)) + b"\xff\x2f\x00"
     path.write_bytes(b"MThd" + struct.pack(">IHHH", 6, 0, 1, 480) + b"MTrk" + struct.pack(">I", len(buf)) + buf)
 
-PANS = {0: 49, 1: 64, 2: 79, 3: 88, 4: 39, 9: 64}
+PANS = {0: 49, 1: 64, 2: 79, 3: 88, 4: 39, 5: 30, 6: 98, 7: 72, 9: 64}
+VOLUMES = {0: 82, 1: 92, 2: 90, 3: 55, 4: 52, 5: 62, 6: 70, 7: 50, 9: 75}
+# Reverb sends: a wet lead and pads, a dry bass so the low end stays clear.
+SENDS = {0: 38, 1: 8, 2: 62, 3: 80, 4: 70, 5: 56, 6: 66, 7: 60, 9: 30}
 
-def render_score(name, title, bpm, bars, instruments, score, loop=True):
+def render_score(name, title, bpm, bars, instruments, score, loop=True, controls=(), volumes=None, room=(.48, .17)):
     beats = bars * 4
     total = round(beats * 60 / bpm * RATE)
     settings = new_settings()
     setnum(settings, b"synth.sample-rate", RATE)
     setnum(settings, b"synth.gain", .48)
-    setnum(settings, b"synth.reverb.room-size", .48)
-    setnum(settings, b"synth.reverb.level", .17)
+    setnum(settings, b"synth.reverb.room-size", room[0])
+    setnum(settings, b"synth.reverb.level", room[1])
     setnum(settings, b"synth.chorus.level", .16)
     setint(settings, b"synth.cpu-cores", 1)
     synth = new_synth(settings)
@@ -112,25 +117,31 @@ def render_score(name, title, bpm, bars, instruments, score, loop=True):
     for ch, preset in instruments.items():
         assert program(synth, ch, sfid, 128 if ch == 9 else 0, preset) == 0
         cc(synth, ch, 10, PANS.get(ch, 64))
-        cc(synth, ch, 7, {0: 82, 1: 92, 2: 90, 3: 55, 4: 52, 9: 75}.get(ch, 80))
+        cc(synth, ch, 7, {**VOLUMES, **(volumes or {})}.get(ch, 80))
+        cc(synth, ch, 91, SENDS.get(ch, 40))
     events = []
     cycles = 2 if loop else 1
+    # Kinds sort controllers first, then note-offs, then note-ons at one tick.
     for cycle in range(cycles):
+        for beat, ch, control, value in controls:
+            events.append((cycle * total + round(beat * 60 / bpm * RATE), 0, ch, control, value))
         for beat, duration, ch, note, vel in score:
             tick = cycle * total + round(beat * 60 / bpm * RATE)
             end = cycle * total + round((beat + duration) * 60 / bpm * RATE)
-            events.extend([(tick, True, ch, note, vel), (end, False, ch, note, 0)])
+            events.extend([(tick, 2, ch, note, vel), (end, 1, ch, note, 0)])
     events.sort(key=lambda e: (e[0], e[1]))
     length = total * cycles + (0 if loop else RATE * 3)
     audio = np.zeros((length, 2), dtype=np.float32)
     position = 0
-    for tick, is_on, ch, note, vel in events + [(length, False, 0, 0, 0)]:
+    for tick, kind, ch, a, b in events + [(length, 1, 0, 0, 0)]:
         tick = min(tick, length)
         if tick > position:
             section = audio[position:tick]
             assert render(synth, len(section), section.ctypes.data, 0, 2, section.ctypes.data, 1, 2) == 0
             position = tick
-        (on(synth, ch, note, vel) if is_on else off(synth, ch, note))
+        if kind == 0: cc(synth, ch, a, b)
+        elif kind == 2: on(synth, ch, a, b)
+        else: off(synth, ch, a)
     delete_synth(synth)
     delete_settings(settings)
     if loop:
@@ -144,10 +155,16 @@ def render_score(name, title, bpm, bars, instruments, score, loop=True):
         audio[-RATE:] *= np.linspace(1, 0, RATE)[:, None]
     peak = float(np.max(np.abs(audio)))
     rms = float(np.sqrt(np.mean(audio ** 2)))
-    gain = min(.68 / max(peak, 1e-8), .105 / max(rms, 1e-8))
+    # Match the previous loudness (so the in-game mix is unchanged) and round off
+    # the few drum/crash peaks with a soft knee above .62 instead of turning
+    # every quiet section down to make room for them.
+    gain = min(1.05 / max(peak, 1e-8), .102 / max(rms, 1e-8))
     audio *= gain
+    knee, room = .62, .2
+    over = np.abs(audio) > knee
+    audio[over] = np.sign(audio[over]) * (knee + room * np.tanh((np.abs(audio[over]) - knee) / room))
     ogg(OUT / "music" / f"{name}.ogg", audio)
-    midi(WORK / "scores" / f"{name}.mid", score, bpm, beats, instruments)
+    midi(WORK / "scores" / f"{name}.mid", score, bpm, beats, instruments, controls)
     manifest[name] = {"title": title, "bpm": bpm, "bars": bars, "seconds": round(len(audio) / RATE, 3),
                       "loop": loop, "peak": round(float(np.max(np.abs(audio))), 4),
                       "rms": round(float(np.sqrt(np.mean(audio ** 2))), 4), "notes": len(score)}
@@ -215,44 +232,303 @@ HARMONIES = {
                  (38,[62,65,69,72]),(34,[62,65,69,72]),(31,[62,67,70,74]),(33,[61,64,67,70])]
 }
 
-def compose(name, bars):
-    score = []
+# P3 arrangement pass. The melodies and chord changes above are the identity of
+# each cue and are never altered here; this only decides who plays them, how the
+# accompaniment moves under them and how each loop builds and breathes.
+#
+# Every looping cue runs through a form of eight-bar sections:
+#   intro  - melody over held chords and a light groove
+#   full   - the whole band; a second voice answers the melody in its rests
+#   call   - melody split between lead (low) and answering voice, half-time feel
+#   climax - harmony line, arpeggios, crashes, then a fill back to the top
+STYLES = {
+    "title": {"form": ["intro", "call", "climax"], "bass": "ballad", "comp": "arp", "drums": "brush",
+              "extra": {5: 49, 6: 73, 7: 46}, "room": (.64, .22), "swing": 0,
+              "volumes": {0: 74, 1: 86, 2: 96, 5: 66, 7: 60}},
+    "tidal": {"form": ["intro", "full", "call", "climax"], "bass": "groove", "comp": "offbeat", "drums": "shuffle",
+              "extra": {5: 71, 6: 79, 7: 46}, "room": (.58, .2), "swing": .05,
+              "volumes": {0: 76, 1: 84, 2: 98, 6: 76, 7: 54}},
+    "garden": {"form": ["intro", "full", "call", "climax"], "bass": "bounce", "comp": "strum", "drums": "bounce",
+               "extra": {5: 75, 6: 71, 7: 13}, "room": (.46, .16), "swing": .03,
+               "volumes": {0: 78, 1: 86, 2: 96, 7: 46}},
+    "core": {"form": ["intro", "full", "call", "climax"], "bass": "drive", "comp": "pulse", "drums": "drive",
+             "extra": {5: 62, 6: 80, 7: 98}, "room": (.42, .15), "swing": 0,
+             "volumes": {0: 74, 1: 80, 2: 96, 5: 58, 7: 44, 9: 68}},
+    "guardian": {"form": ["intro", "full", "call", "climax"], "bass": "battle", "comp": "power", "drums": "battle",
+                 "extra": {5: 61, 6: 81, 7: 47}, "room": (.38, .13), "swing": 0,
+                 "volumes": {0: 80, 1: 80, 2: 98, 5: 64, 6: 70, 7: 72, 9: 68}}
+}
+ENERGY = {"intro": .84, "full": 1.0, "call": .9, "climax": 1.08}
+# Phrase arc: lean into the middle of each eight-bar phrase, ease off at its end.
+ARC = [.93, .96, .99, 1.02, .96, 1.0, 1.04, .97]
+PAD_EXPRESSION = {"intro": 92, "full": 106, "call": 98, "climax": 122}
+
+def chord_tones(root, chord):
+    return {p % 12 for p in chord} | {root % 12}
+
+def voice_lead(chord, previous):
+    # Same pitch classes, inverted to move as little as possible from the last chord.
+    base = sorted(chord)
+    options = []
+    for shift in (-12, 0, 12):
+        voicing = [p + shift for p in base]
+        for _ in range(len(voicing)):
+            options.append(sorted(voicing))
+            voicing = voicing[1:] + [voicing[0] + 12]
+    options = [o for o in options if o[0] >= 52 and o[-1] <= 81] or [base]
+    if previous is None: return min(options, key=lambda o: abs(sum(o) - sum(base)))
+    return min(options, key=lambda o: sum(abs(a - b) for a, b in zip(o, previous)))
+
+def harmony_below(pitch, tones):
+    # A third or sixth under the tune, always a chord tone.
+    for gap in (3, 4, 8, 9, 5):
+        if (pitch - gap) % 12 in tones: return pitch - gap
+    return None
+
+def approach(root, next_root, bar):
+    # Lead the bass into the next chord: from a semitone below or a step above.
+    if next_root == root: target = root + 7
+    else: target = next_root - 1 if bar % 2 else next_root + 2
+    return target + 12 if target < 26 else target
+
+BASS = {
+    "ballad": [(0, 1.4, 0, 1.0), (1.5, .45, 7, .8), (2, 1.4, 12, .9), (3.5, .45, None, .78)],
+    "groove": [(0, .7, 0, 1.0), (.75, .2, 12, .6), (1.5, .45, 7, .82), (2.5, .6, 0, .9), (3, .4, 12, .75), (3.5, .4, None, .8)],
+    "bounce": [(0, .4, 0, 1.0), (1, .4, 7, .8), (1.5, .35, 12, .74), (2, .4, 0, .92), (2.75, .3, 7, .7), (3, .4, 12, .8), (3.5, .4, None, .78)],
+    "drive": [(i * .5, .38, [0, 0, 12, 0, 0, 12, 7, None][i], 1.0 if i in (0, 4) else .78) for i in range(8)],
+    "battle": [(i * .5, .34, [0, 0, 12, 0, 0, 7, 12, None][i], 1.0 if i in (0, 3, 6) else .8) for i in range(8)] + [(3.75, .2, 12, .7)],
+}
+
+def arrange(name, bars):
+    style = STYLES[name]
+    rng = np.random.default_rng(sum(map(ord, name)) * 101)
+    score, controls = [], []
     urgent = name in ["core", "guardian"]
+    form = style["form"]
+    per = bars // len(form)
+    swing = style["swing"]
+    voicing = None
+
+    def add(beat, duration, ch, pitch, velocity, jitter=.008):
+        if jitter: beat += float(rng.normal(0, jitter))
+        note(score, max(0.0, beat), duration, ch, pitch, velocity + int(rng.integers(-3, 4)))
+
+    def hit(beat, pitch, velocity, length=.1):
+        # Drums: swing the off-beat eighths, keep the downbeats square.
+        if abs(beat * 2 - round(beat * 2)) < 1e-6 and round(beat * 2) % 2: beat += swing
+        add(at + beat, length, 9, pitch, velocity * energy, .006)
+
     for bar in range(bars):
         at = bar * 4
-        root, chord = HARMONIES[name][bar % 8]
-        section = bar // 8
-        # Sparse opening, full middle, a contrasting third phrase, then return.
-        lead = section != 2 or bar % 2 == 0
-        for offset, duration, pitch in MELODIES[name][bar % 8] if lead else []:
-            pitch += -12 if section == 2 and name != "guardian" else 0
-            note(score, at + offset, duration, 2, pitch, 78 if urgent else 70)
-            if name in ["tidal", "garden"]:
-                note(score, at + offset + .5, min(.3, duration), 4, pitch, 27)
-        # Voiced electric-piano/guitar chords, deliberately syncopated.
-        for strike, dur, vel in [(0, 1.25, 55), (1.75, .65, 47), (3, .7, 50)]:
-            if name == "tidal" and strike == 1.75 and bar % 2 == 0: continue
-            for i, pitch in enumerate(chord):
-                note(score, at + strike + i * .012, dur, 0, pitch, vel - i * 2)
-        bass_pattern = [(0,.7,root),(1.5,.4,root+7),(2,.65,root+12),(3.5,.4,root+7)]
-        if urgent: bass_pattern += [(.75,.3,root),(2.75,.3,root)]
-        for offset, dur, pitch in bass_pattern:
-            note(score, at + offset, dur, 1, pitch, 77 if offset == 0 else 64)
-        if bar % 2 == 0:
-            for pitch in chord[:3]: note(score, at, 7.7, 3, pitch, 35)
-        # Acoustic/electronic kit with restrained velocity and small swing.
-        if section > 0 or name != "title":
-            for beat in [0, 2] + ([2.75] if bar % 2 else []): note(score, at + beat, .12, 9, 36, 73)
-            for beat in [1, 3]: note(score, at + beat + .012, .12, 9, 38 if urgent else 37, 61)
+        index = min(bar // per, len(form) - 1)
+        section = form[index]
+        phrase = bar % 8
+        root, chord = HARMONIES[name][phrase]
+        next_root = HARMONIES[name][(bar + 1) % 8][0]
+        tones = chord_tones(root, chord)
+        energy = ENERGY[section] * ARC[phrase]
+        melody = MELODIES[name][phrase]
+        voicing = voice_lead(chord, voicing)
+        if bar % per == 0:
+            controls += [(at, 3, 11, PAD_EXPRESSION[section]), (at, 5, 11, 112 if section == "climax" else 96)]
+
+        # --- Melody: unchanged notes, now with a partner voice ----------------
+        lead_vel = (78 if urgent else 70) * energy
+        if section == "call":
+            # Call and response: lead takes the even bars low, the answer the odd bars.
+            if bar % 2 == 0:
+                for offset, duration, pitch in melody:
+                    add(at + offset, duration, 2, pitch - (0 if name == "guardian" else 12), lead_vel, .004)
+            else:
+                for offset, duration, pitch in melody:
+                    add(at + offset, duration * 1.05, 6, pitch, lead_vel * .92, .004)
+        else:
+            for offset, duration, pitch in melody:
+                add(at + offset, duration, 2, pitch, lead_vel * (.9 if section == "intro" else 1), .004)
+                if name in ["tidal", "garden"]:
+                    add(at + offset + .5, min(.3, duration), 4, pitch, 27 * energy, 0)
+                if section == "climax":
+                    under = harmony_below(pitch, tones)
+                    if under: add(at + offset + .01, duration * 1.1, 5, under, lead_vel * .72, .004)
+            # In the full band, the second voice echoes the bar's opening motif.
+            end = max(o + d for o, d, _ in melody)
+            if section == "full" and bar % 2 == 1 and 4 - end >= 1.25:
+                motif = [p for _, _, p in melody[:2]]
+                lift = 12 if max(motif) <= 82 else 0
+                for i, pitch in enumerate(motif):
+                    add(at + end + .25 + i * .5, .42, 6, pitch + lift, 50 * energy, .004)
+
+        # --- Chords -----------------------------------------------------------
+        comp = style["comp"]
+        held = section == "intro" or (section == "call" and comp != "power")
+        if held:
+            for i, pitch in enumerate(voicing):
+                add(at + i * .015, 1.9 if section == "call" else 3.85, 0, pitch, (46 - i * 2) * energy)
+            if section == "call":
+                for i, pitch in enumerate(voicing): add(at + 2 + i * .015, 1.85, 0, pitch, (40 - i * 2) * energy)
+        elif comp == "arp":
+            for step, idx in enumerate([0, 2, 1, 3, 2, 1, 3, 2]):
+                add(at + step * .5, .55, 0, voicing[idx % len(voicing)], (50 if step % 2 == 0 else 42) * energy)
+        elif comp == "offbeat":
+            for strike, dur, vel in [(0, .9, 52), (1.5, .4, 44), (2.5, .9, 48), (3.5, .4, 42)]:
+                for i, pitch in enumerate(voicing): add(at + strike + i * .012, dur, 0, pitch, (vel - i * 2) * energy)
+        elif comp == "strum":
+            for strike, way, dur, vel in [(0, 1, .7, 56), (1, 1, .4, 46), (1.5, -1, .4, 40), (2.5, -1, .4, 42), (3, 1, .5, 50), (3.5, -1, .35, 38)]:
+                strings = voicing if way > 0 else voicing[::-1]
+                for i, pitch in enumerate(strings): add(at + strike + i * .018, dur, 0, pitch, (vel - i * 2) * energy)
+        elif comp == "pulse":
             for step in range(8):
-                note(score, at + step * .5 + (.024 if step % 2 else 0), .08, 9, 42, 39 if step % 2 else 29)
-            if name in ["garden", "tidal"]:
-                for beat in [.75, 2.25, 3.75]: note(score, at + beat, .1, 9, 75 if name == "garden" else 64, 40)
-            if bar % 8 == 7:
-                for i in range(4): note(score, at + 3 + i * .25, .1, 9, [45,47,50,38][i], 56 + i * 3)
-            if urgent and bar % 8 == 0: note(score, at, .4, 9, 49, 54)
-    # Clamp echoed notes to the bar boundary for a valid editable loop file.
-    return [(b, min(d, bars * 4 - b - .01), c, n, v) for b,d,c,n,v in score if b < bars * 4 - .02]
+                accent = step in (0, 3, 6)
+                for pitch in voicing[1:]: add(at + step * .5, .32, 0, pitch, (50 if accent else 34) * energy)
+        elif comp == "power":
+            chug = [root + 24, root + 31] if root + 31 <= 72 else [root + 12, root + 19]
+            steps = range(0, 8, 2) if section == "call" else range(8)
+            for step in steps:
+                accent = step in (0, 3, 6)
+                for pitch in chug: add(at + step * .5, .9 if accent and section == "intro" else .24, 0, pitch, (70 if accent else 54) * energy)
+
+        # Pads hold through each pair of bars; climax adds an upper string line.
+        if bar % 2 == 0:
+            for pitch in voicing[:3]: add(at, 7.7, 3, pitch, 36 * energy, 0)
+
+        # --- Colour voice (ch 7) --------------------------------------------------
+        colour = style["extra"][7]
+        if colour == 46 and section in ["full", "climax"] and (bar % 2 == 0 or section == "climax"):
+            # Harp sweep up through the chord at the top of the bar.
+            for i, pitch in enumerate(voicing + [p + 12 for p in voicing]):
+                add(at + i * .25, .9, 7, pitch, (40 + i * 2) * energy)
+        elif colour == 13 and section == "climax" and bar % 2 == 1:
+            for i, pitch in enumerate(sorted(voicing)[-3:]): add(at + 3 + i * .25, .25, 7, pitch + 12, 46 * energy)
+        elif colour == 98 and section in ["full", "climax"]:
+            for step in range(16):
+                add(at + step * .25, .2, 7, voicing[[0, 1, 2, 3, 2, 1, 2, 3][step % 8]] + 12, (34 if step % 4 == 0 else 24) * energy)
+        elif colour == 47 and section != "call":
+            drum = root + 12 if root + 12 <= 50 else root
+            add(at, .8, 7, drum, (62 if section == "intro" else 76) * energy, .004)
+            if phrase == 7:
+                for i in range(8): add(at + 2 + i * .25, .25, 7, drum, (44 + i * 5) * energy, .003)
+
+        # --- Bass ---------------------------------------------------------------
+        lead_in = approach(root, next_root, bar)
+        if section == "intro" and style["bass"] in ["ballad", "groove"]:
+            add(at, 3.6, 1, root, 64 * energy)
+            add(at + 3.5, .45, 1, lead_in, 50 * energy)
+        elif section == "call":
+            add(at, 1.85, 1, root, 70 * energy)
+            add(at + 2, 1.4, 1, root + 7, 58 * energy)
+            add(at + 3.5, .45, 1, lead_in, 54 * energy)
+        else:
+            for offset, dur, interval, weight in BASS[style["bass"]]:
+                pitch = lead_in if interval is None else root + interval
+                add(at + offset, dur, 1, pitch, (70 if urgent else 68) * weight * energy)
+
+        # --- Drums ----------------------------------------------------------------
+        kit = style["drums"]
+        loop_end = bar == bars - 1
+        fill_from = 2 if loop_end else 3 if phrase == 7 and not (kit == "brush" and section == "intro") else 4
+        pattern = []
+        if kit == "brush":
+            if section == "call":
+                pattern += [(0, 36, 48), (2.5, 36, 38), (1, 37, 44), (3, 37, 44)]
+                pattern += [(b, 51, 38) for b in range(4)] + [(s * .5, 70, 32 if s % 2 else 24) for s in range(8)]
+            elif section == "climax":
+                pattern += [(0, 36, 60), (2, 36, 52)] + ([(2.5, 36, 44)] if bar % 2 else [])
+                pattern += [(1, 38, 52), (3, 38, 54)] + [(s * .5, 51, 40 if s % 2 == 0 else 30) for s in range(8)]
+        elif kit == "shuffle":
+            pattern += [(s * .5, 42, 30 if s % 2 == 0 else 20) for s in range(8)]
+            if section == "intro":
+                pattern += [(0, 36, 52), (2.5, 36, 42), (3, 37, 40)]
+            elif section == "call":
+                pattern += [(0, 36, 58), (2, 37, 50), (.75, 64, 36), (2.25, 63, 34), (3.75, 64, 32)]
+            else:
+                pattern += [(0, 36, 66), (1.75, 36, 46), (2.5, 36, 54)]
+                pattern += [(1, 38 if section == "climax" else 37, 56), (3, 38 if section == "climax" else 37, 58)]
+                pattern += [(.75, 63, 40), (1.5, 64, 36), (2.25, 63, 38), (3.75, 64, 40)]
+                if bar % 2: pattern.append((3.5, 46, 34))
+                if section == "climax": pattern += [(b + .5, 54, 34) for b in range(4)]
+        elif kit == "bounce":
+            pattern += [(b, 75, 40) for b in (.75, 2.25, 3.75)]
+            if section == "intro":
+                pattern += [(0, 36, 56), (2, 36, 48)] + [(s * .5, 42, 26 if s % 2 == 0 else 16) for s in range(8)]
+            elif section == "call":
+                pattern += [(0, 36, 60), (2, 38, 52)] + [(s * .5, 42, 30 if s % 2 == 0 else 18) for s in range(8)]
+            else:
+                pattern += [(0, 36, 70), (1.5, 36, 52), (2, 36, 64)] + ([(3.5, 36, 48)] if bar % 2 else [])
+                pattern += [(1, 38, 62), (3, 38, 64), (2.75, 38, 22)]
+                pattern += [(s * .25, 42, [32, 14, 24, 14][s % 4]) for s in range(16)]
+                if section == "climax": pattern += [(b + .5, 54, 36) for b in range(4)] + [(3.5, 46, 36)]
+        elif kit == "drive":
+            pattern += [(s * .5, 42, 34 if s % 2 == 0 else 22) for s in range(8)]
+            if section == "intro":
+                pattern += [(b, 36, 50) for b in range(4)]
+            elif section == "call":
+                pattern += [(0, 36, 64), (2.5, 36, 52), (2, 38, 58)] + [(s * .25 + .25, 42, 14) for s in range(0, 16, 2)]
+            else:
+                pattern += [(b, 36, 72) for b in range(4)] + [(1, 38, 66), (3, 38, 68), (1.5, 46, 32), (3.5, 46, 34)]
+                if section == "climax" and phrase % 4 == 0: pattern.append((0, 49, 58))
+        elif kit == "battle":
+            if section == "intro":
+                pattern += [(0, 36, 66), (.75, 36, 52), (2, 36, 60), (3, 38, 62)] + [(s * .5, 42, 30 if s % 2 == 0 else 20) for s in range(8)]
+            elif section == "call":
+                pattern += [(0, 36, 70), (1.5, 36, 56), (2, 38, 66)] + [(b, 51, 40) for b in range(4)]
+            else:
+                pattern += [(b, 36, 74 if b in (0, 2) else 60) for b in (0, .75, 1.5, 2, 2.75, 3.5)]
+                pattern += [(1, 38, 72), (3, 38, 74)] + [(s * .5, 42, 40 if s % 2 == 0 else 28) for s in range(8)]
+                if section == "climax" and phrase % 2 == 0: pattern.append((0, 49, 62))
+                elif phrase == 0: pattern.append((0, 49, 58))
+        for beat, pitch, velocity in pattern:
+            if beat < fill_from or pitch in (75, 63, 64): hit(beat, pitch, velocity)
+        if bar % per == 0 and index > 0 and kit != "brush" or (kit == "brush" and bar % per == 0 and section == "climax"):
+            hit(0, 49, 60)
+        if fill_from < 4:
+            # Three alternating fills so phrase ends don't all sound the same.
+            steps = int((4 - fill_from) * 4)
+            variety = (bar // 8 + (1 if loop_end else 0)) % 3
+            toms = [50, 48, 47, 45, 43, 41]
+            for s in range(steps):
+                beat = fill_from + s * .25
+                if variety == 0: pitch = toms[min(s, 5)] if s < steps - 1 else 38
+                elif variety == 1: pitch = 38
+                else: pitch = 38 if s % 2 == 0 else toms[min(s // 2, 5)]
+                hit(beat, pitch, (44 + s * (24 / steps)) * (1.1 if loop_end else 1), .08)
+            hit(fill_from, 36, 60)
+
+    # Clamp notes to the loop boundary for a valid editable loop file.
+    clamped = [(b, min(d, bars * 4 - b - .01), c, n, v) for b, d, c, n, v in score if b < bars * 4 - .02]
+    return clamped, controls
+
+def check_melody(name, bars, score):
+    # Every original melody note must be present (lead or answer, either octave).
+    played = {(round(b * 4), n) for b, _, c, n, _ in score if c in (2, 6)}
+    for bar in range(bars):
+        for offset, _, pitch in MELODIES[name][bar % 8]:
+            spot = round((bar * 4 + offset) * 4)
+            assert any((spot + d, p) in played for d in (-1, 0, 1) for p in (pitch, pitch - 12)), (name, bar, offset, pitch)
+
+def stinger(name, pitches, bpm):
+    # Short end-of-dig cues: same tune, now with band, strings and a proper ending.
+    score, controls = [], []
+    last = len(pitches) - 1
+    for i, pitch in enumerate(pitches):
+        note(score, i * .5, .6 if i < last else 3, 2, pitch, 72 if i < last else 80)
+    if name == "clear":
+        for pitch in [62, 66, 69, 74]: note(score, 0, 3.4, 0, pitch, 52)
+        for pitch in [62, 66, 69, 74, 78]: note(score, 3.5, 4, 3, pitch, 58)
+        for i, pitch in enumerate(pitches):
+            under = harmony_below(pitch, {2, 6, 9})
+            if under: note(score, i * .5, .6 if i < last else 3, 5, under, 56 if i < last else 64)
+        for at, dur, pitch in [(0, 1.8, 38), (2, 1.4, 45), (3.5, 4, 38)]: note(score, at, dur, 1, pitch, 76)
+        for s in range(6): note(score, 2 + s * .25, .08, 9, 38, 40 + s * 7)
+        for pitch, vel in [(36, 80), (49, 72), (57, 60)]: note(score, 3.5, .6, 9, pitch, vel)
+        note(score, 0, .1, 9, 36, 66)
+    else:
+        for pitch in [50, 57, 60, 65]: note(score, 0, 6, 0, pitch, 46)
+        for pitch in [50, 57, 62]: note(score, 0, 7, 3, pitch, 50)
+        for at, dur, pitch in [(0, 2, 38), (2, 4.5, 38)]: note(score, at, dur, 1, pitch, 58)
+        note(score, 2.5, 3, 5, 57, 44)
+        for s in range(10): note(score, s * .2, .2, 7, 38, 20 + s * 2)
+        note(score, 2.5, 1.5, 7, 38, 64)
+    return score, controls
 
 def sfx():
     rng = np.random.default_rng(314159)
@@ -326,18 +602,18 @@ if __name__ == "__main__":
         ("guardian","Keepers of the Old World",138,32,{0:30,1:38,2:80,3:48,9:8})]
     previews = []
     for name,title,bpm,bars,instruments in specs:
-        audio = render_score(name,title,bpm,bars,instruments,compose(name,bars))
+        style = STYLES[name]
+        score, controls = arrange(name, bars)
+        check_melody(name, bars, score)
+        audio = render_score(name,title,bpm,bars,{**instruments,**style["extra"]},score,True,controls,style["volumes"],style["room"])
         preview = audio[RATE*8:RATE*20].copy()
         preview[:RATE] *= np.linspace(0,1,RATE)[:,None]
         preview[-RATE:] *= np.linspace(1,0,RATE)[:,None]
         previews.extend([preview,np.zeros((RATE,2),dtype=np.float32)])
-    for name,title,pitches,bpm in [("clear","Back to the Surface",[74,78,81,86,85,81,78,86],112),
-                                  ("lost","A Light Left Below",[74,72,69,65,64,62],80)]:
-        score=[]
-        for i,pitch in enumerate(pitches): note(score,i*.5,.6 if i<len(pitches)-1 else 3,2,pitch,70)
-        chord=[62,66,69,74] if name=="clear" else [50,57,60,65]
-        for pitch in chord: note(score,0,6,0,pitch,55)
-        render_score(name,title,bpm,2,{0:4,2:11},score,False)
+    for name,title,pitches,bpm,instruments in [("clear","Back to the Surface",[74,78,81,86,85,81,78,86],112,{0:4,1:33,2:11,3:48,5:61,9:0}),
+                                               ("lost","A Light Left Below",[74,72,69,65,64,62],80,{0:4,1:33,2:11,3:49,5:71,7:47})]:
+        score, controls = stinger(name, pitches, bpm)
+        render_score(name,title,bpm,2,instruments,score,False,controls,{5:58} if name=="clear" else {7:70},(.6,.22))
     count=sfx()
     ogg(WORK/"soundtrack-preview.ogg",np.concatenate(previews))
     (WORK/"score-manifest.json").write_text(json.dumps({"soundfont_sha256":hashlib.sha256((WORK/"GeneralUser-GS.sf2").read_bytes()).hexdigest(),"tracks":manifest,"sound_effects":count},indent=2))

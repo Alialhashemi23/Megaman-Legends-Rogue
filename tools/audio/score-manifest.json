@@ -7,9 +7,9 @@
       "bars": 24,
       "seconds": 60.0,
       "loop": true,
-      "peak": 0.641,
-      "rms": 0.105,
-      "notes": 694
+      "peak": 0.7686,
+      "rms": 0.102,
+      "notes": 667
     },
     "tidal": {
       "title": "Footsteps in the Tidal Archive",
@@ -17,9 +17,9 @@
       "bars": 32,
       "seconds": 73.846,
       "loop": true,
-      "peak": 0.68,
-      "rms": 0.1005,
-      "notes": 1172
+      "peak": 0.7482,
+      "rms": 0.102,
+      "notes": 1328
     },
     "garden": {
       "title": "Engines in Bloom",
@@ -27,9 +27,9 @@
       "bars": 32,
       "seconds": 68.571,
       "loop": true,
-      "peak": 0.68,
-      "rms": 0.0922,
-      "notes": 1258
+      "peak": 0.7856,
+      "rms": 0.102,
+      "notes": 1597
     },
     "core": {
       "title": "Below the Sun",
@@ -37,9 +37,9 @@
       "bars": 32,
       "seconds": 61.935,
       "loop": true,
-      "peak": 0.6369,
-      "rms": 0.105,
-      "notes": 1144
+      "peak": 0.7674,
+      "rms": 0.102,
+      "notes": 1652
     },
     "guardian": {
       "title": "Keepers of the Old World",
@@ -47,9 +47,9 @@
       "bars": 32,
       "seconds": 55.652,
       "loop": true,
-      "peak": 0.5717,
-      "rms": 0.105,
-      "notes": 1154
+      "peak": 0.7593,
+      "rms": 0.102,
+      "notes": 1266
     },
     "clear": {
       "title": "Back to the Surface",
@@ -57,9 +57,9 @@
       "bars": 2,
       "seconds": 7.286,
       "loop": false,
-      "peak": 0.68,
-      "rms": 0.0985,
-      "notes": 12
+      "peak": 0.7741,
+      "rms": 0.102,
+      "notes": 38
     },
     "lost": {
       "title": "A Light Left Below",
@@ -67,9 +67,9 @@
       "bars": 2,
       "seconds": 9.0,
       "loop": false,
-      "peak": 0.68,
-      "rms": 0.0793,
-      "notes": 10
+      "peak": 0.7677,
+      "rms": 0.102,
+      "notes": 27
     }
   },
   "sound_effects": 29

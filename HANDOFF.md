@@ -1,5 +1,14 @@
 # Relic Diver handoff
 
+## Polish P3 music — 2026-10-15 (owner-approved; build 25)
+
+All seven cues were re-arranged around their unchanged melodies: per-cue
+grooves, voice-led chords, moving bass, call-and-response, harmony lines,
+section dynamics and fuller stingers. Loudness matches the old cues. Audio
+checks, the data validator and the melody-identity check pass. The owner
+listened and approved. Details are in AUDIO-UI.md and
+`assets/audio/AUDIO-NOTES.md`. Next phase: P4.
+
 ## Polish P1 UI + P2 ruins — 2026-10-15 (tested; build 23)
 
 Verified and shipped per [CLAUDE-POLISH-TEST.md](docs/handoff/CLAUDE-POLISH-TEST.md)

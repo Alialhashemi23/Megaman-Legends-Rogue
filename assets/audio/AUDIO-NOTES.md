@@ -22,8 +22,8 @@ offline instrument renderer only; it is not loaded by the game.
 
 GeneralUser GS 2.0.3, by S. Christian Collins, provides the sampled instruments.
 Its restrained General MIDI palette fits the intended late-1990s adventure
-sound: electric piano, vibraphone, marimba, clean guitar, bass, soft pads and
-acoustic/electronic percussion. This is a creative choice, not a claim that
+sound: electric piano, vibraphone, marimba, clean guitar, bass, soft pads, strings,
+woodwinds, harp, timpani and acoustic/electronic percussion. This is a creative choice, not a claim that
 Legends used this bank. Its license explicitly permits private and commercial
 music creation; the complete upstream terms and sample-origin notes are saved
 unchanged in `GeneralUser-LICENSE.txt`.
@@ -57,7 +57,44 @@ upgrades retain the current cue and lower its level. Defeating or leaving a
 guardian restores that descent's track. Music is 32 kHz stereo Ogg Vorbis;
 short effects are mono 16-bit WAV. There are 29 effect files, including three
 variations each for the pulse buster, impacts and footsteps, and a quiet stereo
-ruin ambience loop. The music and effects occupy about 4.9 MB before packaging.
+ruin ambience loop. The music and effects occupy about 5.0 MB before packaging.
+
+## Arrangement (polish P3, 2026-10-15)
+
+Melodies and chord changes are unchanged; `check_melody()` in `compose.py`
+fails the render if any original melody note goes missing. The arrangement
+around them was rebuilt per cue (`STYLES`):
+
+- **Form:** eight-bar sections. *Intro* has the melody over held chords and a
+  light groove. In *full*, the whole band plays and a second voice answers the
+  tune's opening motif in its rests. In *call*, the melody is split between the
+  low lead and an answering instrument over a half-time feel. *Climax* adds a
+  chord-tone harmony line, harp/crystal arpeggios and crashes. The title runs
+  intro → call → climax over its 24 bars.
+- **Per-cue band:** each cue has its own comping and drums. The title uses an
+  electric-piano arpeggio, brushes and ride; the Tidal Archive offbeat stabs,
+  rim and congas in a light swing; Engines in Bloom strummed guitar with claves
+  and 16th hats; Below the Sun a 3-3-2 electric-piano pulse over four-on-the-floor;
+  the Guardian palm-muted power chords with timpani. Added colour voices: slow
+  strings, flute, harp, clarinet, ocarina, pan flute, xylophone, synth brass,
+  square/saw answers and crystal arpeggios.
+- **Movement:** chords are voice-led, so each change moves to the nearest
+  inversion. Bass lines are cue-specific, with approach notes into the next
+  chord, including from the last bar back to the first. Fills rotate between
+  tom, snare and mixed patterns, with a larger fill into the loop point.
+- **Feel and mix:** phrase-level dynamics, deterministic timing/velocity
+  humanisation, per-channel reverb sends and pad expression (CC11) per section.
+  Each cue has its own room size and level balance. Loudness matches the
+  previous cues (RMS 0.102), and a soft knee above 0.62 rounds off drum peaks,
+  so the in-game music/effects balance is unchanged.
+- **Stingers:** *Back to the Surface* gains a band, a harmony line, a snare roll
+  and a final crash. *A Light Left Below* gains strings, a low pedal and a soft
+  timpani roll.
+
+Measured against the old renders: section dynamics rose from 3–6 dB to 7–12 dB;
+melody-range energy rose in every looping cue (Tidal 3.6% → 12.1%, Below the
+Sun 8.7% → 17.5%); low-end share dropped; no clipping; loop seams ≤ 0.005.
+The owner listened and approved the result.
 
 ## Editing and playback
 
