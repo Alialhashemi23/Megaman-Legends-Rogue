@@ -65,7 +65,8 @@ var run_time = 0.0
 var run_seed = 0
 var total_damage = 0.0
 var guardian_dead = false
-var queue_level = false
+# Solo: open the waiting picks on the next frame (a level-up mid-update).
+var auto_open_choice = false
 var hurt_flash = 0.0
 var message = ""
 var message_detail = ""
@@ -94,7 +95,7 @@ var launch_lease_checked = false
 var start_controls_blocked = false
 var loadout_change_requested = false
 # An aborted preparation restores the inactive lobby view without touching disk.
-const PREPARATION_FIELDS = ["run_seed", "run_id", "party_size", "depth", "scrap", "kills", "run_time", "total_damage", "queue_level", "choice_queue", "pending_choices", "choice_source", "end_reason", "pickup_seq", "new_unlocks", "run_recorded", "zenny_earned", "roster"]
+const PREPARATION_FIELDS = ["run_seed", "run_id", "party_size", "depth", "scrap", "kills", "run_time", "total_damage", "auto_open_choice", "pending_choices", "choice_source", "end_reason", "pickup_seq", "new_unlocks", "run_recorded", "zenny_earned", "roster"]
 var zenny_earned = 0
 var run_recorded = false
 var screenshot_timer = -1.0
@@ -116,13 +117,31 @@ var remote_players: Dictionary = {}
 var peers: Dictionary = {}
 var party_size = 1
 var pickup_seq = 0
-var choice_queue: Array = []
-# Part picks from caches a teammate opened, waiting until this digger is ready:
-# {depth, cache, items}. Items are rolled when first opened so backing out
-# and reopening can't reroll them. `choice_source` is the open pick's entry.
+# Every earned pick waits here until it is chosen: level-ups, cache parts and
+# guardian milestones, as {kind, id, depth, cache, items}. `id` names the event
+# ("level:4", "cache:2:7", "milestone:1") so one event never queues twice.
+# Part offers are rolled from a dig-seeded generator the first time they are
+# shown and then kept, so backing out, reconnecting or reopening never rerolls
+# and never touches gameplay RNG. `choice_source` is the open pick's entry.
+# Solo opens a new pick at once and pauses; online, picks wait until the
+# digger opens them with the parts button while the dig carries on.
 var pending_choices: Array = []
 var choice_source: Dictionary = {}
-const MAX_PENDING = 24
+const LEVEL_CHOICES = ["power", "vitality", "haste"]
+# A full dig has roughly 30 caches, 15 levels and 2 milestones, so a digger who
+# never opens a pick stays under this. Reaching it is announced, never silent.
+const MAX_PENDING = 64
+# Picks made since the overlay opened (for "pick 2 of 4") and when it opened.
+var choice_picks = 0
+var choice_opened_at = 0
+# A held confirm can't carry into the next offer: it must be released first,
+# and a fresh offer ignores input for a moment so a double click can't pick twice.
+var choice_need_release = false
+var choice_lock_until = 0
+const CHOICE_ARM_MS = 150
+# After the overlay closes, held fire/jump/dash wait for release before acting.
+var action_guard = false
+var offer_serial = 0
 # Guardian milestones (polish P6): a major personal upgrade for the rest of the
 # dig, offered when the first and second guardians fall. The final guardian
 # ends the dig, so it keeps its part reward instead. Offers lean toward the
@@ -343,10 +362,10 @@ func configure_run(seed_value: int, party: int, id: String) -> void:
 	kills = 0
 	run_time = 0
 	total_damage = 0
-	queue_level = false
-	choice_queue.clear()
+	auto_open_choice = false
 	pending_choices.clear()
 	choice_source = {}
+	action_guard = false
 	end_reason = ""
 	pickup_seq = 0
 	new_unlocks.clear()
@@ -563,7 +582,8 @@ func game_action(id: String) -> bool:
 		"lock_on":
 			if mode == "play": player.toggle_lock(); return true
 		"parts":
-			# The same button opens a waiting part pick first, otherwise the parts list.
+			# The same button opens waiting picks first, otherwise the parts list,
+			# and closes the pick overlay again (the offer stays waiting).
 			if mode == "play":
 				if open_pending_choice(): return true
 				mode = "inventory"
@@ -572,15 +592,15 @@ func game_action(id: String) -> bool:
 			if mode == "inventory":
 				resume_game()
 				return true
-			if mode == "choice" and can_defer_choice():
-				defer_choice()
+			if mode == "choice":
+				close_choice()
 				return true
 		"mute":
 			sound.muted = not sound.muted
 			return true
 		"choice_1", "choice_2", "choice_3":
 			if mode == "choice":
-				choose(int(id.right(1)) - 1)
+				if choice_input_ready(): choose(int(id.right(1)) - 1)
 				return true
 		"jump":
 			# A downed digger cycles which teammate they watch.
@@ -622,10 +642,6 @@ func poll_pad(dt: float) -> void:
 func resume_game() -> void:
 	mode = "play"
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	if not choice_queue.is_empty():
-		var next = choice_queue.pop_front()
-		if next == "relic": open_relic_choice()
-		else: open_level_choice()
 
 # Solo menus pause the dig. Online, the ruins keep moving behind the menus,
 # except while reconnecting, when everything waits for the resync.
@@ -642,6 +658,8 @@ func _process(dt: float) -> void:
 		continue_launch_preparation()
 	hurt_flash = maxf(0, hurt_flash - dt)
 	message_time = maxf(0, message_time - dt)
+	if choice_need_release and not choice_confirm_held(): choice_need_release = false
+	if action_guard and not action_inputs_held(): action_guard = false
 	poll_pad(dt)
 	if world_running():
 		hit_confirm = maxf(0, hit_confirm - dt)
@@ -650,9 +668,9 @@ func _process(dt: float) -> void:
 		update_world(dt)
 		if guardian_dead and depth in MILESTONE_DEPTHS and not milestone_owed_or_taken(depth): grant_milestone(depth)
 		if net.active(): net_tick(dt)
-		if queue_level:
-			queue_level = false
-			open_level_choice()
+		if auto_open_choice:
+			auto_open_choice = false
+			if not net.active(): open_pending_choice()
 	elif mode in ["title", "solo_prep"]:
 		title_clock += dt
 		player.art.root.rotation.y = -0.4 + sin(title_clock * .45) * .26
@@ -799,13 +817,12 @@ func perform_interact(obj: Dictionary, who: DiverPlayer) -> void:
 	net.broadcast([DiverNet.M_USED, depth, interactables.find(obj)])
 	match obj.kind:
 		"cache":
-			# Online, every digger gets their own pick from the cache. The opener
-			# chooses now; teammates are told and choose when they're ready.
+			# Online, every digger gets their own pick from the cache and opens
+			# it when they're ready. Solo, the pick opens straight away.
 			var cache = interactables.find(obj)
 			var opener = net.slot if who == player else who.slot
 			net.broadcast([DiverNet.M_CHOICE, depth, cache, opener])
-			if who == player: open_relic_choice({"depth": depth, "cache": cache, "items": []})
-			else: add_pending_choice(cache)
+			earn_cache_choice(cache, who == player)
 		"spring":
 			net.broadcast([DiverNet.M_RESTORE, 0.45])
 			restore_life(0.45)
@@ -878,132 +895,228 @@ func milestone_offer(at_depth: int, who: DiverPlayer) -> Array:
 	return result
 
 func grant_milestone(at_depth: int) -> void:
-	var entry = {"kind": "milestone", "depth": at_depth, "cache": -1, "items": milestone_offer(at_depth, player)}
-	if mode == "play": open_relic_choice(entry)
-	else:
-		pending_choices.push_front(entry)
-		notify("MILESTONE READY", "Press %s to choose your guardian milestone." % settings.prompt("parts"))
-	build_changed()
+	if milestone_owed_or_taken(at_depth): return
+	offer_choice(choice_entry("milestone", "milestone:%d" % at_depth, at_depth, -1, milestone_offer(at_depth, player)))
 
-func open_relic_choice(source: Dictionary = {}) -> void:
-	if str(source.get("kind", "")) == "milestone" and mode != "choice":
-		choice_kind = "milestone"
-		choice_source = source
-		choice_items = (source.items as Array).duplicate()
-		mode = "choice"
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+# A cache was opened: the opener (`mine`) or a teammate. Everyone gets a pick.
+func earn_cache_choice(cache: int, mine: bool) -> void:
+	offer_choice(choice_entry("relic", "cache:%d:%d" % [depth, cache], depth, cache), "Press %s to pick your part." % settings.prompt("parts") if mine else "A teammate opened a cache. Press %s to pick your part." % settings.prompt("parts"))
+
+# The local digger reached a new level: a short cue, then a pick (solo opens it
+# on the next frame; online it waits for the parts button).
+func earn_level(level: int) -> void:
+	if not is_instance_valid(player): return
+	float_text(player.global_position + Vector3.UP * 2.6, "LEVEL UP!", Color("ffdc68"))
+	burst(player.global_position + Vector3.UP, Color("ffdc68"), 10)
+	if not enqueue_choice(choice_entry("level", "level:%d" % level, depth, -1, LEVEL_CHOICES)): return
+	if net.active():
 		sound.play("level")
-		checkpoint_dirty = true
-		return
-	if mode == "choice":
-		if source.is_empty(): choice_queue.append("relic")
-		else: pending_choices.push_front(source)
-		return
-	choice_kind = "relic"
-	choice_source = source
-	choice_items.clear()
-	if (source.get("items", []) as Array).size() == 3:
-		choice_items = (source.items as Array).duplicate()
-	else:
-		var options = pool()
-		for n in 3:
-			var idx = rng.randi_range(0, options.size() - 1)
-			choice_items.append(options[idx])
-			options.remove_at(idx)
-		if not source.is_empty(): source.items = choice_items.duplicate()
-	mode = "choice"
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	sound.play("loot")
-	checkpoint_dirty = true
+		notify("LEVEL UP!", "Lv. %d. Press %s to choose an upgrade." % [level, settings.prompt("parts")])
+	else: auto_open_choice = true  # the overlay plays the level chime as it opens
 
-func open_level_choice() -> void:
-	if mode == "choice":
-		choice_queue.append("level")
+func choice_entry(kind: String, id: String, at_depth: int, cache: int = -1, items: Array = []) -> Dictionary:
+	return {"kind": kind, "id": id, "depth": clampi(at_depth, 1, 3), "cache": cache, "items": items.duplicate()}
+
+# Solo shows a new pick straight away; online (or behind another menu, or
+# while downed) it waits and the HUD says so.
+func offer_choice(entry: Dictionary, waiting_detail: String = "") -> void:
+	if not enqueue_choice(entry): return
+	if not net.active() and mode == "play" and not player.downed:
+		open_pending_choice()
 		return
-	choice_kind = "level"
-	choice_items = ["power", "vitality", "haste"]
-	mode = "choice"
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	checkpoint_dirty = true
-	sound.play("level")
+	match str(entry.kind):
+		"milestone": notify("MILESTONE READY", "Press %s to choose your guardian milestone." % settings.prompt("parts"))
+		"relic":
+			notify("PART CHOICE WAITING", waiting_detail if waiting_detail != "" else "Press %s to pick your part." % settings.prompt("parts"))
+			sound.play("loot")
 
-# A teammate opened a cache: this digger's pick waits until they open it.
-func add_pending_choice(cache: int) -> void:
-	if pending_choices.size() >= MAX_PENDING: return
-	pending_choices.append({"depth": depth, "cache": cache, "items": []})
-	notify("PART CHOICE WAITING", "A teammate opened a cache. Press %s to pick your part." % settings.prompt("parts"))
-	sound.play("loot")
-	build_changed()
+func choice_known(id: String) -> bool:
+	if mode == "choice" and str(choice_source.get("id", "")) == id: return true
+	for entry in pending_choices:
+		if str(entry.get("id", "")) == id: return true
+	return false
 
-func open_pending_choice() -> bool:
-	if pending_choices.is_empty() or mode != "play": return false
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	open_relic_choice(pending_choices.pop_front())
+func enqueue_choice(entry: Dictionary) -> bool:
+	if choice_known(str(entry.id)): return false
+	if pending_choices.size() >= MAX_PENDING:
+		notify("UPGRADES FULL", "Open your waiting picks with %s before earning more." % settings.prompt("parts"))
+		print("CHOICE: queue full, %s not added" % entry.id)
+		return false
+	pending_choices.append(entry)
 	build_changed()
 	return true
 
-# Online the dig keeps going behind menus, so a cache pick can be put back
-# for later (the same three parts stay on offer).
-func can_defer_choice() -> bool:
-	return mode == "choice" and choice_kind in ["relic", "milestone"] and net.active()
+# Tests, previews and captures open a pick directly; it joins the queue first.
+func open_relic_choice(source: Dictionary = {}) -> void:
+	var entry = source.duplicate(true)
+	if str(entry.get("kind", "")) != "milestone":
+		var cache = int(entry.get("cache", -1))
+		offer_serial += 1
+		entry = choice_entry("relic", "cache:%d:%d" % [int(entry.get("depth", depth)), cache] if cache >= 0 else "relic:%d-%d" % [Time.get_ticks_msec(), offer_serial], int(entry.get("depth", depth)), cache, entry.get("items", []) if (entry.get("items", []) as Array).size() == 3 else [])
+	elif not entry.has("id"): entry.id = "milestone:%d" % int(entry.get("depth", depth))
+	present_or_queue(entry)
 
-func defer_choice() -> void:
-	if not can_defer_choice(): return
-	var entry = choice_source.duplicate()
-	entry.merge({"depth": depth, "cache": -1}, false)
-	entry.items = choice_items.duplicate()
-	pending_choices.push_front(entry)
-	choice_source = {}
+func open_level_choice() -> void:
+	offer_serial += 1
+	present_or_queue(choice_entry("level", "level:x%d-%d" % [Time.get_ticks_msec(), offer_serial], depth, -1, LEVEL_CHOICES))
+
+func present_or_queue(entry: Dictionary) -> void:
+	if not enqueue_choice(entry) or mode == "choice": return
+	pending_choices.push_front(pending_choices.pop_back())
+	if mode != "play": return
+	choice_picks = 0
+	choice_opened_at = Time.get_ticks_msec()
+	present_next_choice()
+
+func open_pending_choice() -> bool:
+	if pending_choices.is_empty() or mode != "play" or (is_instance_valid(player) and player.downed): return false
+	choice_picks = 0
+	choice_opened_at = Time.get_ticks_msec()
+	present_next_choice()
+	return true
+
+# Show the front of the queue in the overlay (same camera, dimmed world).
+func present_next_choice() -> void:
+	var entry: Dictionary = pending_choices.pop_front()
+	if str(entry.kind) == "relic" and (entry.items as Array).size() != 3: entry.items = relic_offer(entry)
+	choice_source = entry
+	choice_kind = str(entry.kind)
+	choice_items = (entry.items as Array).duplicate()
+	mode = "choice"
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	arm_choice()
+	if choice_picks == 0: sound.play("loot" if choice_kind == "relic" else "level")
 	build_changed()
+
+# Three distinct parts from the unlocked pool, seeded by the dig, the event
+# and the digger: the same offer every time, without drawing on gameplay RNG.
+func relic_offer(entry: Dictionary) -> Array:
+	var picker = RandomNumberGenerator.new()
+	picker.seed = hash("%s/%s/%s" % [run_id, str(entry.get("id", "")), net.player_id])
+	var options = pool()
+	var result = []
+	while result.size() < 3 and not options.is_empty():
+		var index = picker.randi_range(0, options.size() - 1)
+		result.append(options[index])
+		options.remove_at(index)
+	return result
+
+func arm_choice() -> void:
+	choice_need_release = choice_confirm_held()
+	choice_lock_until = Time.get_ticks_msec() + CHOICE_ARM_MS
+
+# Player input may pick only with a fresh press on a settled offer.
+func choice_input_ready() -> bool:
+	return mode == "choice" and not choice_need_release and Time.get_ticks_msec() >= choice_lock_until
+
+func choice_confirm_held() -> bool:
+	for action in ["nav_accept", "choice_1", "choice_2", "choice_3"]:
+		if InputMap.has_action(action) and Input.is_action_pressed(action): return true
+	return Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+
+func action_inputs_held() -> bool:
+	for action in ["fire", "jump", "dash", "nav_accept", "nav_back"]:
+		if InputMap.has_action(action) and Input.is_action_pressed(action): return true
+	return false
+
+# The open pick as a queue entry (picks opened without one come from tests).
+func open_choice_entry() -> Dictionary:
+	if choice_items.size() != 3: return {}
+	var entry = choice_source.duplicate(true) if not choice_source.is_empty() else choice_entry(choice_kind if choice_kind in ["relic", "level", "milestone"] else "level", "", depth)
+	entry.items = choice_items.duplicate()
+	if str(entry.get("id", "")) == "":
+		offer_serial += 1
+		entry.id = "%s:x%d-%d" % ["relic" if entry.kind == "relic" else "level", Time.get_ticks_msec(), offer_serial] if entry.kind != "milestone" else "milestone:%d" % int(entry.depth)
+	return entry
+
+# Close the overlay and keep the open offer waiting (B, the parts button, or
+# going down). Nothing is rerolled; the next open shows the same three.
+func close_choice() -> void:
+	if mode != "choice": return
+	var entry = open_choice_entry()
+	choice_source = {}
+	if not entry.is_empty() and not choice_known(str(entry.id)): pending_choices.push_front(entry)
+	build_changed()
+	finish_choices()
+
+func finish_choices() -> void:
+	choice_need_release = false
+	action_guard = true
 	resume_game()
 
 # Whether this digger still has a pick waiting from a given cache on this floor.
 func choice_waiting(cache: int) -> bool:
-	if mode == "choice" and int(choice_source.get("depth", 0)) == depth and int(choice_source.get("cache", -1)) == cache: return true
+	if mode == "choice" and choice_kind == "relic" and int(choice_source.get("depth", 0)) == depth and int(choice_source.get("cache", -1)) == cache: return true
 	for entry in pending_choices:
-		if str(entry.get("kind", "")) != "milestone" and int(entry.depth) == depth and int(entry.cache) == cache: return true
+		if str(entry.get("kind", "")) == "relic" and int(entry.depth) == depth and int(entry.cache) == cache: return true
 	return false
 
-# Checkpoint/roster data comes from other machines: keep only well-formed picks.
+# Checkpoint/roster data comes from other machines (or older builds): keep only
+# well-formed picks, one per event. Entries without a kind are older part picks.
+# Level picks always offer the three stat upgrades; they never become parts.
 func clean_pending(value: Variant) -> Array:
 	var result = []
+	var seen = {}
 	if not value is Array: return result
 	for entry in value:
 		if result.size() >= MAX_PENDING: break
 		if not entry is Dictionary: continue
-		var milestone = str(entry.get("kind", "")) == "milestone"
-		var catalogue = MILESTONES if milestone else ITEMS
+		var kind = str(entry.get("kind", "relic"))
+		if kind == "": kind = "relic"
+		if not kind in ["relic", "level", "milestone"]: continue
+		var at_depth = clampi(int(entry.get("depth", 1)), 1, 3)
+		var cache = clampi(int(entry.get("cache", -1)), -1, 9999) if kind == "relic" else -1
+		var catalogue = MILESTONES if kind == "milestone" else ITEMS
 		var items = []
-		if entry.get("items") is Array and (entry.items as Array).size() == 3:
+		if kind == "level": items = LEVEL_CHOICES.duplicate()
+		elif entry.get("items") is Array and (entry.items as Array).size() == 3:
 			for id in entry.items:
 				if id is String and catalogue.has(id) and id not in items: items.append(id)
-		if milestone:
-			if items.size() == 3: result.append({"kind": "milestone", "depth": clampi(int(entry.get("depth", 1)), 1, 3), "cache": -1, "items": items})
-			continue
-		result.append({"depth": clampi(int(entry.get("depth", 1)), 1, 3), "cache": int(entry.get("cache", -1)), "items": items if items.size() == 3 else []})
+		if items.size() != 3:
+			if kind == "milestone": continue
+			items = []
+		var id = clean_choice_id(entry.get("id", ""), kind, at_depth, cache, result.size())
+		if seen.has(id): continue
+		seen[id] = true
+		result.append({"kind": kind, "id": id, "depth": at_depth, "cache": cache, "items": items})
 	return result
 
+# Cache and milestone ids are rebuilt from their event so forged ids can't
+# sidestep the one-pick-per-event rule; level and loose part ids are kept when well formed.
+func clean_choice_id(value: Variant, kind: String, at_depth: int, cache: int, index: int) -> String:
+	if kind == "milestone": return "milestone:%d" % at_depth
+	if kind == "relic" and cache >= 0: return "cache:%d:%d" % [at_depth, cache]
+	var prefix = "level:" if kind == "level" else "relic:"
+	var text = str(value) if value is String else ""
+	var pattern = RegEx.create_from_string("^[a-z]+:[A-Za-z0-9_.-]{1,32}$")
+	if text.begins_with(prefix) and pattern.search(text) != null: return text
+	return "%sold%d" % [prefix, index]
+
+# Apply one offer. The overlay then shows the next waiting pick (a fresh press
+# is needed) or closes when none are left.
 func choose(index: int) -> void:
 	if index < 0 or index >= choice_items.size() or mode != "choice": return
 	if choice_kind == "milestone":
 		var id: String = choice_items[index]
 		var at_depth = int(choice_source.get("depth", depth))
-		choice_source = {}
 		if id not in player.milestones and at_depth not in player.milestone_depths:
 			player.milestones.append(id)
 			player.milestone_depths.append(at_depth)
 			sound.play("win")
 			notify("MILESTONE / " + MILESTONES[id].name.to_upper(), MILESTONES[id].desc)
 	elif choice_kind == "relic":
-		choice_source = {}
 		player.add_item(choice_items[index])
 	else:
 		match choice_items[index]:
 			"power": player.base_damage += 3; notify("BUSTER CALIBRATED", "+3 base damage")
 			"vitality": player.base_health += 20; player.heal(35); notify("CORE EXPANDED", "+20 maximum health · restore 35 health")
 			"haste": player.fire_multiplier += 0.15; notify("CAPACITOR TUNED", "+15% base fire rate")
-	build_changed()
-	resume_game()
+	choice_source = {}
+	choice_picks += 1
+	if not pending_choices.is_empty() and not player.downed: present_next_choice()
+	else:
+		build_changed()
+		finish_choices()
 
 func drop_pickup(pos: Vector3, kind: String, value: float) -> void:
 	if net.is_guest(): return
@@ -1133,9 +1246,10 @@ func finish_run(won: bool) -> void:
 	mode = "end"
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	sound.play("win" if won else "hurt")
-	choice_queue.clear()
+	# Unpicked run upgrades expire with the dig; they never become permanent rewards.
 	pending_choices.clear()
 	choice_source = {}
+	auto_open_choice = false
 	chat_open = false
 	clear_checkpoint()
 	if net.is_host(): net.report_status("lobby", depth)
@@ -1185,9 +1299,10 @@ func finish_account_run(won: bool) -> void:
 	mode = "end"
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	sound.play("win" if won else "hurt")
-	choice_queue.clear()
+	# Unpicked run upgrades expire with the dig; they never become permanent rewards.
 	pending_choices.clear()
 	choice_source = {}
+	auto_open_choice = false
 	chat_open = false
 	clear_checkpoint()
 	if net.is_host(): net.report_status("lobby", depth)
@@ -1528,6 +1643,8 @@ func local_player_down() -> void:
 	if all_players().size() <= 1 and not net.active():
 		finish_run(false)
 		return
+	# Going down closes an open pick; it waits for after the revive.
+	if mode == "choice": close_choice()
 	player.downed = true
 	player.revive = 0
 	player.lock_target = null
@@ -1572,9 +1689,13 @@ func clean_skills(value: Variant) -> Array:
 
 func build_state() -> Dictionary:
 	var p = player
-	var queue = choice_queue.duplicate()
-	if queue_level: queue.append("level")
-	return {"id": net.player_id, "name": net.player_name, "character": p.character, "weapon": p.weapon, "skills": p.skills.duplicate(), "spec": p.spec, "milestones": p.milestones.duplicate(), "milestone_depths": p.milestone_depths.duplicate(), "second_wind_depth": p.second_wind_depth, "shot_count": p.shot_count, "repair_cooldown": p.repair_cooldown, "items": p.items.duplicate(), "level": p.level, "xp": p.xp, "xp_required": p.xp_required, "base_health": p.base_health, "base_damage": p.base_damage, "fire_multiplier": p.fire_multiplier, "hp": p.hp, "downed": p.downed, "choice": {"kind": choice_kind, "items": choice_items.duplicate(), "depth": int(choice_source.get("depth", depth)), "cache": int(choice_source.get("cache", -1)), "sourced": not choice_source.is_empty()} if mode == "choice" else {}, "queue": queue, "pending": pending_choices.duplicate(true)}
+	# An open pick is saved at the front of the waiting list, so a reload or
+	# rejoin shows the same offer again without forcing the overlay open.
+	var waiting = pending_choices.duplicate(true)
+	if mode == "choice":
+		var open = open_choice_entry()
+		if not open.is_empty(): waiting.push_front(open)
+	return {"id": net.player_id, "name": net.player_name, "character": p.character, "weapon": p.weapon, "skills": p.skills.duplicate(), "spec": p.spec, "milestones": p.milestones.duplicate(), "milestone_depths": p.milestone_depths.duplicate(), "second_wind_depth": p.second_wind_depth, "shot_count": p.shot_count, "repair_cooldown": p.repair_cooldown, "items": p.items.duplicate(), "level": p.level, "xp": p.xp, "xp_required": p.xp_required, "base_health": p.base_health, "base_damage": p.base_damage, "fire_multiplier": p.fire_multiplier, "hp": p.hp, "downed": p.downed, "pending": waiting}
 
 func apply_build(b: Dictionary) -> void:
 	var p = player
@@ -1602,25 +1723,28 @@ func apply_build(b: Dictionary) -> void:
 	p.downed = bool(b.get("downed", false)) or p.hp <= 0
 	if p.downed: p.hp = 0
 	p.visual.current_clip = ""
-	choice_queue = (b.get("queue", []) as Array).duplicate() if b.get("queue") is Array else []
-	pending_choices = clean_pending(b.get("pending", []))
+	pending_choices = clean_pending(restored_choices(b))
 	choice_source = {}
-	var choice = b.get("choice", {})
-	if choice is Dictionary and choice.get("items") is Array and (choice.items as Array).size() == 3:
-		choice_kind = str(choice.kind)
-		choice_items = (choice.items as Array).duplicate()
-		if choice_kind == "relic" and bool(choice.get("sourced", false)):
-			choice_source = {"depth": clampi(int(choice.get("depth", depth)), 1, 3), "cache": int(choice.get("cache", -1)), "items": choice_items.duplicate()}
-		if choice_kind == "milestone":
-			var offer = clean_pending([{"kind": "milestone", "depth": choice.get("depth", depth), "items": choice_items}])
-			if offer.is_empty():
-				choice_kind = "level"
-				choice_items = ["power", "vitality", "haste"]
-			else: choice_source = offer[0]
-		mode = "choice"
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	elif not choice_queue.is_empty():
-		resume_game()
+	auto_open_choice = false
+	# Restored picks wait in the queue; the overlay never reopens by itself.
+	if mode == "choice": finish_choices()
+
+# Older builds kept an open choice and a queue of level/part screens beside the
+# waiting list; they all become queue entries, open pick first, nothing rerolled.
+func restored_choices(b: Dictionary) -> Array:
+	var result = []
+	var open = b.get("choice", {})
+	if open is Dictionary and open.get("items") is Array and (open.items as Array).size() == 3:
+		var kind = str(open.get("kind", "relic"))
+		if kind == "level": result.append({"kind": "level", "depth": open.get("depth", depth)})
+		elif kind == "milestone": result.append({"kind": "milestone", "depth": open.get("depth", depth), "items": open.items})
+		else: result.append({"kind": "relic", "depth": open.get("depth", depth), "cache": open.get("cache", -1) if bool(open.get("sourced", false)) else -1, "items": open.items})
+	if b.get("pending") is Array: result.append_array(b.pending)
+	if b.get("queue") is Array:
+		for queued in b.queue:
+			if queued == "level": result.append({"kind": "level", "depth": depth})
+			elif queued == "relic": result.append({"kind": "relic", "depth": depth, "cache": -1, "items": []})
+	return result
 
 func world_state() -> Dictionary:
 	var alive = PackedFloat32Array()
@@ -1646,11 +1770,10 @@ func apply_world_state(w: Dictionary, keep_player: bool) -> void:
 	run_seed = int(w.get("seed", 1))
 	party_size = clampi(int(w.get("party", 1)), 1, DiverNet.MAX_PLAYERS)
 	depth = clampi(int(w.get("depth", 1)), 1, 3)
-	queue_level = false
+	auto_open_choice = false
 	new_unlocks.clear()
 	end_reason = ""
 	if not keep_player:
-		choice_queue.clear()
 		pending_choices.clear()
 		choice_source = {}
 	rng.seed = int(w.get("floor_seed", run_seed))
@@ -2421,8 +2544,7 @@ func net_message(from_slot: int, m: Array) -> void:
 			if from_host and in_run(): restore_life(float(m[1]))
 		DiverNet.M_CHOICE:
 			if from_host and in_run():
-				if int(m[3]) == net.slot: open_relic_choice({"depth": depth, "cache": int(m[2]), "items": []})
-				else: add_pending_choice(int(m[2]))
+				earn_cache_choice(int(m[2]), int(m[3]) == net.slot)
 		DiverNet.M_NOTIFY:
 			if from_host and in_run(): notify(m[1].left(60), m[2].left(160))
 		DiverNet.M_USED:

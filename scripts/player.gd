@@ -157,6 +157,8 @@ func _physics_process(dt: float) -> void:
 		return
 	# Online menus and choices keep the world running; the digger simply stands still.
 	var controls = game.mode == "play" and not downed and not game.chat_open
+	# Buttons still held from the pick overlay (A, B, a click) wait for release.
+	var acting = controls and not game.action_guard
 	cooldown -= dt
 	repair_cooldown -= dt
 	invincible -= dt
@@ -192,7 +194,7 @@ func _physics_process(dt: float) -> void:
 		pitch = clampf(pitch - look.y * 1.9 * game.settings.look_speed * dt * (-1.0 if game.settings.invert_y else 1.0), -0.85, 0.50)
 	move_input = input
 	var move = Vector3(input.x, 0, input.y).rotated(Vector3.UP, yaw)
-	if controls and Input.is_action_pressed("dash") and dash_cooldown <= 0:
+	if acting and Input.is_action_pressed("dash") and dash_cooldown <= 0:
 		dash_direction = move if move.length() > 0 else Vector3(0, 0, -1).rotated(Vector3.UP, yaw)
 		dash_time = DiverCharacter.DASH_TRAVEL
 		dash_cooldown = maxf(0.65, 1.35 - count("boots") * 0.06) - (DiverProgression.BONUS.servos if "servos" in skills else 0.0)
@@ -219,7 +221,7 @@ func _physics_process(dt: float) -> void:
 	if not is_on_floor(): velocity.y -= 25 * dt
 	else:
 		velocity.y = 0
-		if controls and Input.is_action_pressed("jump"):
+		if acting and Input.is_action_pressed("jump"):
 			velocity.y = 8
 			game.sound.play("jump")
 	var was_grounded = is_on_floor()
@@ -232,7 +234,7 @@ func _physics_process(dt: float) -> void:
 		hurt(15)
 	art.root.rotation.y = lerp_angle(art.root.rotation.y, yaw, dt * 16)
 	art.root.rotation.z = lerpf(art.root.rotation.z, -input.x * 0.065, dt * 8)
-	var aiming = controls and (Input.is_action_pressed("fire") or is_instance_valid(lock_target) or cooldown > 0)
+	var aiming = controls and ((acting and Input.is_action_pressed("fire")) or is_instance_valid(lock_target) or cooldown > 0)
 	aiming_now = aiming
 	visual.equip(mini(weapon, 2))
 	if downed:
@@ -243,7 +245,7 @@ func _physics_process(dt: float) -> void:
 		game.sound.play("step", 1.0, global_position)
 		footstep_time = .08
 	art.root.visible = invincible <= 0 or int(invincible * 25) % 2 == 0
-	if controls and Input.is_action_pressed("fire") and cooldown <= 0 and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or game.settings.using_pad):
+	if acting and Input.is_action_pressed("fire") and cooldown <= 0 and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or game.settings.using_pad):
 		shoot()
 	update_camera(dt)
 
@@ -337,9 +339,9 @@ func shoot() -> void:
 			game.spawn_bolt(start, direction.rotated(Vector3.UP, sign_dir * 0.13), amount * minf(0.75, 0.25 + count("split") * 0.12), false, weapon >= 2, 1 if weapon == 3 else 0, self)
 
 func hurt(amount: float) -> void:
+	# Online picks are opened by choice while the dig carries on, so choosing
+	# isn't a shield: hits land and the overlay stays open until B.
 	if invincible > 0 or dash_guard > 0 or downed or not game.world_running(): return
-	# Online part and level choices don't pause the dig, so choosing is protected.
-	if game.mode == "choice": return
 	amount *= 1.0 / (1 + count("shell") * 0.18)
 	if has_milestone("bulwark") and hp > max_hp() * 0.5: amount *= 0.75
 	if has_milestone("second_wind") and hp - amount <= 0 and second_wind_depth != game.depth:
@@ -379,7 +381,7 @@ func gain_xp(amount: int) -> void:
 		level += 1
 		xp_required = 10 + level * 6
 		heal(12)
-		game.queue_level = true
+		game.earn_level(level)
 	game.build_changed()
 
 # A downed digger revives after a teammate stands close for a few seconds.
@@ -457,7 +459,7 @@ func remote_process(dt: float) -> void:
 		game.sound.play("step", 0.95, global_position)
 		footstep_time = .08
 	if is_instance_valid(name_tag):
-		name_tag.text = display_name + ("\nDOWN · stand close to revive" if downed else "\nchoosing a part…" if net_flags & FLAG_CHOOSING else "")
+		name_tag.text = display_name + ("\nDOWN · stand close to revive" if downed else "\nchoosing an upgrade…" if net_flags & FLAG_CHOOSING else "")
 		name_tag.modulate = Color("ff9565") if downed else DiverNet.SLOT_COLORS[clampi(slot, 0, 4)]
 
 func remote_shot(start: Vector3) -> void:

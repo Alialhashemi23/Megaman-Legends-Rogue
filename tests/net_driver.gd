@@ -38,6 +38,13 @@ func finish() -> void:
 	print("NET_PASS %s" % role)
 	get_tree().quit(0)
 
+# Work through every waiting pick in the overlay (levels may queue before a part).
+func take_all_picks() -> void:
+	var guard = 0
+	while game.mode == "choice" and guard < 80:
+		game.choose(0)
+		guard += 1
+
 func fingerprint() -> String:
 	var health = 0.0
 	for e in game.enemies:
@@ -107,9 +114,11 @@ func host_step() -> void:
 		5:
 			game.rooms[0].cleared = true
 			game.perform_interact(game.interactables[0], game.player)
-			if game.mode != "choice": fail("host should get a cache choice")
+			if game.mode != "play" or not game.choice_waiting(0): fail("host's cache pick should wait for the parts button")
+			game.game_action("parts")
+			if game.mode != "choice": fail("parts button should open the host's waiting picks")
 			if not game.world_running(): fail("online choices must not pause the world")
-			game.choose(0)
+			take_all_picks()
 			step += 1
 		6:
 			var p = proxy(2)
@@ -181,8 +190,8 @@ func guest_step() -> void:
 			if wait(not game.pending_choices.is_empty(), "cache choice waiting for guest"):
 				if game.mode != "play": fail("a teammate's cache should not open the choice screen")
 				game.game_action("parts")
-				if game.mode != "choice" or game.choice_kind != "relic": fail("parts button should open the waiting choice")
-				game.choose(0)
+				if game.mode != "choice": fail("parts button should open the waiting choice")
+				take_all_picks()
 				if game.player.items.is_empty(): fail("choice should fit a part")
 		6:
 			if wait(clock > 0.6, "part sync"):

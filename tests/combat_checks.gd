@@ -21,7 +21,7 @@ func arena() -> void:
 		if is_instance_valid(enemy): enemy.queue_free()
 	game.enemies.clear()
 	game.mode = "play"
-	game.queue_level = false
+	game.auto_open_choice = false
 	game.player.hp = 100
 	game.player.invincible = 0
 	await physics_frame

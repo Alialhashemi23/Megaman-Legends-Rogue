@@ -611,9 +611,7 @@ func back() -> bool:
         "inventory", "pause": activate("resume")
         "options": activate(options_return)
         "controls": activate("options")
-        "choice":
-            if not game.can_defer_choice(): return false
-            game.defer_choice()
+        "choice": game.close_choice()
         _: return false
     return true
 
@@ -665,6 +663,8 @@ func confirm_label(action: String, value: int, normal: String) -> String:
     return "Press again to confirm" if confirming == "%s:%d" % [action, value] else normal
 
 func activate(action: String, value: int = 0) -> void:
+    # A pick needs a fresh press on a settled offer (no held A, no double click).
+    if action == "choice" and not game.choice_input_ready(): return
     if game.mode == previous_mode: remember_focus(game.mode)
     game.sound.play("menu_confirm")
     if action in CONFIRM and confirming != "%s:%d" % [action, value]:
@@ -735,6 +735,7 @@ func activate(action: String, value: int = 0) -> void:
         "lock": game.net.set_locked(not bool(game.net.lobby.get("locked", false)))
         "resume": game.resume_game()
         "choice": game.choose(value)
+        "choice_later": game.close_choice()
         "workshop":
             if game.mode != "save_codes":
                 page_focus.erase("workshop")
@@ -885,7 +886,7 @@ func _draw() -> void:
         "lobby": draw_lobby()
         "launch_preparing": draw_lobby()
         "archive": draw_parts(true)
-        "choice": draw_choice()
+        "choice": draw_choice_overlay()
         "pause": draw_pause()
         "options": draw_options()
         "controls": draw_controls()
@@ -1031,7 +1032,9 @@ func draw_solo_prep() -> void:
     text_at(Vector2(84, 865), "Left / Right: Digger    Up / Down: Selection / Start / Back", 23, WHITE)
     text_at(Vector2(832, 865), "A: Accept / Start    B: Back" if pad() else "Enter: Accept / Start    Esc: Back", 23, YELLOW)
 
-func draw_hud() -> void:
+# `overlay`: drawn beneath the pick overlay, keeping Life, map, team, boss and
+# warnings while leaving out the aim reticle and banners the cards replace.
+func draw_hud(overlay: bool = false) -> void:
     var p = game.player
     text_at(Vector2(34, 38), DiverCharacter.SHORT_NAMES[p.character], 24, WHITE, true)
     window(Vector2(30, 52), Vector2(78, 86), BLUE)
@@ -1060,14 +1063,15 @@ func draw_hud() -> void:
     text_at(Vector2(1188, 391), "%d / %d rooms" % [visited_count(), game.rooms.size()], 21, WHITE)
     var center = Vector2(720, 450)
     var spread = 5.0 + p.recoil * 5
-    for dir in [Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]:
-        draw_line(center + dir * spread, center + dir * (spread + 6), INK, 4)
-        draw_line(center + dir * spread, center + dir * (spread + 6), WHITE, 2)
-    draw_circle(center, 2, YELLOW)
-    if game.hit_confirm > 0:
-        for dir in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]: draw_line(center + dir * 14, center + dir * 21, GREEN if game.kill_confirm > 0 else YELLOW, 3)
-    if game.kill_confirm > 0: text_at(center + Vector2(-40, 45), "SALVAGED", 18, GREEN)
-    if is_instance_valid(p.lock_target):
+    if not overlay:
+        for dir in [Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]:
+            draw_line(center + dir * spread, center + dir * (spread + 6), INK, 4)
+            draw_line(center + dir * spread, center + dir * (spread + 6), WHITE, 2)
+        draw_circle(center, 2, YELLOW)
+        if game.hit_confirm > 0:
+            for dir in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]: draw_line(center + dir * 14, center + dir * 21, GREEN if game.kill_confirm > 0 else YELLOW, 3)
+        if game.kill_confirm > 0: text_at(center + Vector2(-40, 45), "SALVAGED", 18, GREEN)
+    if is_instance_valid(p.lock_target) and not overlay:
         var enemy = p.lock_target
         var at = enemy.global_position + Vector3.UP * (2.5 if enemy.kind == 3 else 1.2)
         if not p.camera.is_position_behind(at):
@@ -1096,7 +1100,9 @@ func draw_hud() -> void:
     pips(Vector2(48, 824), 270, 6, float(p.xp) / p.xp_required, 20, YELLOW)
     keycap(Vector2(30, 856), p("parts"), 54)
     var waiting = game.pending_choices.size()
-    if waiting > 0: text_at(Vector2(99, 879), "Choose Part ×%d" % waiting if waiting > 1 else "Choose Part", 21, YELLOW if int(Time.get_ticks_msec() / 400) % 2 == 0 else WHITE)
+    if waiting > 0:
+        var label: String = {"level": "Level Up", "milestone": "Milestone"}.get(str(game.pending_choices[0].get("kind", "relic")), "Choose Part") if waiting == 1 else "Upgrades ×%d" % waiting
+        text_at(Vector2(99, 879), label, 21, YELLOW if overlay or int(Time.get_ticks_msec() / 400) % 2 == 0 else WHITE)
     else: text_at(Vector2(99, 879), "Buster Parts", 21)
     var n = 0
     for id in p.items:
@@ -1122,10 +1128,11 @@ func draw_hud() -> void:
         if game.chat_open:
             place_field(chat_edit, Vector2(1056, 708), Vector2(356, 40), 21)
             if not chat_edit.has_focus(): chat_edit.grab_focus()
+        elif overlay: pass
         elif pad(): text_at(Vector2(1064, 734), "%s ping  ·  D-pad callouts" % p("ping"), 19, MUTED)
         else: text_at(Vector2(1064, 734), "%s chat  ·  %s ping  ·  1–4 callouts" % [p("chat"), p("ping")], 19, MUTED)
         if game.net.reconnecting(): draw_reconnecting()
-    if game.message_time > 0: draw_notice()
+    if game.message_time > 0 and not overlay: draw_notice()
     if not game.nearest.is_empty() and game.mode == "play" and not p.downed: interaction_prompt()
     if game.mode == "play" and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and DisplayServer.get_name() != "headless" and not pad() and not OS.has_feature("android"):
         window(Vector2(560, 384), Vector2(320, 46), INK, YELLOW, false)
@@ -1134,8 +1141,8 @@ func draw_hud() -> void:
 
 func draw_notice() -> void:
     window(Vector2(402, 630), Vector2(636, 98), Color(0.06, 0.16, 0.39, 0.96))
-    icon(Vector2(419, 647), "cache" if game.message == "PART CHOICE WAITING" else "record", 48)
-    var title: String = {"CHAMBER SECURED": "Room Cleared!", "GUARDIAN SILENCED": "Guardian Defeated!", "BUSTER CALIBRATED": "Power Increased!", "CORE EXPANDED": "Life Increased!", "CAPACITOR TUNED": "Rapid Fire Increased!", "SYSTEMS RESTORED": "Life Restored!", "INSUFFICIENT SCRAP": "Not Enough Scrap", "CACHE SEALED": "Cache Sealed", "LIFT SEALED": "Lift Sealed", "PART CHOICE WAITING": "Part Choice Waiting!"}.get(game.message, game.message)
+    icon(Vector2(419, 647), {"PART CHOICE WAITING": "cache", "LEVEL UP!": "xp", "UPGRADES FULL": "warning"}.get(game.message, "record"), 48)
+    var title: String = {"CHAMBER SECURED": "Room Cleared!", "GUARDIAN SILENCED": "Guardian Defeated!", "BUSTER CALIBRATED": "Power Increased!", "CORE EXPANDED": "Life Increased!", "CAPACITOR TUNED": "Rapid Fire Increased!", "SYSTEMS RESTORED": "Life Restored!", "INSUFFICIENT SCRAP": "Not Enough Scrap", "CACHE SEALED": "Cache Sealed", "LIFT SEALED": "Lift Sealed", "PART CHOICE WAITING": "Part Choice Waiting!", "LEVEL UP!": "Level Up!", "MILESTONE READY": "Milestone Ready!", "UPGRADES FULL": "Upgrade Queue Full"}.get(game.message, game.message)
     var detail: String = game.message_detail
     if game.message.begins_with("DESCENT"): title = "Entering B%d" % game.depth
     if game.message == "CHAMBER SECURED": detail = "+5 Scrap. Part caches are now available."
@@ -1149,6 +1156,8 @@ func interaction_prompt() -> void:
     keycap(Vector2(462, 741), p("interact"), 33)
     var title: String = {"cache": "Open Part Cache", "spring": "Use Restoration Well", "pot": "Salvage Vessel", "lift": "Extract" if game.depth == 3 else "Take the Lift"}.get(obj.kind, obj.title)
     if obj.kind == "lift" and not game.guardian_dead: title = "Lift sealed — defeat the guardian"
+    # Unpicked upgrades expire at extraction; say so before the press.
+    elif obj.kind == "lift" and game.depth == 3 and not game.pending_choices.is_empty(): title = "Extract · %d unpicked expire" % game.pending_choices.size()
     elif obj.kind == "cache" and not game.rooms[obj.room].cleared: title = "Clear the room to open this cache"
     text_at(Vector2(510, 764), title, 23, WHITE, false, 376 if obj.cost == 0 else 325)
     if obj.cost > 0:
@@ -1446,56 +1455,102 @@ func current_effect(id: String) -> String:
         "clover": return "+%.1f%% part drop chance" % (n * 2.5)
     return ""
 
-func draw_choice() -> void:
-    backdrop()
-    stats_header()
-    var relic = game.choice_kind == "relic"
-    if game.choice_kind == "milestone":
-        draw_milestone_choice()
-        return
-    page_title("CHOOSE A PART" if relic else "LEVEL UP!", "Fit one part. Finding duplicates strengthens their effect." if relic else "Choose an upgrade for this dig.")
-    for i in 3:
-        var pos = Vector2(64, 288 + i * 128)
-        var id: String = game.choice_items[i]
+# Upgrade picks open over the live view: the dig stays visible behind a light
+# cobalt dim (it pauses solo and keeps going online), Life, map, team and
+# warnings stay on screen, and three cards sit in the clear middle band.
+const CHOICE_BAND = Rect2(380, 248, 680, 488)
+const CHOICE_FADE_MS = 150.0
+const LEVEL_TITLES = ["Buster Power", "Life Expansion", "Rapid Fire"]
+const LEVEL_ICONS = ["pulse", "life", "spring"]
+const LEVEL_LINES = ["+3 base power", "+20 max Life · heal 35", "+15% base fire rate"]
+const LEVEL_DETAILS = ["Adds 3 base buster power. Power-boosting parts multiply the new total.", "Adds 20 maximum Life and restores 35 Life right away.", "Adds 15% base fire rate. Combine it with Clockwork Springs for faster firing."]
+
+func choice_title(i: int) -> String:
+    var id: String = game.choice_items[i]
+    match game.choice_kind:
+        "relic": return game.ITEMS[id].name
+        "milestone": return game.MILESTONES[id].name
+    return LEVEL_TITLES[i]
+
+func choice_icon(i: int) -> String:
+    var id: String = game.choice_items[i]
+    match game.choice_kind:
+        "relic": return id
+        "milestone": return game.MILESTONES[id].icon
+    return LEVEL_ICONS[i]
+
+func choice_line(i: int) -> String:
+    var id: String = game.choice_items[i]
+    match game.choice_kind:
+        "relic": return TYPES[id]
+        "milestone": return milestone_match(id)
+    return LEVEL_LINES[i]
+
+# Centred card text; long names step down a few sizes before being shortened.
+func centered(center_x: float, y: float, value: String, size: int, color: Color, display: bool, width: float) -> void:
+    var face: Font = heading if display else font
+    while size > 18 and face.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x > width: size -= 1
+    var shown_width = minf(width, face.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x)
+    text_at(Vector2(center_x - shown_width / 2, y), value, size, color, display, width)
+
+func draw_choice_overlay() -> void:
+    var extra = ui_offset / ui_scale
+    var fade = clampf((Time.get_ticks_msec() - game.choice_opened_at) / CHOICE_FADE_MS, 0.0, 1.0)
+    rect(-extra, BASE + extra * 2, Color(0.02, 0.05, 0.20, 0.30 * fade))
+    draw_hud(true)
+    var kind: String = game.choice_kind
+    var gold = Color("e7b85a")
+    var band = CHOICE_BAND
+    # Header: what kind of pick, and where it sits in the queue.
+    var total = game.choice_picks + 1 + game.pending_choices.size()
+    window(band.position, Vector2(band.size.x, 62), Color(0.05, 0.13, 0.35, 0.94), gold if kind != "relic" else EDGE)
+    var title = {"relic": "CHOOSE A PART", "level": "LEVEL UP!", "milestone": "GUARDIAN MILESTONE"}.get(kind, "CHOOSE")
+    text_at(band.position + Vector2(24, 42), title, 30, YELLOW if kind != "relic" else WHITE, true, 400)
+    if total > 1: text_at(band.position + Vector2(band.size.x - 170, 40), "PICK %d OF %d" % [game.choice_picks + 1, total], 22, CYAN, true, 150)
+    else: text_at(band.position + Vector2(band.size.x - 230, 40), "Lasts for this dig", 21, MUTED, false, 210)
+    var since = Time.get_ticks_msec() - game.choice_opened_at
+    if kind == "level" and game.choice_picks == 0 and since < 650:
+        # A brief level-up flash on the header; caches and milestones skip it.
+        rect(band.position + Vector2(2, 2), Vector2(band.size.x - 4, 58), Color(1, 0.86, 0.4, 0.38 * (1.0 - since / 650.0)))
+    # Three cards side by side.
+    choice_preview = clampi(choice_preview, 0, maxi(0, game.choice_items.size() - 1))
+    for i in game.choice_items.size():
+        var pos = band.position + Vector2(i * 234, 74)
+        var size = Vector2(212, 214)
         var selected = i == choice_preview
-        window(pos, Vector2(664, 112), SELECT if selected else PANEL, YELLOW if selected else EDGE)
-        if selected: cursor(pos + Vector2(-31, 37))
-        icon(pos + Vector2(23, 19), id if relic else ["pulse", "life", "spring"][i], 74)
-        var title: String = game.ITEMS[id].name if relic else ["Buster Power", "Life Expansion", "Rapid Fire"][i]
-        text_at(pos + Vector2(122, 42), title, 29, WHITE, true, 455)
-        text_at(pos + Vector2(122, 79), TYPES[id] if relic else ["+3 base power", "+20 max Life / restore 35 Life", "+15% base fire rate"][i], 24, CYAN)
-        badge(pos + Vector2(589, 39), str(i + 1), 44)
-        hits.append({"rect": Rect2(pos, Vector2(664, 112)), "action": "choice", "value": i})
-    window(Vector2(768, 280), Vector2(608, 488))
-    var selected_id: String = game.choice_items[choice_preview]
-    text_at(Vector2(800, 329), game.ITEMS[selected_id].name if relic else ["Buster Power", "Life Expansion", "Rapid Fire"][choice_preview], 32, WHITE, true, 544)
-    window(Vector2(968, 356), Vector2(208, 166), INK, Color("6285b8"), false)
-    icon(Vector2(1000, 367), selected_id if relic else ["pulse", "life", "spring"][choice_preview], 144)
-    var detail: String = DESCRIPTIONS[selected_id] if relic else ["Adds 3 base buster power. Power-boosting parts multiply the new total.", "Adds 20 maximum Life and restores 35 Life right away.", "Adds 15% base fire rate. Combine it with Clockwork Springs for faster firing."][choice_preview]
-    paragraph(Vector2(800, 564), detail, 544, 27, WHITE, 3)
-    text_at(Vector2(800, 682), "Fitted ×%d  →  ×%d" % [game.player.count(selected_id), game.player.count(selected_id) + 1] if relic else "Upgrade lasts for this dig", 25, YELLOW)
-    button(Vector2(800, 706), Vector2(544, 48), "Fit This Part" if relic else "Apply Upgrade", "choice", choice_preview)
-    window(Vector2(64, 706), Vector2(664, 62))
-    var fitted: Dictionary = game.player.items
-    if fitted.is_empty(): text_at(Vector2(86, 747), "No parts fitted yet. Parts stay fitted until this dig ends.", 24, MUTED)
-    else:
-        text_at(Vector2(82, 745), "FITTED", 18, MUTED, true)
-        var step = minf(50.0, 548.0 / fitted.size())
-        var n = 0
-        for id in fitted:
-            var x = 166 + n * step
-            icon(Vector2(x, 712), id, 44)
-            text_at(Vector2(x + 30, 762), str(fitted[id]), 17, YELLOW, true)
-            n += 1
-    keycap(Vector2(64, 842), "D-PAD" if pad() else "1 2 3", 86)
-    text_at(Vector2(168, 865), "Quick select", 22)
-    keycap(Vector2(382, 842), "D-PAD" if pad() else "↑↓", 46)
-    text_at(Vector2(443, 865), "Browse", 22)
-    if game.can_defer_choice():
-        keycap(Vector2(640, 842), p("parts"), 54)
-        text_at(Vector2(708, 865), "Choose later", 22)
-    keycap(Vector2(1050, 842), "A" if pad() else "ENTER", 76)
-    text_at(Vector2(1142, 865), "Fit selected part", 22)
+        window(pos, size, SELECT if selected else Color(0.07, 0.20, 0.43, 0.96), YELLOW if selected else (gold if kind == "milestone" else EDGE))
+        badge(pos + Vector2(10, 10), str(i + 1), 38)
+        window(pos + Vector2(56, 24), Vector2(100, 100), INK, Color("6285b8") if kind != "milestone" else gold, false)
+        icon(pos + Vector2(62, 30), choice_icon(i), 88, Color("ffe7a8") if kind == "milestone" else Color.WHITE)
+        centered(pos.x + size.x / 2, pos.y + 160, choice_title(i), 24, YELLOW if kind == "milestone" else WHITE, true, 192)
+        var line = choice_line(i)
+        centered(pos.x + size.x / 2, pos.y + 192, line, 19, GREEN if line.begins_with("Matches") else CYAN, false, 192)
+        hits.append({"rect": Rect2(pos, size), "action": "choice", "value": i})
+    # Details for the highlighted card.
+    var detail_pos = band.position + Vector2(0, 300)
+    window(detail_pos, Vector2(band.size.x, 132), Color(0.05, 0.13, 0.35, 0.94), gold if kind == "milestone" else EDGE)
+    var id: String = game.choice_items[choice_preview]
+    text_at(detail_pos + Vector2(24, 36), choice_title(choice_preview), 26, YELLOW if kind == "milestone" else WHITE, true, 400)
+    var effect = "Fitted ×%d → ×%d" % [game.player.count(id), game.player.count(id) + 1] if kind == "relic" else ("Milestone %d of %d" % [game.player.milestones.size() + 1, game.MILESTONE_DEPTHS.size()] if kind == "milestone" else "Lv. %02d" % game.player.level)
+    text_at(detail_pos + Vector2(band.size.x - 210, 36), effect, 22, YELLOW, false, 190)
+    var detail: String = DESCRIPTIONS[id] if kind == "relic" else (game.MILESTONES[id].desc if kind == "milestone" else LEVEL_DETAILS[choice_preview])
+    paragraph(detail_pos + Vector2(24, 70), detail, band.size.x - 48, 22, WHITE, 3)
+    # Actions: apply (fresh press) or close; the offer keeps waiting.
+    var actions_y = band.position.y + 442
+    var verb = {"relic": "Fit This Part", "level": "Apply Upgrade", "milestone": "Take Milestone"}.get(kind, "Choose")
+    button(Vector2(band.position.x, actions_y), Vector2(404, 46), verb, "choice", choice_preview, true)
+    keycap(Vector2(band.position.x + 404 - 92, actions_y + 9), "A" if pad() else "ENTER", 76)
+    button(Vector2(band.position.x + 420, actions_y), Vector2(260, 46), "Later", "choice_later")
+    keycap(Vector2(band.position.x + 680 - 64, actions_y + 9), "B" if pad() else "ESC", 50)
+    # Quiet hints under the band, clear of the parts row and the dash meter.
+    var hint_y = band.end.y + 30
+    keycap(Vector2(band.position.x, hint_y - 22), "D-PAD" if pad() else "←→", 46 if not pad() else 66)
+    text_at(Vector2(band.position.x + (78 if pad() else 56), hint_y), "Browse", 20, MUTED)
+    if not pad():
+        keycap(Vector2(band.position.x + 148, hint_y - 22), "1 2 3", 62)
+        text_at(Vector2(band.position.x + 220, hint_y), "Quick pick", 20, MUTED)
+    keycap(Vector2(band.position.x + 360, hint_y - 22), p("parts"), 54)
+    text_at(Vector2(band.position.x + 428, hint_y), "Close · picks keep waiting", 20, MUTED, false, 250)
 
 # Which of a milestone's favoured parts this digger has fitted.
 func milestone_match(id: String) -> String:
@@ -1503,44 +1558,6 @@ func milestone_match(id: String) -> String:
     for part in game.MILESTONES[id].affinity:
         if game.player.count(part) > 0: names.append(game.ITEMS[part].name)
     return "Matches your " + ", ".join(names) if not names.is_empty() else "Works with any build"
-
-func draw_milestone_choice() -> void:
-    page_title("GUARDIAN MILESTONE", "A major upgrade for the rest of this dig, shaped by your fitted parts.")
-    var count = game.choice_items.size()
-    for i in count:
-        var pos = Vector2(64, 288 + i * 128)
-        var id: String = game.choice_items[i]
-        var entry: Dictionary = game.MILESTONES[id]
-        var selected = i == choice_preview
-        window(pos, Vector2(664, 112), SELECT if selected else PANEL, YELLOW if selected else Color("e7b85a"))
-        if selected: cursor(pos + Vector2(-31, 37))
-        icon(pos + Vector2(23, 19), entry.icon, 74, Color("ffe7a8"))
-        text_at(pos + Vector2(122, 42), entry.name, 29, YELLOW, true, 455)
-        text_at(pos + Vector2(122, 79), milestone_match(id), 22, GREEN if milestone_match(id).begins_with("Matches") else CYAN, false, 455)
-        badge(pos + Vector2(589, 39), str(i + 1), 44)
-        hits.append({"rect": Rect2(pos, Vector2(664, 112)), "action": "choice", "value": i})
-    choice_preview = clampi(choice_preview, 0, maxi(0, count - 1))
-    var chosen: Dictionary = game.MILESTONES[game.choice_items[choice_preview]]
-    window(Vector2(768, 280), Vector2(608, 488), PANEL, Color("e7b85a"))
-    text_at(Vector2(800, 329), chosen.name, 32, YELLOW, true, 544)
-    window(Vector2(968, 356), Vector2(208, 166), INK, Color("e7b85a"), false)
-    icon(Vector2(1000, 367), chosen.icon, 144, Color("ffe7a8"))
-    paragraph(Vector2(800, 564), chosen.desc, 544, 27, WHITE, 4)
-    text_at(Vector2(800, 682), "Lasts until this dig ends  ·  milestone %d of %d" % [game.player.milestones.size() + 1, game.MILESTONE_DEPTHS.size()], 23, YELLOW, false, 544)
-    button(Vector2(800, 706), Vector2(544, 48), "Take This Milestone", "choice", choice_preview)
-    window(Vector2(64, 706), Vector2(664, 62))
-    var taken = []
-    for id in game.player.milestones: taken.append(game.MILESTONES[id].name)
-    text_at(Vector2(86, 747), "Taken: " + ", ".join(taken) if not taken.is_empty() else "Regular parts and level-ups still stack as usual.", 23, MUTED, false, 620)
-    keycap(Vector2(64, 842), "D-PAD" if pad() else "1 2 3", 86)
-    text_at(Vector2(168, 865), "Quick select", 22)
-    keycap(Vector2(382, 842), "D-PAD" if pad() else "↑↓", 46)
-    text_at(Vector2(443, 865), "Browse", 22)
-    if game.can_defer_choice():
-        keycap(Vector2(640, 842), p("parts"), 54)
-        text_at(Vector2(708, 865), "Choose later", 22)
-    keycap(Vector2(1050, 842), "A" if pad() else "ENTER", 76)
-    text_at(Vector2(1142, 865), "Take milestone", 22)
 
 func draw_end() -> void:
     backdrop()

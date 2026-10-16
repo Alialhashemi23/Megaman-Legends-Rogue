@@ -66,7 +66,8 @@ func run() -> void:
 	game.drop_pickup(Vector3(3, 0.5, 2), "scrap", 6)
 	game.open_relic_choice()
 	var offered = game.choice_items.duplicate()
-	game.choice_queue.append("level")
+	game.open_level_choice()
+	verify(game.mode == "choice" and game.pending_choices.size() == 1 and game.pending_choices[0].kind == "level", "A level-up earned while choosing waits behind the open pick")
 	await process_frame
 	game.save_checkpoint()
 	var before = {"depth": game.depth, "alive": alive(), "scrap": game.scrap, "kills": game.kills, "items": p.items.duplicate(), "level": p.level, "xp": p.xp, "hp": p.hp, "damage": p.damage(), "character": p.character, "seed": game.run_seed, "run_id": game.run_id, "used": game.interactables[2].used, "health4": game.enemies[4].health, "pickups": game.pickups.size(), "exit": game.exit_room}
@@ -92,11 +93,27 @@ func run() -> void:
 	verify(p.character == before.character, "Selected digger restored")
 	verify(game.interactables[2].used == before.used, "Used salvage stays used")
 	verify(game.pickups.size() == before.pickups, "Dropped pickups restored")
-	verify(game.mode == "choice" and game.choice_items == offered, "An unfinished part choice comes back with the same options")
-	verify(game.choice_queue == ["level"], "Queued level-up survives")
+	verify(game.mode == "play", "A restored dig never reopens the pick overlay by itself")
+	verify(game.pending_choices.size() == 2 and game.pending_choices[0].kind == "relic" and game.pending_choices[0].items == offered, "The unfinished part pick waits first, with the same options")
+	verify(game.pending_choices[1].kind == "level" and game.pending_choices[1].items == game.LEVEL_CHOICES, "The queued level-up survives as a level pick")
+	verify(game.open_pending_choice() and game.choice_kind == "relic" and game.choice_items == offered, "Opening shows the restored part offer unchanged")
 	game.choose(0)
-	verify(game.mode == "choice" and game.choice_kind == "level", "Queued level-up opens after the part")
+	verify(game.mode == "choice" and game.choice_kind == "level", "The level pick follows in the same overlay")
 	game.choose(0)
+	verify(game.mode == "play" and game.pending_choices.is_empty(), "Both picks are spent once")
+
+	# Checkpoints from the previous build: an open choice plus a queue of screens.
+	var legacy = game.build_state()
+	legacy.erase("pending")
+	legacy.choice = {"kind": "relic", "items": ["lens", "coil", "echo"], "depth": 2, "cache": 5, "sourced": true}
+	legacy.queue = ["level", "level"]
+	legacy.pending = [{"depth": 2, "cache": 6, "items": []}, {"kind": "milestone", "depth": 1, "items": ["arc", "bulwark", "salvo"]}]
+	game.apply_build(legacy)
+	var kinds = game.pending_choices.map(func(e): return e.kind)
+	verify(kinds == ["relic", "relic", "milestone", "level", "level"], "Older open/queued/waiting picks all load as queue entries (%s)" % str(kinds))
+	verify(game.pending_choices[0].items == ["lens", "coil", "echo"] and game.choice_waiting(5), "The old open part pick keeps its cache and its offer")
+	verify(game.pending_choices[3].id != game.pending_choices[4].id, "Two old queued level-ups stay two picks")
+	game.pending_choices.clear()
 
 	# Damaged files never break the title screen; a leftover temp file is used as backup.
 	var f = FileAccess.open(game.checkpoint_path, FileAccess.WRITE)
