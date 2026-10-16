@@ -434,11 +434,12 @@ after(async () => {
 });
 
 class Client {
-  constructor(name, { id = name.toLowerCase(), v = 11, features = ["ready_v1"] } = {}) {
-    Object.assign(this, { name, id, v, features, queue: [], waiters: [] });
+  // `manual` connects without sending hello; `at` targets another test server's port.
+  constructor(name, { id = name.toLowerCase(), v = 11, features = ["ready_v1"], manual = false, at } = {}) {
+    Object.assign(this, { name, id, v, features, manual, at, queue: [], waiters: [] });
   }
   async open() {
-    this.ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    this.ws = new WebSocket(`ws://127.0.0.1:${this.at ?? port}/ws`);
     this.ws.on("message", (data, isBinary) => {
       const message = isBinary ? { binary: Buffer.from(data) } : JSON.parse(data.toString());
       const waiter = this.waiters.findIndex((w) => w.match(message));
@@ -446,6 +447,7 @@ class Client {
       else this.queue.push(message);
     });
     await new Promise((resolve, reject) => { this.ws.once("open", resolve); this.ws.once("error", reject); });
+    if (this.manual) return this;
     const hello = { t: "hello", name: this.name, id: this.id, v: this.v };
     if (this.features) hello.features = this.features;
     this.send(hello);
@@ -534,6 +536,94 @@ test("relay keeps legacy and readiness clients apart; resume can recover a run",
   assert.equal(resumed.lobby.depth, 2);
   old.close();
   modern.close();
+});
+
+// Everything this socket has sent so far has been handled once its pong arrives.
+async function settled(client) {
+  client.send({ t: "ping", time: 1 });
+  await client.next((m) => m.t === "pong");
+}
+
+for (const phase of ["idle", "countdown", "preparing"]) {
+  test(`a second hello during ${phase} can't swap the identity behind Ready`, async () => {
+    const host = await new Client("Original", { id: "original-player" }).open();
+    host.send({ t: "create", name: `Hello ${phase}` });
+    const code = (await host.next((m) => m.t === "joined")).code;
+    host.send(pick(1));
+    const setupRev = (await host.snapshot((l) => l.players[0].selection)).lobby.readiness.setupRev;
+    host.send({ t: "ready", setupRev, ready: true });
+    await host.snapshot((l) => l.readiness.canStart);
+    if (phase !== "idle") {
+      host.send({ t: "start_request", setupRev, seed: 31, runId: `hello-${phase}` });
+      await host.snapshot((l) => l.readiness.phase === "countdown");
+    }
+    if (phase === "preparing") {
+      clock.advance(3000);
+      await host.next((m) => m.t === "launch_prepare");
+    }
+    const lobby = app.registry.lobbies.get(code);
+    const before = app.registry.describe(lobby);
+
+    host.send({ t: "hello", name: "Impostor", id: "different-player", v: 12 });
+    await settled(host);
+    assert.ok(!host.queue.some((m) => m.t === "welcome" || m.t === "error"), "the repeated hello is ignored without a reply");
+    const member = lobby.members.get(1);
+    assert.deepEqual([member.playerId, member.name, member.version, member.readyV1], ["original-player", "Original", 11, true]);
+    assert.deepEqual(app.registry.describe(lobby), before, "identity, consent and attempt are untouched");
+
+    // Readiness still works for the original identity, which is the one that launches.
+    if (phase === "idle") {
+      host.send({ t: "start_request", setupRev, seed: 31, runId: "hello-idle" });
+      await host.snapshot((l) => l.readiness.phase === "countdown");
+    }
+    if (phase !== "preparing") clock.advance(3000);
+    const prepare = phase === "preparing" ? before.readiness : await host.next((m) => m.t === "launch_prepare");
+    host.send({ t: "launch_prepared", attemptId: prepare.attemptId, setupRev });
+    assert.equal((await host.next((m) => m.t === "launch_commit")).attemptId, prepare.attemptId);
+    assert.equal(lobby.members.get(1).playerId, "original-player");
+    host.close();
+  });
+}
+
+test("a hello queued behind ticket redemption doesn't negotiate again", async () => {
+  const tickets = [];
+  let redeem;
+  const accounts = {
+    handle: () => false,
+    redeemTicket(ticket) {
+      tickets.push(ticket);
+      return new Promise((resolve) => { redeem = resolve; });
+    },
+    close: async () => {},
+  };
+  const stubClock = fakeClock();
+  const stub = createServer({ port: 0, webRoot, log: () => {}, accounts, readiness: { now: stubClock.now, timers: stubClock.timers } });
+  const stubPort = await stub.listen();
+  try {
+    const c = await new Client("Signed", { manual: true, at: stubPort }).open();
+    c.send({ t: "hello", name: "Signed", id: "guest-1", v: 11, features: ["ready_v1"], ticket: "t1" });
+    c.send({ t: "hello", name: "Other", id: "other-player", v: 12, ticket: "t2" });
+    c.send({ t: "create", name: "Ticket Dig" });
+    c.send(pick(1));
+    for (let i = 0; i < 100 && tickets.length === 0; i++) await new Promise((resolve) => setTimeout(resolve, 5));
+    // Let the rest of the burst reach the redemption queue before the ticket resolves.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    redeem("acct-1");
+
+    const welcome = await c.next((m) => m.t === "welcome");
+    assert.equal(welcome.account, true);
+    await c.next((m) => m.t === "joined");
+    const { lobby: described } = await c.snapshot((l) => l.players[0].selection);
+    assert.equal(described.players[0].id, "acct:acct-1", "queued ordinary commands run under the redeemed account");
+    await settled(c);
+    assert.deepEqual(tickets, ["t1"], "the queued hello never redeems a second ticket");
+    assert.ok(!c.queue.some((m) => m.t === "welcome" || m.t === "error"), "only one welcome, no bad_ticket");
+    const member = stub.registry.lobbies.get(described.code).members.get(1);
+    assert.deepEqual([member.playerId, member.accountId, member.name, member.version, member.readyV1], ["acct:acct-1", "acct-1", "Signed", 11, true]);
+    c.close();
+  } finally {
+    await stub.close();
+  }
 });
 
 test("a countdown pending at shutdown is cleared by close", async () => {

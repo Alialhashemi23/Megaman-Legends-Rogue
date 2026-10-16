@@ -253,6 +253,11 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
   function handleCommand(client, message) {
     switch (message.t) {
       case "hello": {
+        // Identity, version and features are negotiated once per connection, before it
+        // enters a lobby. Later hellos (including one queued behind a ticket) are ignored,
+        // so a frozen launch participant can't turn into someone else. Reconnects use a new socket.
+        if (client.handshake || client.lobby) return;
+        client.handshake = true;
         const release = android.current();
         if (message.platform === 'android' && release && (!Number.isInteger(message.androidVersionCode) || message.androidVersionCode < release.minimumOnlineVersionCode || message.v !== release.gameProtocol)) {
           client.updateBlocked = true;
@@ -336,7 +341,7 @@ export function createServer({ port = 8080, webRoot = path.join(here, "..", "bui
   }
 
   wss.on("connection", (ws) => {
-    const client = { id: nextId++, ws, name: "Digger", playerId: "", accountId: null, waiting: null, version: 0, readyV1: false, recovery: false, lobby: null, slot: 0, tokens: 480, stamp: Date.now() };
+    const client = { id: nextId++, ws, name: "Digger", playerId: "", accountId: null, waiting: null, handshake: false, version: 0, readyV1: false, recovery: false, lobby: null, slot: 0, tokens: 480, stamp: Date.now() };
     client.playerId = `anon-${client.id}`;
     clients.add(client);
     ws.on("message", (data, isBinary) => {
