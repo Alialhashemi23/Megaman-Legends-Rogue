@@ -16,6 +16,8 @@ var bomb = false
 var flight_velocity = Vector3.ZERO
 # A Ricochet Coil bounce doesn't bounce again.
 var bounced = false
+# Flare Cartridge stacks: this shot leaves a burning patch where it lands.
+var flare = 0
 
 func _ready() -> void:
 	var color = Color("ff8060") if hostile else Color("e87545") if bomb else DiverArt.GOLD if heavy else Color("82f5ee")
@@ -46,11 +48,14 @@ func _physics_process(dt: float) -> void:
 		var collider = hit.collider
 		if hostile and collider == game.player:
 			game.player.hurt(amount)
+		elif hostile and collider.has_meta("pillar"):
+			game.damage_pillar(int(collider.get_meta("pillar")), amount)
 		elif collider is DiverEnemy and not cosmetic:
-			var dealt = amount * (1.4 if heavy and spec() == "breaker" else 1.0) * guardian_bonus(collider)
+			var dealt = amount * (1.4 if heavy and spec() == "breaker" else 1.0) * guardian_bonus(collider) * core_bonus(collider, hit.position)
 			game.damage_enemy(collider, dealt, source)
 			if spec() == "breaker" and heavy: game.frost_burst(hit.position, 0.5, 2.0)
 			if spec() == "ricochet" and not bounced: ricochet(collider, hit.position + hit.normal * 0.2)
+		if flare > 0 and not hostile and not cosmetic: game.flare_patch(hit.position, amount, flare, source)
 		if heavy and not hostile:
 			explode(hit.position + hit.normal * 0.1, collider)
 		game.burst(hit.position, Color("ff8060") if hostile else DiverArt.GOLD, 3)
@@ -68,6 +73,14 @@ func spec() -> String:
 # Demolition Charge: bombs hit guardians harder.
 func guardian_bonus(enemy: Object) -> float:
 	return 1.25 if spec() == "demolition" and enemy is DiverEnemy and enemy.kind == 3 else 1.0
+
+# Exposed core (BOSS-01): hits near a venting guardian's core land much harder,
+# more so with Refractor Crystals. Lock-on aims at the body, so this rewards aim.
+func core_bonus(enemy: DiverEnemy, at: Vector3) -> float:
+	if enemy.kind != 3 or enemy.vent_time <= 0 or at.distance_to(enemy.core_point()) > 0.85: return 1.0
+	game.float_text(at + Vector3.UP * 0.4, "CORE!", Color("ffdc68"))
+	var refractors = source.count("refractor") if is_instance_valid(source) else 0
+	return 2.5 * (1.0 + 0.4 * refractors)
 
 func ricochet(from_enemy: Object, origin: Vector3) -> void:
 	var best: DiverEnemy = null

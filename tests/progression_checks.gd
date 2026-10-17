@@ -39,7 +39,9 @@ func run() -> void:
 	verify(migrated.kills == 57 and migrated.zenny == 0 and migrated.discovered.coil, "Old records and discoveries migrate")
 	verify(migrated.legacy_unlocks.size() == 7, "All formerly earned parts survive higher gates")
 	game.meta = migrated
-	verify(game.pool().size() == game.ITEMS.size(), "Legacy pool is preserved")
+	var original = ["lens", "spring", "heart", "boots", "shell", "moss", "ember", "coil", "prism", "echo", "split", "frost", "clover"]
+	verify(original.all(func(id): return id in game.pool()), "Legacy pool is preserved")
+	verify(not "overclock" in game.pool(), "Newer parts still unlock by machines defeated")
 	game.meta = DiverProgression.fresh()
 	verify(game.pool().size() == 6, "New profiles begin with six parts")
 	verify(DiverProgression.reward(3, 3, 100) == 275, "Depth, guardians and scrap each contribute Zenny")

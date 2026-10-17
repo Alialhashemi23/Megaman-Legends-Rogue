@@ -151,7 +151,7 @@ try {
   const damage = recovered.damage;
   await guest.keyboard.press('Tab'); await until(guest,s=>s.mode==='choice' && s.choice_ready,'reopen level');
   await guest.keyboard.down('Digit1'); await until(guest,s=>s.choice_picks===1,'level selected'); await pause(600);
-  assert.equal((await state(guest)).damage,damage+3,'Held confirm gives one stat gain'); await guest.keyboard.up('Digit1');
+  assert.equal((await state(guest)).damage,damage+1,'Held confirm gives one stat gain'); await guest.keyboard.up('Digit1');
   await until(guest,s=>s.choice_ready,'part input armed'); await guest.keyboard.press('Digit1');
   await until(guest,s=>s.choice_picks===2 && s.choice_kind==='milestone' && s.choice_ready,'sequential milestone');
   await shot(guest,'04-authenticated-coop-milestone');
@@ -168,7 +168,7 @@ try {
   assert.equal(hostWaiting.length,4,'Host still has four unapplied offers');
   await reload(host); await until(guest,s=>s.host,'host migration');
   assert.deepEqual((await state(host)).pending,hostWaiting,'Host migration preserves its exact unapplied queue');
-  assert.deepEqual((await state(guest)).pending,[]); assert.equal((await state(guest)).damage,damage+3);
+  assert.deepEqual((await state(guest)).pending,[]); assert.equal((await state(guest)).damage,damage+1);
   const activeRuns = await pool.query("select count(*)::int as count from game_run where status='active'");
   assert.equal(activeRuns.rows[0].count,2,'One active account run per digger');
   assert.deepEqual(errors,[]);

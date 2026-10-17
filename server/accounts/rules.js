@@ -25,7 +25,7 @@ export const NODES = [
 ];
 export const LINKS = [["frame", "mobility"], ["frame", "salvage"], ["frame", "plating"], ["plating", "servos"], ["plating", "barrel"], ["servos", "mobility"], ["barrel", "salvage"], ["mobility", "magnet"], ["salvage", "ability"], ["magnet", "mastery"], ["ability", "mastery"], ["magnet", "loader"], ["mastery", "cell"], ["ability", "ability2"], ["loader", "cell"], ["ability2", "cell"], ["loader", "spec_a"], ["ability2", "spec_b"]];
 // Lifetime-kill gates for parts (ITEMS[*].unlock in game.gd).
-export const PART_GATES = { lens: 0, spring: 0, heart: 0, boots: 0, shell: 0, moss: 0, ember: 40, coil: 40, prism: 100, echo: 100, split: 220, frost: 220, clover: 220 };
+export const PART_GATES = { lens: 0, spring: 0, heart: 0, boots: 0, shell: 0, moss: 0, ember: 40, coil: 40, prism: 100, echo: 100, split: 220, frost: 220, clover: 220, refractor: 150, flare: 150, shatter: 300, overclock: 300 };
 // Gates from profile v1, kept as legacy unlocks when migrating.
 export const OLD_GATES = { ember: 10, coil: 10, prism: 25, echo: 25, split: 50, frost: 50, clover: 50 };
 const LIMIT = 100000000;

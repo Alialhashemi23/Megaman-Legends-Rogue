@@ -14,7 +14,11 @@ const ITEMS = {
 	"echo": {"name": "Echo Circuit", "desc": "12% chance per stack to fire a second bolt at 70% damage.", "color": "8edee8", "unlock": 100},
 	"split": {"name": "Forked Antenna", "desc": "Add two side bolts. Stacks increase their damage.", "color": "edd998", "unlock": 220},
 	"frost": {"name": "Winter Flywheel", "desc": "Dashing slows nearby machines. Stacks extend the slow.", "color": "b2e4ef", "unlock": 220},
-	"clover": {"name": "Salvager's Charm", "desc": "+2.5 percentage points to relic drop chance per stack.", "color": "c1dc8e", "unlock": 220}
+	"clover": {"name": "Salvager's Charm", "desc": "+2.5 percentage points to relic drop chance per stack.", "color": "c1dc8e", "unlock": 220},
+	"refractor": {"name": "Refractor Crystal", "desc": "+40% damage per stack to exposed machines and venting guardian cores.", "color": "ffe9a0", "unlock": 150},
+	"flare": {"name": "Flare Cartridge", "desc": "Every sixth shot leaves a burning patch. Stacks burn hotter and wider.", "color": "ff9e5e", "unlock": 150},
+	"shatter": {"name": "Shatter Core", "desc": "Slowed machines take +15% damage per stack and burst into frost when destroyed.", "color": "c8ecf7", "unlock": 300},
+	"overclock": {"name": "Overclock Relay", "desc": "+12% fire rate per stack while you have not been hit for 4 seconds.", "color": "f2c46b", "unlock": 300}
 }
 const WEAPONS = ["PULSE BUSTER", "NEEDLE BUSTER", "SIEGE BUSTER", "SALVAGE BOMBS"]
 const DEPTH_NAMES = ["THE TIDAL ARCHIVE", "GARDEN OF ENGINES", "HEART OF THE MACHINE"]
@@ -142,6 +146,16 @@ const CHOICE_ARM_MS = 150
 # After the overlay closes, held fire/jump/dash wait for release before acting.
 var action_guard = false
 var offer_serial = 0
+# Robots spawned mid-fight (Overdrive adds, relay waves) as [kind, x, y, z, room],
+# in order, so every client and every restore gives them the same ids.
+var spawned: Array = []
+# This floor's Power Relay (ROOM-01), or {} when it has none.
+var relay: Dictionary = {}
+var relay_clock = 0.0
+# B3 cover pillars: interactable index -> remaining durability.
+var pillar_life: Dictionary = {}
+# Flare Cartridge burning patches fired from this machine.
+var flare_patches: Array = []
 # Guardian milestones (polish P6): a major personal upgrade for the rest of the
 # dig, offered when the first and second guardians fall. The final guardian
 # ends the dig, so it keeps its part reward instead. Offers lean toward the
@@ -410,6 +424,10 @@ func build_floor(keep_player: bool, arrive: bool = true) -> void:
 	floaters.clear()
 	effects.clear()
 	obstacles.clear()
+	spawned.clear()
+	relay = {}
+	pillar_life.clear()
+	flare_patches.clear()
 	hit_confirm = 0
 	kill_confirm = 0
 	guardian_dead = false
@@ -444,23 +462,25 @@ func build_floor(keep_player: bool, arrive: bool = true) -> void:
 	current_room = 0
 	create_interactable(Vector3(-4.5, 0, -4.5), "cache", "PART CACHE", 0, 0)
 	create_interactable(rooms[exit_room].center + Vector3(0, 0, -9), "lift", "EXTRACTION" if depth == 3 else "DESCENT LIFT", 0, exit_room)
+	var relay_room = pick_relay_room()
 	for i in range(1, rooms.size()):
 		var room: Dictionary = rooms[i]
 		if i == exit_room:
 			spawn_enemy(room.center, 3, i)
 			for n in depth: spawn_enemy(room.center + Vector3(-5 + n * 4, 0, -2), 1, i)
+			if depth == 3: build_pillars(room, i)
+		elif i == relay_room:
+			build_relay(room, i)
 		elif room.kind == "hall":
 			# Dead-end passages hide a little salvage.
 			for at in room.pots: create_interactable(at, "pot", "SALVAGE VESSEL", 0, i)
 		else:
 			var count = 3 + depth + rng.randi_range(0, 2) + (party_size - 1)
 			if room.kind == "grand": count += 2 + depth
-			for n in count:
-				var spawn: Vector3 = room.center
-				for attempt in 64:
-					spawn = room.center + Vector3(rng.randf_range(-room.half.x + 4, room.half.x - 4), 0, rng.randf_range(-room.half.y + 4, room.half.y - 4))
-					if navigation.open_at(spawn) and floor_height(spawn) == 0: break
-				spawn_enemy(spawn, rng.randi_range(0, mini(2, depth)), i)
+			for n in count: spawn_enemy(room_spawn_point(room), rng.randi_range(0, mini(2, depth)), i)
+			# Deeper floors mix in grenadiers and menders (ENEMY-01).
+			if depth >= 2 and rng.randf() < (0.8 if room.kind == "grand" else 0.45): spawn_enemy(room_spawn_point(room), 4, i)
+			if depth >= 2 and count >= 5 and rng.randf() < (0.35 if depth == 2 else 0.5): spawn_enemy(room_spawn_point(room), 5, i)
 			create_interactable(room.cache_at, "cache", "PART CACHE", 10 + depth * 3 + rng.randi_range(0, 5), i)
 			# The ledge above a jump puzzle holds a free part for whoever makes the climb.
 			if room.bonus_at != null: create_interactable(room.bonus_at, "cache", "HIDDEN CACHE", 0, i)
@@ -522,6 +542,11 @@ func create_interactable(pos: Vector3, kind: String, title: String, cost: int, r
 			DiverArt.cylinder(root, Vector3(0, 0.12, 0), 1.4, 0.1, color, 1)
 			for x in [-1.6, 1.6]: DiverArt.box(root, Vector3(x, 1.6, 0), Vector3(0.3, 3.2, 0.3), DiverArt.GOLD)
 			DiverArt.box(root, Vector3(0, 3.2, 0), Vector3(3.5, 0.3, 0.3), DiverArt.GOLD)
+		"relay":
+			color = Color("ffdc68")
+			DiverArt.box(root, Vector3(0, 0.55, 0), Vector3(1.2, 1.1, 1.2), DiverArt.INK)
+			DiverArt.box(root, Vector3(0, 1.15, 0), Vector3(1.35, 0.15, 1.35), DiverArt.TEAL, false, 1)
+			DiverArt.orb(root, Vector3(0, 1.65, 0), 0.32, color, 1.2)
 		"pot":
 			DiverArt.cylinder(root, Vector3(0, 0.45, 0), 0.40, 0.9, Color("bf9878"))
 			DiverArt.cylinder(root, Vector3(0, 0.85, 0), 0.3, 0.18, DiverArt.INK)
@@ -730,7 +755,7 @@ func update_world(dt: float) -> void:
 	for obj in interactables:
 		var dist = player.position.distance_to(obj.node.position)
 		if is_instance_valid(obj.caption): obj.caption.visible = not obj.used and dist < 7.5
-		if obj.used: continue
+		if obj.used or obj.kind == "pillar": continue
 		if dist < best:
 			best = dist
 			nearest = obj
@@ -783,6 +808,8 @@ func update_world(dt: float) -> void:
 			var fraction = effect.life / effect.duration
 			effect.node.scale = effect.base_scale * (1.0 + (1.0 - fraction) * effect.grow)
 			effect.node.visible = fraction > 0.25 or int(fraction * 20) % 2 == 0
+	relay_update(dt)
+	flare_update(dt)
 
 func interact() -> void:
 	if nearest.is_empty(): return
@@ -829,12 +856,19 @@ func perform_interact(obj: Dictionary, who: DiverPlayer) -> void:
 		"pot":
 			drop_pickup(obj.node.position + Vector3.UP * 0.5, "scrap", rng.randi_range(3, 7))
 			if rng.randf() < 0.3: drop_pickup(obj.node.position + Vector3.UP, "health", 8)
+		"relay": start_relay()
 	nearest = {}
 
 func use_interactable(obj: Dictionary) -> void:
 	obj.used = true
 	match obj.kind:
 		"cache": obj.node.scale.y = 0.55
+		"relay": obj.node.scale.y = 0.8
+		"pillar":
+			burst(obj.node.position + Vector3.UP, Color("c9b28a"), 14)
+			obj.node.visible = false
+			for child in obj.node.get_children():
+				if child is StaticBody3D: child.collision_layer = 0
 		"pot":
 			burst(obj.node.position + Vector3.UP * 0.5, Color("bf9878"), 8)
 			obj.node.visible = false
@@ -995,6 +1029,19 @@ func relic_offer(entry: Dictionary) -> Array:
 	picker.seed = hash("%s/%s/%s" % [run_id, str(entry.get("id", "")), net.player_id])
 	var options = pool()
 	var result = []
+	# Relay vaults (ROOM-01): skip your most-stacked part and favour ones you hold fewer of.
+	if str(entry.get("id", "")).begins_with("relay:") and is_instance_valid(player):
+		var top = ""
+		for id in player.items:
+			if top == "" or player.count(id) > player.count(top): top = id
+		options.erase(top)
+		while result.size() < 3 and not options.is_empty():
+			var weights = PackedFloat32Array()
+			for id in options: weights.append(1.0 / (1.0 + player.count(id)))
+			var pick = picker.rand_weighted(weights)
+			result.append(options[pick])
+			options.remove_at(pick)
+		return result
 	while result.size() < 3 and not options.is_empty():
 		var index = picker.randi_range(0, options.size() - 1)
 		result.append(options[index])
@@ -1114,9 +1161,9 @@ func choose(index: int) -> void:
 		player.add_item(selected)
 	else:
 		match selected:
-			"power": player.base_damage += 3; notify("BUSTER CALIBRATED", "+3 base damage")
+			"power": player.power_picks += 1; notify("BUSTER CALIBRATED", "+16% buster power (stacks like a Sunken Lens)")
 			"vitality": player.base_health += 20; player.heal(35); notify("CORE EXPANDED", "+20 maximum health · restore 35 health")
-			"haste": player.fire_multiplier += 0.15; notify("CAPACITOR TUNED", "+15% base fire rate")
+			"haste": player.haste_picks += 1; notify("CAPACITOR TUNED", "+14% fire rate (stacks like a Clockwork Spring)")
 	choice_picks += 1
 	if not pending_choices.is_empty() and not player.downed: present_next_choice()
 	else:
@@ -1700,7 +1747,10 @@ func build_state() -> Dictionary:
 	if mode == "choice":
 		var open = open_choice_entry()
 		if not open.is_empty(): waiting.push_front(open)
-	return {"id": net.player_id, "name": net.player_name, "character": p.character, "weapon": p.weapon, "skills": p.skills.duplicate(), "spec": p.spec, "milestones": p.milestones.duplicate(), "milestone_depths": p.milestone_depths.duplicate(), "second_wind_depth": p.second_wind_depth, "shot_count": p.shot_count, "repair_cooldown": p.repair_cooldown, "items": p.items.duplicate(), "level": p.level, "xp": p.xp, "xp_required": p.xp_required, "base_health": p.base_health, "base_damage": p.base_damage, "fire_multiplier": p.fire_multiplier, "hp": p.hp, "downed": p.downed, "pending": waiting}
+	var state = {"id": net.player_id, "name": net.player_name, "character": p.character, "weapon": p.weapon, "skills": p.skills.duplicate(), "spec": p.spec, "milestones": p.milestones.duplicate(), "milestone_depths": p.milestone_depths.duplicate(), "second_wind_depth": p.second_wind_depth, "shot_count": p.shot_count, "repair_cooldown": p.repair_cooldown, "items": p.items.duplicate(), "level": p.level, "xp": p.xp, "xp_required": p.xp_required, "base_health": p.base_health, "base_damage": p.base_damage, "fire_multiplier": p.fire_multiplier, "hp": p.hp, "downed": p.downed, "pending": waiting}
+	state.power_picks = p.power_picks
+	state.haste_picks = p.haste_picks
+	return state
 
 func apply_build(b: Dictionary) -> void:
 	var p = player
@@ -1724,6 +1774,14 @@ func apply_build(b: Dictionary) -> void:
 	p.base_health = float(b.get("base_health", 100.0))
 	p.base_damage = float(b.get("base_damage", 12.0))
 	p.fire_multiplier = float(b.get("fire_multiplier", 1.0))
+	p.power_picks = maxi(0, int(b.get("power_picks", 0)))
+	p.haste_picks = maxi(0, int(b.get("haste_picks", 0)))
+	# Builds from before level pools stored picks as +3 base damage / +15% fire rate.
+	if not b.has("power_picks"):
+		p.power_picks = maxi(0, roundi((p.base_damage - 12.0) / 3.0))
+		p.base_damage = 12.0
+		p.haste_picks = maxi(0, roundi((p.fire_multiplier - 1.0) / 0.15))
+		p.fire_multiplier = 1.0
 	p.hp = clampf(float(b.get("hp", p.max_hp())), 0, p.max_hp())
 	p.downed = bool(b.get("downed", false)) or p.hp <= 0
 	if p.downed: p.hp = 0
@@ -1766,7 +1824,10 @@ func world_state() -> Dictionary:
 	var items = []
 	for p in pickups:
 		if is_instance_valid(p.node): items.append([p.net_id, p.node.position, p.kind, float(p.value), p.id, p.owner])
-	return {"run_id": run_id, "seed": run_seed, "depth": depth, "party": party_size, "floor_seed": run_seed if depth == 1 else floor_seed(depth), "scrap": scrap, "kills": kills, "run_time": run_time, "total_damage": total_damage, "guardian_dead": guardian_dead, "alive": alive, "used": used, "cleared": cleared, "visited": visited, "pickups": items, "pickup_seq": pickup_seq}
+	var state = {"run_id": run_id, "seed": run_seed, "depth": depth, "party": party_size, "floor_seed": run_seed if depth == 1 else floor_seed(depth), "scrap": scrap, "kills": kills, "run_time": run_time, "total_damage": total_damage, "guardian_dead": guardian_dead, "alive": alive, "used": used, "cleared": cleared, "visited": visited, "pickups": items, "pickup_seq": pickup_seq}
+	state.spawned = spawned.duplicate(true)
+	if not relay.is_empty(): state.relay = [relay.charge, relay.ring, relay.active, relay.done]
+	return state
 
 # Rebuild the floor from its seed, then apply everything that has happened on it.
 func apply_world_state(w: Dictionary, keep_player: bool) -> void:
@@ -1783,6 +1844,12 @@ func apply_world_state(w: Dictionary, keep_player: bool) -> void:
 		choice_source = {}
 	rng.seed = int(w.get("floor_seed", run_seed))
 	build_floor(keep_player and is_instance_valid(player), false)
+	restore_spawned(w.get("spawned", []))
+	if not relay.is_empty() and w.get("relay") is Array and (w.relay as Array).size() == 4:
+		relay.charge = clampf(float(w.relay[0]), 0.0, 100.0)
+		relay.ring = clampi(int(w.relay[1]), 0, 2)
+		relay.active = bool(w.relay[2])
+		relay.done = bool(w.relay[3])
 	scrap = int(w.get("scrap", 0))
 	kills = int(w.get("kills", 0))
 	run_time = float(w.get("run_time", 0.0))
@@ -2440,9 +2507,11 @@ const SHAPES = {
 	DiverNet.M_CHAT: [TYPE_STRING, TYPE_BOOL],
 	DiverNet.M_PING: [NUM, TYPE_VECTOR3, TYPE_STRING],
 	DiverNet.M_VISITED: [NUM, NUM],
+	DiverNet.M_SPAWN: [NUM, NUM, NUM, TYPE_VECTOR3, NUM],
+	DiverNet.M_RELAY: [NUM, NUM, NUM, NUM],
 }
 # Messages tied to the current floor carry its descent number first.
-const FLOOR_MESSAGES = [DiverNet.M_STATE, DiverNet.M_SHOT, DiverNet.M_SNAP, DiverNet.M_ATTACK, DiverNet.M_RESOLVE, DiverNet.M_DAMAGE, DiverNet.M_DIE, DiverNet.M_PICKUP, DiverNet.M_PICKUP_GONE, DiverNet.M_USED, DiverNet.M_HIT, DiverNet.M_INTERACT, DiverNet.M_FROST, DiverNet.M_LIGHTNING, DiverNet.M_CLEARED, DiverNet.M_PING, DiverNet.M_CHOICE, DiverNet.M_VISITED]
+const FLOOR_MESSAGES = [DiverNet.M_STATE, DiverNet.M_SHOT, DiverNet.M_SNAP, DiverNet.M_ATTACK, DiverNet.M_RESOLVE, DiverNet.M_DAMAGE, DiverNet.M_DIE, DiverNet.M_PICKUP, DiverNet.M_PICKUP_GONE, DiverNet.M_USED, DiverNet.M_HIT, DiverNet.M_INTERACT, DiverNet.M_FROST, DiverNet.M_LIGHTNING, DiverNet.M_CLEARED, DiverNet.M_PING, DiverNet.M_CHOICE, DiverNet.M_VISITED, DiverNet.M_SPAWN, DiverNet.M_RELAY]
 
 func well_formed(m: Array) -> bool:
 	if typeof(m[0]) != TYPE_INT or not SHAPES.has(m[0]): return false
@@ -2478,6 +2547,8 @@ func net_message(from_slot: int, m: Array) -> void:
 				proxy.milestones = clean_milestones(b.get("milestones", []))
 				proxy.items = (b.items as Dictionary).duplicate()
 				proxy.level = int(b.get("level", 1))
+				proxy.power_picks = maxi(0, int(b.get("power_picks", 0)))
+				proxy.haste_picks = maxi(0, int(b.get("haste_picks", 0)))
 		DiverNet.M_STATE:
 			var proxy = sender(from_slot)
 			if proxy == null: proxy = create_remote_player(from_slot)
@@ -2573,3 +2644,224 @@ func net_message(from_slot: int, m: Array) -> void:
 			if m[2] and sender(from_slot): sender(from_slot).speak(m[1].left(40))
 		DiverNet.M_PING:
 			place_ping(from_slot, m[2], m[3].left(16))
+		DiverNet.M_SPAWN:
+			if from_host and in_run(): remote_spawn(m)
+		DiverNet.M_RELAY:
+			if from_host and in_run(): remote_relay(m)
+
+# ---------------------------------------------------------------------------
+# Balance and variety (BAL-02, ENEMY-01, BOSS-01, ROOM-01, RELIC-01).
+
+# A random open floor spot in a room (same RNG order the floor always used).
+func room_spawn_point(room: Dictionary) -> Vector3:
+	var spawn: Vector3 = room.center
+	for attempt in 64:
+		spawn = room.center + Vector3(rng.randf_range(-room.half.x + 4, room.half.x - 4), 0, rng.randf_range(-room.half.y + 4, room.half.y - 4))
+		if navigation.open_at(spawn) and floor_height(spawn) == 0: break
+	return spawn
+
+# Robots that appear mid-fight. The host decides; every client appends them in
+# the same order (so ids match) and checkpoints/late joiners rebuild them.
+func spawn_dynamic(kind: int, pos: Vector3, room_id: int) -> DiverEnemy:
+	if net.is_guest(): return null
+	var e = spawn_enemy(pos, kind, room_id)
+	e.active = true
+	spawned.append([kind, pos.x, pos.y, pos.z, room_id])
+	net.broadcast([DiverNet.M_SPAWN, depth, e.net_id, kind, pos, room_id])
+	burst(pos + Vector3.UP, Color("ffb257"), 10)
+	return e
+
+func remote_spawn(m: Array) -> void:
+	var id = int(m[2])
+	var kind = clampi(int(m[3]), 0, 5)
+	if kind == 3 or id != enemies.size(): return
+	var e = spawn_enemy(m[4], kind, int(m[5]))
+	e.active = true
+	spawned.append([kind, m[4].x, m[4].y, m[4].z, int(m[5])])
+	burst(m[4] + Vector3.UP, Color("ffb257"), 10)
+
+func restore_spawned(list: Variant) -> void:
+	if not list is Array: return
+	for record in list:
+		if not record is Array or record.size() < 5: continue
+		var kind = clampi(int(record[0]), 0, 5)
+		if kind == 3: continue
+		var at = Vector3(float(record[1]), float(record[2]), float(record[3]))
+		var e = spawn_enemy(at, kind, int(record[4]))
+		e.active = true
+		spawned.append([kind, at.x, at.y, at.z, int(record[4])])
+
+# Overdrive: the guardian calls 1 + depth helpers around itself (BAL-02 B).
+func guardian_adds(guardian: DiverEnemy) -> void:
+	if net.is_guest() or not is_instance_valid(guardian) or guardian.dead: return
+	var kinds = [[0, 1], [1, 2, 4], [1, 2, 4, 5]][depth - 1]
+	for n in 1 + depth:
+		var angle = TAU * n / float(1 + depth) + 0.4
+		var at = guardian.global_position + Vector3(cos(angle), 0, sin(angle)) * 6.5
+		if not navigation.open_at(at): at = guardian.global_position + Vector3(cos(angle), 0, sin(angle)) * 3.5
+		spawn_dynamic(kinds[n % kinds.size()], Vector3(at.x, 0, at.z), guardian.room_id)
+
+# --- Power Relay (ROOM-01) ---------------------------------------------------
+
+const RELAY_RING = 2.6
+const RELAY_SECONDS = 45.0
+
+# One ordinary chamber per floor becomes the relay chamber.
+func pick_relay_room() -> int:
+	var options = []
+	for i in range(1, rooms.size()):
+		if i != exit_room and rooms[i].kind == "chamber": options.append(i)
+	return -1 if options.is_empty() else options[rng.randi_range(0, options.size() - 1)]
+
+func build_relay(room: Dictionary, room_id: int) -> void:
+	var rings = []
+	for n in 3:
+		var angle = TAU * n / 3.0 + 0.5
+		var at = room.center + Vector3(cos(angle), 0, sin(angle)) * 7.0
+		if not navigation.open_at(at) or floor_height(at) != 0: at = room.center + Vector3(cos(angle), 0, sin(angle)) * 4.0
+		rings.append(Vector3(at.x, 0, at.z))
+	var markers = []
+	for at in rings: markers.append(DiverArt.ring(world, at + Vector3.UP * 0.06, RELAY_RING, Color("ffdc68"), 0.18))
+	create_interactable(room.center, "relay", "POWER RELAY", 0, room_id)
+	var hatches = []
+	for side in [-1, 1]:
+		var at = room.center + Vector3(side * (room.half.x - 3), 0, 0)
+		hatches.append(at if navigation.open_at(at) else room.center + Vector3(side * 3.0, 0, 0))
+	relay = {"room": room_id, "console": interactables.size() - 1, "rings": rings, "markers": markers, "hatches": hatches, "charge": 0.0, "ring": 0, "active": false, "done": false, "wave": 2.0}
+	for at in room.pots: create_interactable(at, "pot", "SALVAGE VESSEL", 0, room_id)
+
+func start_relay() -> void:
+	if relay.is_empty() or relay.active or relay.done: return
+	relay.active = true
+	relay.wave = 1.5
+	announce("POWER RELAY", "Stand in the lit ring to charge it. Machines are coming through the hatches!")
+	net.broadcast([DiverNet.M_RELAY, depth, relay.charge, relay.ring, 1])
+
+func relay_kind() -> int:
+	var kinds = [[0, 1], [0, 1, 2, 4], [1, 2, 4, 5]][depth - 1]
+	return kinds[rng.randi_range(0, kinds.size() - 1)]
+
+# Host/solo: charge while a digger stands in the lit ring; small waves arrive.
+func relay_update(dt: float) -> void:
+	if relay.is_empty(): return
+	relay_visuals()
+	if net.is_guest() or not relay.active: return
+	var lit: Vector3 = relay.rings[relay.ring]
+	var charging = false
+	for p in all_players():
+		if not p.downed and Vector2(p.position.x - lit.x, p.position.z - lit.z).length() < RELAY_RING: charging = true
+	if charging: relay.charge = minf(100.0, relay.charge + dt * 100.0 / RELAY_SECONDS)
+	relay.ring = mini(2, int(relay.charge / 33.34))
+	relay.wave -= dt
+	if relay.wave <= 0:
+		relay.wave = 8.0
+		var living = 0
+		for e in enemies:
+			if is_instance_valid(e) and not e.dead and e.room_id == relay.room: living += 1
+		if living < 6:
+			for hatch in relay.hatches: spawn_dynamic(relay_kind(), hatch, relay.room)
+	relay_clock -= dt
+	if relay.charge >= 100.0:
+		finish_relay()
+	elif relay_clock <= 0:
+		relay_clock = 0.25
+		net.broadcast([DiverNet.M_RELAY, depth, relay.charge, relay.ring, 1])
+
+func finish_relay() -> void:
+	relay.active = false
+	relay.done = true
+	relay.charge = 100.0
+	net.broadcast([DiverNet.M_RELAY, depth, 100.0, 2, 2])
+	drop_pickup(interactables[relay.console].node.position + Vector3(1.5, 0.5, 0), "scrap", 20 + 10 * depth)
+	earn_relay_choice()
+
+func remote_relay(m: Array) -> void:
+	if relay.is_empty(): return
+	relay.charge = clampf(float(m[2]), 0.0, 100.0)
+	relay.ring = clampi(int(m[3]), 0, 2)
+	relay.active = int(m[4]) == 1
+	if int(m[4]) == 2 and not relay.done:
+		relay.done = true
+		earn_relay_choice()
+
+# The vault: every digger gets a better part pick (weighted away from what they already stack most).
+func earn_relay_choice() -> void:
+	sound.play("win")
+	offer_choice(choice_entry("relic", "relay:%d" % depth, depth, -1), "The relay vault opened. Press %s to pick your part." % settings.prompt("parts"))
+
+func relay_visuals() -> void:
+	var blink = int(Time.get_ticks_msec() / 250) % 2 == 0
+	for i in relay.markers.size():
+		var marker: Node3D = relay.markers[i]
+		if not is_instance_valid(marker): continue
+		if relay.done: marker.visible = false
+		elif relay.active: marker.visible = i == relay.ring and (blink or relay.charge > 0)
+		else: marker.visible = true
+		marker.scale = Vector3.ONE * (1.0 + (0.08 * sin(Time.get_ticks_msec() * 0.008) if relay.active and i == relay.ring else 0.0))
+
+# --- B3 crumbling pillars (BOSS-01) -------------------------------------------
+
+const PILLAR_LIFE = 120.0
+
+func build_pillars(room: Dictionary, room_id: int) -> void:
+	for n in 4:
+		var angle = TAU * n / 4.0 + PI / 4
+		var at = room.center + Vector3(cos(angle), 0, sin(angle)) * 7.5
+		if not navigation.open_at(at): continue
+		var root = Node3D.new()
+		world.add_child(root)
+		root.position = Vector3(at.x, 0, at.z)
+		DiverArt.wall(root, Vector3(0, 1.1, 0), Vector3(1.3, 2.2, 1.3), DiverArt.STONE, false)
+		DiverArt.box(root, Vector3(0, 2.3, 0), Vector3(1.5, 0.2, 1.5), DiverArt.GOLD)
+		var body = StaticBody3D.new()
+		var shape = CollisionShape3D.new()
+		var box_shape = BoxShape3D.new()
+		box_shape.size = Vector3(1.3, 2.2, 1.3)
+		shape.shape = box_shape
+		body.add_child(shape)
+		root.add_child(body)
+		body.position = Vector3(0, 1.1, 0)
+		body.set_meta("pillar", interactables.size())
+		pillar_life[interactables.size()] = PILLAR_LIFE
+		interactables.append({"node": root, "kind": "pillar", "title": "", "cost": 0, "used": false, "room": room_id, "caption": null})
+
+# Guardian shots and blasts wear pillars down; only the host decides when one falls.
+func damage_pillar(index: int, amount: float) -> void:
+	if net.is_guest() or not pillar_life.has(index) or interactables[index].used: return
+	pillar_life[index] -= amount
+	burst(interactables[index].node.position + Vector3.UP * 1.6, Color("c9b28a"), 4)
+	if pillar_life[index] <= 0:
+		use_interactable(interactables[index])
+		net.broadcast([DiverNet.M_USED, depth, index])
+
+func damage_pillars(pos: Vector3, radius: float, amount: float) -> void:
+	if net.is_guest(): return
+	for index in pillar_life.keys():
+		if interactables[index].used: continue
+		if Vector2(interactables[index].node.position.x - pos.x, interactables[index].node.position.z - pos.z).length() < radius + 0.7: damage_pillar(index, amount)
+
+# --- Flare Cartridge patches (RELIC-01) ----------------------------------------
+
+# A burning patch where an incendiary landed. The shooter's machine decides its hits.
+func flare_patch(pos: Vector3, amount: float, stacks: int, source: Node3D) -> void:
+	if source != player: return
+	var at = Vector3(pos.x, floor_height(pos) + 0.07, pos.z)
+	var radius = 1.8 + 0.4 * (stacks - 1)
+	var node = DiverArt.ring(world, at, radius, Color("ff9e5e"), radius * 0.6)
+	flare_patches.append({"node": node, "pos": at, "radius": radius, "damage": amount * 0.15 * stacks, "life": 3.0, "tick": 0.0})
+	burst(at + Vector3.UP * 0.4, Color("ff9e5e"), 8)
+
+func flare_update(dt: float) -> void:
+	for i in range(flare_patches.size() - 1, -1, -1):
+		var patch = flare_patches[i]
+		patch.life -= dt
+		patch.tick -= dt
+		if patch.tick <= 0:
+			patch.tick = 0.5
+			for e in enemies.duplicate():
+				if is_instance_valid(e) and not e.dead and Vector2(e.global_position.x - patch.pos.x, e.global_position.z - patch.pos.z).length() < patch.radius:
+					damage_enemy(e, patch.damage, player, false)
+		if is_instance_valid(patch.node): patch.node.visible = patch.life > 0.6 or int(patch.life * 10) % 2 == 0
+		if patch.life <= 0:
+			if is_instance_valid(patch.node): patch.node.queue_free()
+			flare_patches.remove_at(i)

@@ -15,6 +15,13 @@ var needle_hits = 0
 var burn_time = 0.0
 var burn_tick = 0.0
 var burn_damage = 0.0
+# Ember Engine (BAL-02): a share of each hit keeps burning after it lands.
+var burn_pool = 0.0
+# Guardians vent an exposed core for a moment after their big attacks (BOSS-01).
+var vent_time = 0.0
+var core: Node3D
+# Mender: repair pulses and the cosmetic beam on guests.
+var heal_clock = 0.0
 var attack = 1.0
 var flash = 0.0
 var phase = 0.0
@@ -51,13 +58,19 @@ var net_seen = false
 var target: Node3D
 var last_source: Node3D
 var my_last_hit = -100000
+const GUARDIAN_DEPTH = [1.4, 3.5, 7.5]
+const VENT_SECONDS = 2.5
+const CORE_OFFSET = Vector3(0, 3.1, 0.85)
 
 func _ready() -> void:
 	collision_layer = 4
 	collision_mask = 1 | 4
-	max_health = [55.0, 44.0, 110.0, 1900.0][kind] * (1 + (game.depth - 1) * 0.65)
+	# Kinds: 0 melee, 1 sentry, 2 charger, 3 guardian, 4 grenadier, 5 mender.
+	max_health = [55.0, 44.0, 110.0, 1900.0, 50.0, 36.0][kind]
+	# Guardians grow faster with depth than robots do (BAL-02), so deep fights last.
+	max_health *= GUARDIAN_DEPTH[game.depth - 1] if kind == 3 else 1 + (game.depth - 1) * 0.65
 	# Bigger parties face sturdier machines (guardians scale the most).
-	max_health *= 1.0 + (game.party_size - 1) * (0.60 if kind == 3 else 0.35)
+	max_health *= 1.0 + (game.party_size - 1) * (0.80 if kind == 3 else 0.35)
 	health = max_health
 	var col = CollisionShape3D.new()
 	var shape = CapsuleShape3D.new()
@@ -74,6 +87,7 @@ func _ready() -> void:
 	strafe_sign = -1 if game.rng.randf() < 0.5 else 1
 	health_bar = DiverArt.box(self, Vector3(0, 4.7 if kind == 3 else 2.2, 0), Vector3(1.1, 0.07, 0.08), Color("ed8d68"), false, 0.4)
 	health_bar.visible = false
+	if kind == 3: core = make_core()
 	add_to_group("enemies")
 
 # Difficulty: every attack keeps its warning, but deeper floors hit harder
@@ -126,28 +140,32 @@ func _physics_process(dt: float) -> void:
 	if not active: return
 	slow -= dt
 	exposed -= dt
+	vent_time -= dt
+	update_core()
 	flash -= dt
 	shield -= dt
 	attack -= dt
 	route_cooldown -= dt
 	ai_time += dt
 	phase += dt * 7
-	if burn_time > 0:
+	if burn_time > 0 or burn_pool > 1.0:
 		burn_time -= dt
 		burn_tick -= dt
 		if burn_tick <= 0:
 			burn_tick = 0.45
-			take_damage(burn_damage, false)
+			var from_pool = burn_pool * 0.15
+			burn_pool -= from_pool
+			take_damage(maxf(burn_damage if burn_time > 0 else 0.0, from_pool), false)
 			if dead: return
 	for mesh in meshes: mesh.material_overlay = hit_overlay if flash > 0 else null
-	art.root.scale = Vector3.ONE * (2.35 if kind == 3 else 1.0)
+	art.root.scale = Vector3.ONE * 2.35 if kind == 3 else Vector3(1.15, 0.9, 1.15) if kind == 4 else Vector3.ONE
 	health_bar.visible = health < max_health
 	health_bar.scale.x = maxf(0.01, health / max_health)
 	var direction = target.position - position
 	direction.y = 0
 	direction = direction.normalized()
 	var movement = Vector3.ZERO
-	var speed = [4.2, 2.9, 2.6, 2.8][kind] * (1.0 + 0.08 * (game.depth - 1)) * (0.40 if slow > 0 else 1)
+	var speed = [4.2, 2.9, 2.6, 2.8, 2.2, 3.6][kind] * (1.0 + 0.08 * (game.depth - 1)) * (0.40 if slow > 0 else 1)
 	if kind == 3 and health < max_health * 0.5: speed *= 1.2
 	if state == "windup":
 		state_time -= dt
@@ -176,12 +194,18 @@ func _physics_process(dt: float) -> void:
 		if kind == 1 and sight:
 			movement = direction * (1 if distance > 10 else -0.45 if distance < 6 else 0) + direction.cross(Vector3.UP) * 0.5 * strafe_sign
 			if is_on_wall(): strafe_sign *= -1
-		if kind == 1: art.root.position.y = sin(phase * 0.5) * 0.12
-		if kind != 1 and distance < (2.8 if kind == 3 else 1.5): movement = Vector3.ZERO
+		if kind == 4 and sight:
+			# Grenadiers keep their distance and lob shells over cover.
+			movement = direction * (1 if distance > 14 else -0.6 if distance < 8 else 0) + direction.cross(Vector3.UP) * 0.3 * strafe_sign
+			if is_on_wall(): strafe_sign *= -1
+		if kind == 5: movement = mender_move(direction, distance)
+		if kind in [1, 5]: art.root.position.y = sin(phase * 0.5) * 0.12
+		if kind in [0, 2, 3] and distance < (2.8 if kind == 3 else 1.5): movement = Vector3.ZERO
 		if attack <= 0 and sight:
 			if kind == 1 and distance < 22: begin_attack("shot", 0.65)
 			elif kind == 2 and distance < 10: begin_attack("charge", 0.70)
 			elif kind == 0 and distance < 2.0: begin_attack("melee", 0.46)
+			elif kind == 4 and distance < 20: begin_attack("lob", 1.2)
 			elif kind == 3 and distance < 28:
 				attack_cycle += 1
 				if distance < 4.2: begin_attack("slam", 0.95)
@@ -189,6 +213,7 @@ func _physics_process(dt: float) -> void:
 				elif game.depth == 3 and attack_cycle % 2 == 1: begin_attack("cross", 1.10)
 				else: begin_attack("fan", 0.8)
 			else: attack = 0.15
+		if kind == 5: mender_repair(dt)
 		if state == "windup": movement = Vector3.ZERO
 	knockback = knockback.move_toward(Vector3.ZERO, dt * 18)
 	velocity.x = movement.x * speed + knockback.x
@@ -229,7 +254,7 @@ func chase_direction(_dt: float, direction: Vector3, sight: bool) -> Vector3:
 
 func begin_attack(type: String, duration: float) -> void:
 	var aim = (target if is_instance_valid(target) else game.player).global_position + Vector3.UP
-	duration *= pace()
+	duration *= pace() * chill()
 	game.net.broadcast([DiverNet.M_ATTACK, game.depth, net_id, type, duration, aim])
 	show_attack(type, duration, aim)
 
@@ -273,6 +298,12 @@ func show_attack(type: String, duration: float, point: Vector3) -> void:
 		"cross":
 			for direction in [aim_direction, aim_direction.rotated(Vector3.UP, PI / 2)]:
 				warning_line(origin - direction * 11, origin + direction * 11, 1.5, danger)
+		"lob":
+			var at = Vector3(aim_point.x, target_floor, aim_point.z)
+			var side = aim_direction.cross(Vector3.UP)
+			for offset in [Vector3.ZERO, side * 2.4 + aim_direction * 1.2, -side * 2.4 + aim_direction * 1.2]:
+				strike_points.append(at + offset)
+				DiverArt.ring(marker, at + offset, 1.8, danger, 0.15)
 	game.sound.play("warning", 0.8 if kind == 3 else 1.3)
 
 func warning_line(from: Vector3, to: Vector3, width: float, color: Color) -> void:
@@ -290,7 +321,10 @@ func resolve_attack() -> void:
 			game.impact_ring(global_position + Vector3.UP * 0.06, 2.3, Color("ffc779"), 0.16)
 			recover(0.6)
 		"shot": fire_at_point(1); recover(0.95)
-		"fan": fire_at_point(5 + (2 if game.depth == 3 else 0)); recover(0.9 if health > max_health * 0.5 else 0.55)
+		"fan":
+			fire_at_point(5 + (2 if game.depth == 3 else 0)); recover(0.9 if health > max_health * 0.5 else 0.55)
+			# The first guardian has no big area attack, so every other fan vents too.
+			if game.depth == 1 and attack_cycle % 2 == 0: open_vent()
 		"charge":
 			state = "charge"
 			state_time = 0.52
@@ -299,9 +333,14 @@ func resolve_attack() -> void:
 		"slam":
 			blast(global_position, 4.7, hit(26, 7))
 			recover(1.0)
+			open_vent()
 		"bombard":
 			for point in strike_points: blast(point, 2.2, hit(20, 7))
 			recover(0.85)
+			open_vent()
+		"lob":
+			for point in strike_points: blast(point, 1.8, hit(14, 5))
+			recover(1.1)
 		"cross":
 			var origin = global_position
 			origin.y += 0.08
@@ -314,6 +353,7 @@ func resolve_attack() -> void:
 				if absf(delta.dot(direction.cross(Vector3.UP))) < 1.05 and absf(delta.dot(direction)) < 11 and has_sight(): game.player.hurt(hit(26, 7))
 			game.sound.play("slam", 1.0, global_position)
 			recover(1.1)
+			open_vent()
 	attack = 0.15
 
 func blast(pos: Vector3, radius: float, amount: float) -> void:
@@ -324,6 +364,7 @@ func blast(pos: Vector3, radius: float, amount: float) -> void:
 	delta.y = 0
 	if delta.length() < radius and absf(game.player.position.y - pos.y) < 0.70 and unobstructed(pos + Vector3.UP * 0.8, game.player.global_position + Vector3.UP): game.player.hurt(amount)
 	if delta.length() < 12: game.player.add_trauma(0.20)
+	game.damage_pillars(pos, radius, amount)
 
 func fire_at_point(number: int) -> void:
 	var origin = global_position + Vector3.UP * (2.6 if kind == 3 else 1.5)
@@ -335,7 +376,7 @@ func fire_at_point(number: int) -> void:
 
 func recover(duration: float) -> void:
 	state = "recover"
-	state_time = duration * pace() * (0.8 if kind == 3 and health < max_health * 0.5 else 1.0)
+	state_time = duration * pace() * chill() * (0.8 if kind == 3 and health < max_health * 0.5 else 1.0)
 	clear_marker()
 
 func clear_marker() -> void:
@@ -368,7 +409,10 @@ func take_damage(amount: float, effects: bool = true, source: Node3D = null) -> 
 			source.focus_target = self
 			source.focus_stacks = 0
 		amount *= 1.0 + 0.08 * source.focus_stacks
-	if exposed > 0: amount *= 1.2
+	# Refractor Crystal: exposed machines take even more from its owner.
+	if exposed > 0: amount *= 1.2 * (1.0 + 0.4 * source.count("refractor"))
+	# Winter Flywheel slows soften machines; Shatter Core hits slowed ones harder.
+	if slow > 0: amount *= 1.10 * (1.0 + 0.15 * source.count("shatter"))
 	if effects and source.has_milestone("salvo") and health > max_health * 0.75: amount *= 1.35
 	if effects and key == "storm":
 		needle_hits += 1
@@ -376,7 +420,7 @@ func take_damage(amount: float, effects: bool = true, source: Node3D = null) -> 
 			exposed = 3.0
 			game.float_text(global_position + Vector3.UP * (4.0 if kind == 3 else 2.6), "EXPOSED", Color("ffdc68"))
 	var crit = false
-	if effects and game.rng.randf() < minf(0.6, source.count("prism") * 0.08 + (0.15 if source.has_milestone("fortune") else 0.0)):
+	if effects and game.rng.randf() < minf(0.6, source.count("prism") * 0.10 + (0.15 if source.has_milestone("fortune") else 0.0)):
 		amount *= 3 if source.has_milestone("fortune") else 2
 		crit = true
 	health -= amount
@@ -384,7 +428,8 @@ func take_damage(amount: float, effects: bool = true, source: Node3D = null) -> 
 		overdrive_triggered = true
 		recover(1.2)
 		shield = 1.6
-		game.announce("OVERDRIVE / " + game.BOSS_NAMES[game.depth - 1], "The guardian shields itself, then speeds up. Watch its attack warnings.")
+		game.announce("OVERDRIVE / " + game.BOSS_NAMES[game.depth - 1], "The guardian shields itself and calls for help. Watch its attack warnings.")
+		game.call_deferred("guardian_adds", self)
 		game.sound.play("warning", 0.7)
 	game.total_damage += amount
 	show_damage(amount, crit, true)
@@ -394,6 +439,7 @@ func take_damage(amount: float, effects: bool = true, source: Node3D = null) -> 
 		if source.count("ember") > 0 or source.has_milestone("wildfire"):
 			burn_time = 3
 			burn_damage = 2.0 * maxi(1, source.count("ember"))
+			burn_pool += amount * 0.12 * source.count("ember")
 		if (source.count("coil") > 0 or source.has_milestone("arc")) and game.rng.randf() < minf(0.75, 0.18 * source.count("coil") + (0.25 if source.has_milestone("arc") else 0.0)):
 			var candidates = game.enemies.duplicate()
 			var chains = 0
@@ -404,6 +450,10 @@ func take_damage(amount: float, effects: bool = true, source: Node3D = null) -> 
 					other.take_damage(amount * 0.45, false)
 					chains += 1
 					if chains >= 1 + source.count("coil"): break
+			# With nothing else in reach, the arc grounds back into this machine.
+			if chains == 0 and not dead:
+				game.lightning(global_position + Vector3(0.9, 3.0, 0.4), global_position + Vector3.UP)
+				take_damage(amount * 0.30, false)
 	if health <= 0: die()
 
 func die() -> void:
@@ -420,7 +470,7 @@ func die() -> void:
 	game.impact_ring(global_position + Vector3.UP * 0.10, 1.0 if kind != 3 else 3.5, DiverArt.TEAL, 0.25)
 	game.net.broadcast([DiverNet.M_DIE, game.depth, net_id])
 	var killer = last_source if is_instance_valid(last_source) else game.player
-	game.drop_pickup(position + Vector3.UP * 0.5, "xp", 18 if kind == 3 else 5 if kind == 2 else 3)
+	game.drop_pickup(position + Vector3.UP * 0.5, "xp", 18 if kind == 3 else 5 if kind in [2, 4] else 4 if kind == 5 else 3)
 	game.drop_pickup(position + Vector3(0.4, 0.5, 0), "scrap", (30 if kind == 3 else game.rng.randi_range(2, 5)) + (2 if killer.specialization() == "runner" else 0))
 	if killer.count("moss") > 0: game.heal_player(killer, 1.5 * killer.count("moss"))
 	if killer.has_milestone("scavenger"): game.heal_player(killer, 3.0)
@@ -430,7 +480,15 @@ func die() -> void:
 			if other != self and is_instance_valid(other) and not other.dead and other.global_position.distance_to(global_position) < 4.0:
 				other.burn_time = 3
 				other.burn_damage = maxf(other.burn_damage, burn_damage)
+				other.burn_pool = maxf(other.burn_pool, burn_pool * 0.5)
 				game.burst(other.global_position + Vector3.UP, Color("f99668"), 5)
+	# Shatter Core: a slowed machine bursts into a frost ring that hurts its neighbours.
+	if slow > 0 and killer.count("shatter") > 0:
+		game.frost_burst(position, 2.0 + killer.count("shatter"), 3.0)
+		game.impact_ring(position + Vector3.UP * 0.08, 3.0, Color("b2e4ef"), 0.25)
+		for other in game.enemies.duplicate():
+			if other != self and is_instance_valid(other) and not other.dead and other.global_position.distance_to(global_position) < 3.0:
+				other.take_damage(minf(max_health, 400.0) * 0.15 * killer.count("shatter"), false)
 	if game.rng.randf() < 0.12: game.drop_pickup(position + Vector3(-0.4, 0.5, 0), "health", 12)
 	if kind == 3:
 		game.guardian_dead = true
@@ -462,8 +520,11 @@ func apply_snapshot(pos: Vector3, rot: float, life: float) -> void:
 func proxy_process(dt: float) -> void:
 	flash -= dt
 	phase += dt * 7
+	vent_time -= dt
+	update_core()
+	if kind == 5: mender_repair(dt)
 	for mesh in meshes: mesh.material_overlay = hit_overlay if flash > 0 else null
-	art.root.scale = Vector3.ONE * (2.35 if kind == 3 else 1.0)
+	art.root.scale = Vector3.ONE * 2.35 if kind == 3 else Vector3(1.15, 0.9, 1.15) if kind == 4 else Vector3.ONE
 	health_bar.visible = health < max_health
 	health_bar.scale.x = maxf(0.01, health / max_health)
 	var before = global_position
@@ -492,7 +553,7 @@ func proxy_process(dt: float) -> void:
 			art.root.position.y = lerpf(art.root.position.y, 0, dt * 9)
 			if state_time <= 0: state = "approach"
 		_:
-			if kind == 1: art.root.position.y = sin(phase * 0.5) * 0.12
+			if kind in [1, 5]: art.root.position.y = sin(phase * 0.5) * 0.12
 	for i in art.limbs.size(): art.limbs[i].rotation.x = sin(phase + i * PI) * clampf(moved / 3.0, 0, 1) * 0.45
 
 func remote_die() -> void:
@@ -510,3 +571,67 @@ func remote_die() -> void:
 		game.guardian_dead = true
 		game.notify("GUARDIAN SILENCED", "The extraction lift is online. Each digger has a core waiting. Head to the beacon together.")
 	queue_free()
+
+# --- BAL-02 / ENEMY-01 / BOSS-01 helpers ------------------------------------
+
+# Frost-slowed machines wind up and recover more slowly.
+func chill() -> float:
+	return 1.35 if slow > 0 else 1.0
+
+# A glowing core panel on the guardian's back, shown only while it vents.
+func make_core() -> Node3D:
+	var node = Node3D.new()
+	add_child(node)
+	node.position = CORE_OFFSET
+	DiverArt.box(node, Vector3.ZERO, Vector3(0.95, 0.75, 0.25), DiverArt.INK)
+	DiverArt.orb(node, Vector3(0, 0, 0.1), 0.34, Color("ffdc68"), 1.5)
+	node.visible = false
+	return node
+
+func update_core() -> void:
+	if not is_instance_valid(core): return
+	core.visible = vent_time > 0 and (vent_time > 0.6 or int(vent_time * 12) % 2 == 0)
+
+# Runs everywhere the attack resolves (host and guests), so no extra message.
+func open_vent() -> void:
+	if kind != 3 or dead: return
+	vent_time = VENT_SECONDS
+	update_core()
+	game.float_text(global_position + Vector3.UP * 4.2, "CORE EXPOSED", Color("ffdc68"))
+
+func core_point() -> Vector3:
+	return global_position + CORE_OFFSET.rotated(Vector3.UP, rotation.y)
+
+# Menders hang back near the machines they repair and keep away from diggers.
+func mender_move(direction: Vector3, distance: float) -> Vector3:
+	if distance < 9: return -direction
+	var ally = mender_target()
+	if ally and ally.global_position.distance_to(global_position) > 4.5:
+		var to = ally.global_position - global_position
+		to.y = 0
+		return to.normalized()
+	return direction.cross(Vector3.UP) * 0.4 * strafe_sign
+
+# The most damaged machine in reach (guardians count, but heal slowly).
+func mender_target() -> DiverEnemy:
+	var best: DiverEnemy = null
+	var worst = 1.0
+	for other in game.enemies:
+		if other == self or not is_instance_valid(other) or other.dead or other.kind == 5: continue
+		if other.global_position.distance_to(global_position) > 8.0: continue
+		var share = other.health / maxf(1.0, other.max_health)
+		if share < worst:
+			worst = share
+			best = other
+	return best
+
+# Host repairs; guests only draw the beam (Life arrives in robot snapshots).
+func mender_repair(dt: float) -> void:
+	heal_clock -= dt
+	if heal_clock > 0: return
+	heal_clock = 0.5
+	var ally = mender_target()
+	if ally == null: return
+	game.beam_flash(global_position + Vector3.UP * 1.5, ally.global_position + Vector3.UP * (2.5 if ally.kind == 3 else 1.1), 0.06, Color("8ee3a0"))
+	if game.net.is_guest(): return
+	ally.health = minf(ally.max_health, ally.health + ally.max_health * (0.01 if ally.kind == 3 else 0.04))

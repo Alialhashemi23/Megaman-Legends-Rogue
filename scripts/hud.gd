@@ -27,9 +27,13 @@ const DESCRIPTIONS = {
     "echo": "Adds a 12% extra-shot chance per stack. Echo shots deal 70% damage.",
     "split": "Adds two side shots. Extra antennas raise their damage.",
     "frost": "Dashing slows nearby machines. Extra flywheels extend the effect.",
-    "clover": "Adds 2.5 percentage points to the chance of finding a part on a machine."
+    "clover": "Adds 2.5 percentage points to the chance of finding a part on a machine.",
+    "refractor": "Exposed machines and a venting guardian's core take 40% more per crystal. Aim for the glowing core.",
+    "flare": "Every sixth shot leaves a burning patch for 3 seconds. Stacks burn hotter and spread wider.",
+    "shatter": "Slowed machines take 15% more per core, and burst into a damaging frost ring when destroyed.",
+    "overclock": "Fire 12% faster per relay while you avoid being hit for 4 seconds. Any hit resets it."
 }
-const TYPES = {"lens": "POWER", "spring": "RAPID", "heart": "LIFE", "boots": "MOBILITY", "shell": "ARMOR", "moss": "REPAIR", "ember": "FIRE", "coil": "ELECTRIC", "prism": "CRITICAL", "echo": "EXTRA SHOT", "split": "SPREAD", "frost": "SLOW", "clover": "SALVAGE"}
+const TYPES = {"lens": "POWER", "spring": "RAPID", "heart": "LIFE", "boots": "MOBILITY", "shell": "ARMOR", "moss": "REPAIR", "ember": "FIRE", "coil": "ELECTRIC", "prism": "CRITICAL", "echo": "EXTRA SHOT", "split": "SPREAD", "frost": "SLOW", "clover": "SALVAGE", "refractor": "PRECISION", "flare": "FIRE", "shatter": "FROST", "overclock": "RISK"}
 var game: Node3D
 var font = preload("res://assets/fonts/BarlowSemiCondensed-SemiBold.ttf")
 var heading = preload("res://assets/fonts/RussoOne-Regular.ttf")
@@ -1257,6 +1261,10 @@ func draw_hud(overlay: bool = false) -> void:
             icon(Vector2(480, 201), "warning", 31)
             var names = {"slam": "Shockwave! Jump or dash away!", "bombard": "Bombardment! Leave the rings!", "cross": "Cross beam! Clear the lanes!", "fan": "Burst incoming! Keep moving!"}
             text_at(Vector2(522, 226), names.get(enemy.planned, "Watch out!"), 23, YELLOW)
+        elif enemy.vent_time > 0:
+            window(Vector2(472, 198), Vector2(496, 39), INK, YELLOW)
+            text_at(Vector2(492, 226), "CORE EXPOSED  ·  hit the glowing panel on its back!", 22, YELLOW, false, 460)
+    draw_relay_meter()
     window(Vector2(30, 738), Vector2(340 if handheld() else 310, 104), Color(0.05, 0.13, 0.35, 0.92))
     icon(Vector2(42, 750), ["pulse", "needle", "siege", "scrap"][p.weapon], 62)
     text_at(Vector2(114, 774), ["Pulse Buster", "Needle Buster", "Siege Buster", "Salvage Bombs"][p.weapon], 25, WHITE, true, 242 if handheld() else 212)
@@ -1318,7 +1326,7 @@ func interaction_prompt() -> void:
     var obj = game.nearest
     window(Vector2(450, 731), Vector2(540, 49), BLUE, YELLOW)
     keycap(Vector2(462, 741), p("interact"), 33)
-    var title: String = {"cache": "Open Part Cache", "spring": "Use Restoration Well", "pot": "Salvage Vessel", "lift": "Extract" if game.depth == 3 else "Take the Lift"}.get(obj.kind, obj.title)
+    var title: String = {"cache": "Open Part Cache", "spring": "Use Restoration Well", "pot": "Salvage Vessel", "relay": "Activate the Power Relay", "lift": "Extract" if game.depth == 3 else "Take the Lift"}.get(obj.kind, obj.title)
     if obj.kind == "lift" and not game.guardian_dead: title = "Lift sealed — defeat the guardian"
     # Unpicked upgrades expire at extraction; say so before the press.
     elif obj.kind == "lift" and game.depth == 3 and not game.pending_choices.is_empty(): title = "Extract · %d unpicked expire" % game.pending_choices.size()
@@ -1372,9 +1380,15 @@ func map_at(pos: Vector2, side: float) -> void:
     # ready, flashing cyan while this digger's pick from it waits, dim once opened.
     for i in game.interactables.size():
         var obj: Dictionary = game.interactables[i]
-        if obj.kind != "cache" or not game.rooms[obj.room].visited: continue
+        if not obj.kind in ["cache", "relay"] or not game.rooms[obj.room].visited: continue
         var at = origin + Vector2(obj.node.position.x, obj.node.position.z) * zoom
         if not bounds.has_point(at): continue
+        if obj.kind == "relay":
+            # Power Relay: green until done, pulsing while it charges.
+            var lit = game.relay.get("active", false) and int(Time.get_ticks_msec() / 250) % 2 == 0
+            draw_circle(at, 6, INK)
+            draw_circle(at, 4.5, MUTED if game.relay.get("done", false) else (WHITE if lit else GREEN))
+            continue
         var color = MUTED if not game.rooms[obj.room].cleared else YELLOW
         if game.choice_waiting(i): color = CYAN if int(Time.get_ticks_msec() / 300) % 2 == 0 else WHITE
         elif obj.used: color = Color("4d6690")
@@ -1623,6 +1637,10 @@ func current_effect(id: String) -> String:
         "split": return "Side shots: %d%% power" % int(minf(0.75, 0.25 + n * 0.12) * 100)
         "frost": return "%d seconds of slow" % (2 + n)
         "clover": return "+%.1f%% part drop chance" % (n * 2.5)
+        "refractor": return "+%d%% on exposed / cores" % (n * 40)
+        "flare": return "Patch burns %d%% per tick" % (n * 15)
+        "shatter": return "+%d%% vs slowed" % (n * 15)
+        "overclock": return "+%d%% rapid while untouched" % (n * 12)
     return ""
 
 # Upgrade picks open over the live view: the dig stays visible behind a light
@@ -1632,8 +1650,8 @@ const CHOICE_BAND = Rect2(380, 248, 680, 488)
 const CHOICE_FADE_MS = 150.0
 const LEVEL_TITLES = ["Buster Power", "Life Expansion", "Rapid Fire"]
 const LEVEL_ICONS = ["pulse", "life", "spring"]
-const LEVEL_LINES = ["+3 base power", "+20 max Life · heal 35", "+15% base fire rate"]
-const LEVEL_DETAILS = ["Adds 3 base buster power. Power-boosting parts multiply the new total.", "Adds 20 maximum Life and restores 35 Life right away.", "Adds 15% base fire rate. Combine it with Clockwork Springs for faster firing."]
+const LEVEL_LINES = ["+16% power, like a Lens", "+20 max Life · heal 35", "+14% rapid, like a Spring"]
+const LEVEL_DETAILS = ["Adds 16% buster power, counted exactly like one more Sunken Lens.", "Adds 20 maximum Life and restores 35 Life right away.", "Adds 14% fire rate, counted exactly like one more Clockwork Spring."]
 
 func choice_title(i: int) -> String:
     var id: String = game.choice_items[i]
@@ -2348,3 +2366,15 @@ func draw_credits() -> void:
     button(Vector2(456, 746), Vector2(360, 62), "Next page", "credits_page", 1)
     button(Vector2(848, 746), Vector2(528, 62), "Return to Title", "title")
     text_at(Vector2(64, 865), "Page %d / %d" % [credits_page + 1, maxi(1, ceili(credits_lines.size() / 13.0))], 23, CYAN)
+
+# Power Relay charge (ROOM-01), shown in its chamber and while it charges.
+func draw_relay_meter() -> void:
+    var relay: Dictionary = game.relay
+    if relay.is_empty() or relay.done or not (relay.active or game.current_room == relay.room): return
+    window(Vector2(440, 120), Vector2(560, 66), Color(0.08, 0.13, 0.34, 0.92), GREEN)
+    icon(Vector2(449, 130), "coil", 43)
+    text_at(Vector2(504, 148), "POWER RELAY  %d%%" % int(relay.charge), 22, WHITE, true)
+    pips(Vector2(505, 160), 465, 12, relay.charge / 100.0, 24, GREEN)
+    var hint = "Stand in the lit ring to charge it" if relay.active else "Activate the console to start charging"
+    window(Vector2(472, 198), Vector2(496, 39), INK, GREEN)
+    text_at(Vector2(492, 226), hint, 22, GREEN, false, 460)

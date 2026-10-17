@@ -23,6 +23,10 @@ var base_health = 100.0
 var base_damage = 12.0
 var base_speed = 6.2
 var fire_multiplier = 1.0
+# Level-up stat picks (BAL-02): each power pick counts as one more Sunken Lens,
+# each haste pick as one more Clockwork Spring, instead of multiplying them.
+var power_picks = 0
+var haste_picks = 0
 var level = 1
 var xp = 0
 var xp_required = 12
@@ -140,7 +144,7 @@ func max_hp() -> float:
 	return base_health - 100.0 + starting_life * life_bonus() + 20 * count("heart")
 
 func damage() -> float:
-	return base_damage * (1.0 + 0.16 * count("lens")) * (DiverProgression.BONUS.barrel if "barrel" in skills else 1.0)
+	return base_damage * (1.0 + 0.16 * (count("lens") + power_picks)) * (DiverProgression.BONUS.barrel if "barrel" in skills else 1.0)
 
 func speed() -> float:
 	return base_speed * (1.18 if character == 3 else 1.0) * (DiverProgression.BONUS.mobility if "mobility" in skills else 1.0) * (1.0 + 0.09 * count("boots"))
@@ -148,7 +152,9 @@ func speed() -> float:
 func fire_delay() -> float:
 	var base = [0.25, 0.13, 0.65, 0.75][weapon]
 	var workshop = (DiverProgression.BONUS.mastery if "mastery" in skills else 1.0) * (DiverProgression.BONUS.loader if "loader" in skills else 1.0)
-	return base / (fire_multiplier * workshop * (1.0 + 0.14 * count("spring")) * (1.0 + storm_heat) * (1.3 if kinetic_time > 0 else 1.0))
+	# Overclock Relay: faster while untouched for 4 s.
+	var overclock = 1.0 + 0.12 * count("overclock") if Time.get_ticks_msec() - last_hurt > 4000 else 1.0
+	return base / (fire_multiplier * workshop * (1.0 + 0.14 * (count("spring") + haste_picks)) * (1.0 + storm_heat) * (1.3 if kinetic_time > 0 else 1.0) * overclock)
 
 func _physics_process(dt: float) -> void:
 	if not game.world_running(): return
@@ -330,13 +336,15 @@ func shoot() -> void:
 	shot_count += 1
 	var interval = int(DiverProgression.BONUS.pulse_interval_2 if "ability2" in skills else DiverProgression.BONUS.pulse_interval)
 	if character == 0 and "ability" in skills and shot_count % interval == 0: amount *= DiverProgression.BONUS.pulse_power
-	game.spawn_bolt(start, direction, amount, false, weapon >= 2, 1 if weapon == 3 else 0, self)
+	var main_bolt = game.spawn_bolt(start, direction, amount, false, weapon >= 2, 1 if weapon == 3 else 0, self)
+	# Flare Cartridge: every sixth shot is an incendiary that leaves a burning patch.
+	if count("flare") > 0 and shot_count % 6 == 0: main_bolt.flare = count("flare")
 	game.build_changed()
 	if (count("echo") > 0 or has_milestone("twin")) and game.rng.randf() < minf(0.8, 0.12 * count("echo") + (0.35 if has_milestone("twin") else 0.0)):
 		game.spawn_bolt(start + Vector3.UP * 0.18, direction.rotated(Vector3.UP, 0.025), amount * 0.7, false, weapon >= 2, 1 if weapon == 3 else 0, self)
 	if count("split") > 0:
 		for sign_dir in [-1, 1]:
-			game.spawn_bolt(start, direction.rotated(Vector3.UP, sign_dir * 0.13), amount * minf(0.75, 0.25 + count("split") * 0.12), false, weapon >= 2, 1 if weapon == 3 else 0, self)
+			game.spawn_bolt(start, direction.rotated(Vector3.UP, sign_dir * 0.24), amount * minf(0.75, 0.25 + count("split") * 0.12), false, weapon >= 2, 1 if weapon == 3 else 0, self)
 
 func hurt(amount: float) -> void:
 	# Online picks are opened by choice while the dig carries on, so choosing

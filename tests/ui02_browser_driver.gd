@@ -61,7 +61,7 @@ func _process(dt: float) -> void:
 		"net_status": game.net.status, "waiting_sync": game.net.awaiting_run_sync,
 		"pending": game.build_state().pending, "peers": peers,
 		"choice_kind": game.choice_kind, "choice_picks": game.choice_picks,
-		"choice_ready": game.choice_input_ready(), "items": p.items, "damage": p.base_damage,
+		"choice_ready": game.choice_input_ready(), "items": p.items, "damage": p.power_picks,
 		"health": p.base_health, "fire_rate": p.fire_multiplier, "milestones": p.milestones,
 		"shots": p.shot_count, "time": game.run_time, "guard": game.action_guard,
 		"pos": [position.x, position.y, position.z], "camera": [camera.x, camera.y, camera.z], "buttons": buttons}

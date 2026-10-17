@@ -361,9 +361,20 @@ static func diver(parent: Node3D) -> Dictionary:
 static func robot(parent: Node3D, kind: int, tier: int = 1) -> Dictionary:
 	var root = Node3D.new()
 	parent.add_child(root)
-	var color = [Color("e78a59"), Color("9b9de3"), Color("8bbf82"), GOLD][kind]
+	var color = [Color("e78a59"), Color("9b9de3"), Color("8bbf82"), GOLD, Color("d0a050"), Color("7fd9a5")][kind]
 	if kind == 3: color = [GOLD, Color("82bfa0"), Color("b5a3df")][tier - 1]
 	var limbs = []
+	if kind == 5:
+		# Mender: a small floating repair drone with a green cross and three rotor pods.
+		orb(root, Vector3(0, 1.6, 0), 0.38, Color("e9e1c4"))
+		box(root, Vector3(0, 1.6, -0.36), Vector3(0.30, 0.09, 0.04), color, false, 1)
+		box(root, Vector3(0, 1.6, -0.36), Vector3(0.09, 0.30, 0.04), color, false, 1)
+		for i in 3:
+			var angle = TAU * i / 3.0
+			orb(root, Vector3(cos(angle) * 0.5, 1.75, sin(angle) * 0.5), 0.13, INK)
+			cylinder(root, Vector3(cos(angle) * 0.5, 1.86, sin(angle) * 0.5), 0.2, 0.02, color, 0.6)
+		cylinder(root, Vector3(0, 1.18, 0), 0.10, 0.25, TEAL, 1)
+		return {"root": root, "limbs": limbs}
 	if kind == 1:
 		orb(root, Vector3(0, 1.5, 0), 0.6, Color("506d6a"))
 		var eye_rim = cylinder(root, Vector3(0, 1.5, -0.53), 0.32, 0.12, Color("c4ac75"))
@@ -398,6 +409,14 @@ static func robot(parent: Node3D, kind: int, tier: int = 1) -> Dictionary:
 			profile(root, Vector3(x, 0, 0), [[0.62, 0.17, 0.18, 0], [0.8, 0.2, 0.21, 0], [1.21, 0.16, 0.18, 0]], color)
 		if kind == 2:
 			armor(root, Vector3(0, 0.93, -0.44), Vector3(1.0, 0.58, 0.15), Color("608f81"))
+		if kind == 4:
+			# Grenadier: a squat frame with a mortar tube and shell drum on its back.
+			root.scale = Vector3(1.15, 0.9, 1.15)
+			var tube = cylinder(root, Vector3(0, 1.85, 0.25), 0.17, 0.75, Color("5b4a3a"))
+			tube.rotation.x = -0.55
+			cylinder(root, Vector3(0, 2.18, 0.05), 0.2, 0.08, color, 0.4)
+			var drum = cylinder(root, Vector3(0.36, 1.38, 0.32), 0.18, 0.3, color)
+			drum.rotation.z = PI / 2
 		if kind == 3:
 			root.scale = Vector3.ONE * 2.35
 			for x in [-0.55, 0.55]:
