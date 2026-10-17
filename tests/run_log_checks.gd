@@ -116,6 +116,38 @@ func run() -> void:
 	restored.runs=[]
 	restored.load_notes()
 	verify(restored.runs.is_empty(), "Corrupt log does not prevent starting/ending a dig")
+	# Exercise real choice hooks and automatic after-physics observation.
+	game.run_id="real-hook-run"
+	game.run_recorded=false
+	game.mode="play"
+	game.guardian_dead=false
+	game.player.hp=80
+	game.player.invincible=0
+	log.observe(0)
+	log.set_physics_process(true)
+	game.player.hurt(12.5)
+	await physics_frame
+	await physics_frame
+	verify(is_equal_approx(log.current.life_lost,12.5 / (1 + game.player.count("shell") * 0.18)), "Automatic observer captures real mitigated hurt")
+	game.choice_kind="relic"
+	game.choice_items=["lens","spring","ember"]
+	game.choice_source=game.choice_entry("relic","relic:hook",1,-1,game.choice_items)
+	game.mode="choice"
+	game.choice_need_release=false
+	game.choice_lock_until=0
+	verify(game.reroll_choice() and log.current.reroll_count==1, "Actual reroll hook records one event")
+	game.choose(0)
+	verify(log.current.pick_count==1, "Actual choose hook records one event")
+	log.set_physics_process(false)
+	var safe_path=log.path
+	var blocker=folder.path_join("blocked-log")
+	file=FileAccess.open(blocker,FileAccess.WRITE)
+	file.store_string("fixture")
+	file.close()
+	log.path=blocker.path_join("dig-log.json")
+	game.finish_run(false)
+	verify(game.run_recorded and game.mode=="end" and not log.storage_ok, "Log storage failure does not block normal dig completion")
+	log.path=safe_path
 	restored.free()
 	print("RUN_LOG_CHECKS: %d checks, %d failures" % [checks,failures])
 	quit(1 if failures else 0)
