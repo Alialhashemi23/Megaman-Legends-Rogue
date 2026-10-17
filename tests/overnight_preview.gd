@@ -50,6 +50,22 @@ func run() -> void:
 	root.size = Vector2i(1440,900)
 	game.settings.handheld_ui = false
 	await capture("reroll-desktop")
+	game.run_log.observe(0)
+	var sample_build = game.build_state()
+	sample_build.items = {"lens":3,"spring":2,"shell":1,"ember":2,"coil":1,"frost":1,"echo":1,"boots":1}
+	game.run_log.current.guardians = [{"depth":1,"seconds":38.5,"life_lost":25.5,"defeated":true,"partial":false,"build":DiverRunLog.clean_build(sample_build)}]
+	game.run_log.current.life_lost = 43.0
+	game.run_log.current.events = [{"kind":"pick","item":"lens","depth":1,"cards":[]},{"kind":"reroll","item":"","depth":1,"cards":["spring","ember","coil"]}]
+	game.run_log.current.pick_count = 6
+	game.run_log.current.reroll_count = 1
+	game.finish_run(false)
+	await capture("end-desktop")
+	game.hud.activate("run_log")
+	await capture("log-desktop")
+	root.size = Vector2i(960,540)
+	game.settings.handheld_ui = true
+	await capture("log-small")
+	root.size = Vector2i(1440,900)
 	game.hud.visible = false
 	var display = TextureRect.new()
 	display.texture = load("res://assets/ui/parts_atlas.svg")

@@ -185,6 +185,8 @@ var pings: Array = []
 var spectate_index = 0
 var leave_guard = false
 var logged_checkpoint = ""
+var run_log: DiverRunLog
+var run_log_path = ""
 
 func _ready() -> void:
 	# Keep paths a test assigned before adding the game, so checks never touch real saves.
@@ -211,6 +213,10 @@ func _ready() -> void:
 	android_updates = DiverAndroidUpdates.new()
 	android_updates.game = self
 	add_child(android_updates)
+	run_log = DiverRunLog.new()
+	run_log.game = self
+	run_log.path = run_log_path if run_log_path != "" else save_path.get_base_dir().path_join("dig-log.json")
+	add_child(run_log)
 	setup_environment()
 	var canvas = CanvasLayer.new()
 	add_child(canvas)
@@ -1035,6 +1041,7 @@ func reroll_choice() -> bool:
 	# Commit cards and budget together before publishing any recovery snapshot.
 	entry.items = cards.duplicate()
 	rerolls_left -= 1
+	run_log.event("reroll", entry)
 	choice_source = entry
 	choice_items = cards.duplicate()
 	hud.choice_preview = 0
@@ -1143,6 +1150,7 @@ func clean_choice_id(value: Variant, kind: String, at_depth: int, cache: int, in
 func choose(index: int) -> void:
 	if index < 0 or index >= choice_items.size() or mode != "choice": return
 	var selected: String = choice_items[index]
+	run_log.event("pick", open_choice_entry(), selected)
 	var at_depth = int(choice_source.get("depth", depth))
 	# Reward helpers can publish the build synchronously. Retire the offer first
 	# so a peer's recovery snapshot cannot contain an already-applied reward.
@@ -1278,6 +1286,7 @@ func finish_run(won: bool) -> void:
 			return
 		finish_account_run(won)
 		return
+	run_log.finish(won)
 	run_recorded = true
 	outcome = won
 	zenny_earned = DiverProgression.reward(depth, depth - 1 + int(guardian_dead), scrap)
@@ -1343,6 +1352,7 @@ func run_outcome(won: bool, abandoned: bool = false) -> Dictionary:
 	return {"won": won, "depth": depth, "guardians": depth - 1 + int(guardian_dead), "scrap": scrap, "kills": kills, "run_time": run_time, "character": selected_character, "abandoned": abandoned}
 
 func finish_account_run(won: bool) -> void:
+	run_log.finish(won)
 	run_recorded = true
 	outcome = won
 	zenny_earned = DiverProgression.reward(depth, depth - 1 + int(guardian_dead), scrap)
@@ -1783,6 +1793,7 @@ func apply_build(b: Dictionary) -> void:
 	pending_choices = clean_pending(restored_choices(b))
 	choice_source = {}
 	auto_open_choice = false
+	if is_instance_valid(run_log): run_log.reset_baseline()
 	# Restored picks wait in the queue; the overlay never reopens by itself.
 	if mode == "choice": finish_choices()
 
