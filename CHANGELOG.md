@@ -1,5 +1,11 @@
 # Local build history
 
+## Unreleased — overnight source candidates
+
+- Codex: one personal reroll per descent for part/milestone offers (R / pad Y), four painted part icons, read-only controller diagnostics, local last-20-dig logs and coalesced co-op build traffic. Durable picks/build changes remain immediate.
+- Claude, pending integration: balance packages, additive level-up pools, dynamic spawns, guardian vents/adds, Grenadier/Mender, B3 cover, Power Relay and four part effects. Protocol 12 comes from that branch.
+- No build number, package, merge or deployment yet. See [candidate notes and actual validation limits](docs/OVERNIGHT-CANDIDATE.md). Existing packages remain build 34.
+
 ## 30 — In-game sign-in and one rule for Guest progress
 
 - Signing in no longer leaves the game. The account bar opens a panel over the title on browser, Windows and Android: email and password, then a 6-digit authenticator code (or a backup code) if the account uses one. Create an account or ask for a password reset from the same panel. Errors (wrong password, unconfirmed email, too many attempts, no connection) appear in the panel. Windows and Android no longer use the device code approved in a separate browser.

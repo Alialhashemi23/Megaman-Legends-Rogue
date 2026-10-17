@@ -45,6 +45,12 @@ Press **C** (controller **Y**) on the title screen to cycle diggers. Each has th
 
 **Solo** opens preparation: left/right chooses a digger; confirm the selection, then press again on **Start Dig**. Online, everyone selects **Ready** before the host starts the cancellable countdown. Current browser/Windows co-op uses game protocol 11; the published Android 0.19.0 APK needs a matching future update to join these lobbies.
 
+## Overnight source candidate
+
+The overnight branches add rerolls, controller diagnostics, a local dig log and
+combat/content changes. They are **not included in the shipped build-34 packages**.
+See [candidate features and validation gaps](docs/OVERNIGHT-CANDIDATE.md).
+
 ## Controls
 
 Gameplay actions can be rebound in **Options → Controls & bindings** (sticks, menu navigation, upgrade picks, digger switch and mute are fixed). Prompts follow the last device you used.
