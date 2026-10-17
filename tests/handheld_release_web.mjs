@@ -24,7 +24,9 @@ try {
  for(let i=0;i<14;i++)await page.keyboard.press('ArrowDown');
  await page.keyboard.press('ArrowRight');await page.keyboard.press('ArrowDown');await page.keyboard.press('ArrowRight');await page.keyboard.press('ArrowDown');await page.keyboard.press('ArrowRight');
  await page.waitForTimeout(500);await page.screenshot({path:path.join(out,'01-options-device-preferences.png')});
- await page.keyboard.press('Escape');await page.waitForTimeout(4000);await page.reload({waitUntil:'domcontentloaded'});await loaded();
+ await page.keyboard.press('Escape');
+ assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('relicDiverReadabilityV1'))),{handheld_ui:true,large_minimap:true,close_camera:true});
+ await page.reload({waitUntil:'domcontentloaded'});await loaded();
  await page.screenshot({path:path.join(out,'02-reloaded-handheld-title.png')});
  // Clicking the taller handheld Workshop row after reload proves the reflow and
  // its hit geometry persisted, then uses the ordinary purchase flow.

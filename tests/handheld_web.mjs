@@ -45,7 +45,7 @@ try {
   await page.mouse.click(toggle.x*viewport.width,toggle.y*viewport.height);
   await page.waitForFunction(()=>!window.ui04State.handheld);
   await page.keyboard.press('ArrowRight');await page.waitForFunction(()=>window.ui04State.handheld);
-  await page.waitForTimeout(4000);await page.reload({waitUntil:'domcontentloaded'});
+  assert.equal((await page.evaluate(()=>JSON.parse(localStorage.getItem('relicDiverReadabilityV1')))).handheld_ui,true);await page.reload({waitUntil:'domcontentloaded'});
   await page.waitForFunction(()=>window.ui04State,{timeout:90000});
   assert.equal((await state()).handheld,true,'Handheld settings persist through actual browser reload');
   assert.equal((await state()).large_map,true,'Independent minimap preference persists');

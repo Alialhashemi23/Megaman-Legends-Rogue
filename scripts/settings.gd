@@ -9,6 +9,7 @@ class_name DiverSettings
 
 const PATH = "res://save/settings.json"
 const WEB_PATH = "user://settings.json"
+const WEB_READABILITY_KEY = "relicDiverReadabilityV1"
 const STICK_DEADZONE = 0.22
 
 # Rebindable actions, in the order the Controls page lists them.
@@ -197,6 +198,18 @@ func set_fullscreen(value: bool) -> void:
 	save_settings()
 
 func load_settings() -> void:
+	load_file_settings()
+	# IndexedDB flushes asynchronously. Restore these device preferences even if
+	# the user refreshed immediately after changing one; never mirror account data.
+	if OS.has_feature("web"):
+		var raw = JavaScriptBridge.eval("(() => { try { return localStorage.getItem(%s) || ''; } catch(e) { return ''; } })()" % JSON.stringify(WEB_READABILITY_KEY), true)
+		if raw is String and raw.length() <= 256:
+			var mirror = JSON.parse_string(raw) if raw != "" else null
+			if mirror is Dictionary:
+				for key in ["handheld_ui", "large_minimap", "close_camera"]:
+					if mirror.get(key) is bool: set(key, mirror[key])
+
+func load_file_settings() -> void:
 	if not FileAccess.file_exists(path): return
 	var data = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if not data is Dictionary: return
@@ -241,3 +254,7 @@ func save_settings() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path.get_base_dir()))
 	var f = FileAccess.open(path, FileAccess.WRITE)
 	if f: f.store_string(JSON.stringify({"mouse_sensitivity": mouse_sensitivity, "look_speed": look_speed, "invert_y": invert_y, "vibration": vibration, "fullscreen": fullscreen, "camera_effects": camera_effects, "map_zoom": map_zoom, "handheld_ui": handheld_ui, "large_minimap": large_minimap, "close_camera": close_camera, "fov": fov, "specs": specs, "bindings": bindings}, "\t"))
+
+	if OS.has_feature("web"):
+		var mirror = JSON.stringify({"handheld_ui": handheld_ui, "large_minimap": large_minimap, "close_camera": close_camera})
+		JavaScriptBridge.eval("(() => { try { localStorage.setItem(%s, %s); } catch(e) {} })()" % [JSON.stringify(WEB_READABILITY_KEY), JSON.stringify(mirror)], true)
