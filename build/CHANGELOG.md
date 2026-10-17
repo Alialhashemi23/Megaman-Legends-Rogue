@@ -1,5 +1,11 @@
 # Local build history
 
+## 33 — Review Workshop purchases before spending
+
+- Selecting an available circuit or specialization opens a purchase review with its original digger portrait, effect, cost and wallet before/after. Cancel is selected first. A fresh Confirm spends; Back returns to the exact node. Held input and the opening double click cannot buy accidentally.
+- Guest purchases keep the existing atomic save and rollback on failure. Account purchases show confirmed, refused or pending results; Close does not cancel a submitted purchase, and Retry Sync reuses its existing operation. Equipping an owned specialization remains immediate and free.
+- Validation: purchase review 63, account 56, progression 310, UI 93 and Options 43 checks pass. Disposable browser checks cover Guest save/reload, held input and account retry/conflict behavior, plus desktop and 960×540 captures. No server, API, prices, progression or protocol changes. Physical controller, Retroid and owner playtest remain pending.
+
 ## 32 — Upgrade overlays and queued co-op choices
 
 - Part, level and guardian-milestone choices now appear over the same camera view with a brief fade, cobalt dim and the Life/map/team HUD kept visible. Solo pauses; Back or the parts button returns an unused offer to pending.
