@@ -13,7 +13,7 @@ const CYAN = Color("7ad6ef")
 const YELLOW = Color("ffdc68")
 const GREEN = Color("9cde70")
 const ORANGE = Color("ff9565")
-const ICONS = {"lens": 0, "spring": 1, "heart": 2, "boots": 3, "shell": 4, "moss": 5, "ember": 6, "coil": 7, "prism": 8, "echo": 9, "split": 10, "frost": 11, "clover": 12, "pulse": 13, "needle": 14, "siege": 15, "scrap": 16, "xp": 17, "map": 18, "lock": 19, "dash": 20, "cache": 21, "wrench": 22, "exit": 23, "life": 24, "settings": 25, "save": 26, "cursor": 27, "warning": 28, "record": 29, "eye": 30, "unknown": 31}
+const ICONS = {"lens": 0, "spring": 1, "heart": 2, "boots": 3, "shell": 4, "moss": 5, "ember": 6, "coil": 7, "prism": 8, "echo": 9, "split": 10, "frost": 11, "clover": 12, "pulse": 13, "needle": 14, "siege": 15, "scrap": 16, "xp": 17, "map": 18, "lock": 19, "dash": 20, "cache": 21, "wrench": 22, "exit": 23, "life": 24, "settings": 25, "save": 26, "cursor": 27, "warning": 28, "record": 29, "eye": 30, "unknown": 31, "refractor": 32, "flare": 33, "shatter": 34, "overclock": 35}
 const DESCRIPTIONS = {
     "lens": "Raises buster power by 16% for each lens fitted.",
     "spring": "Raises fire rate by 14% for each spring fitted.",
@@ -55,6 +55,7 @@ var page_focus: Dictionary = {}
 var pending_focus: Dictionary = {}
 var accept_held = false
 var back_held = false
+var reroll_held = false
 var name_edit: LineEdit
 var code_edit: LineEdit
 var server_edit: LineEdit
@@ -65,11 +66,20 @@ var copied_time = 0.0
 # Destructive buttons need a second click within a few seconds.
 const CONFIRM = ["leave_online", "leave_dig", "abandon", "kick", "discard", "start_new", "give_up", "reset_controls", "takeover", "clear_session"]
 # Options page rows: sound, display, then controls.
-const OPTIONS = ["master", "music", "effects", "ambience", "mute", "fullscreen", "camera", "fov", "mouse", "look", "invert", "vibration", "controls", "map_zoom", "handheld_ui", "large_minimap", "close_camera", "back"]
-const MENU_MODES = ["title", "solo_prep", "pause", "options", "controls", "choice", "inventory", "archive", "end", "online", "lobby", "launch_preparing", "workshop", "purchase_review", "save_codes", "account", "android_update", "credits"]
+const OPTIONS = ["master", "music", "effects", "ambience", "mute", "fullscreen", "camera", "fov", "mouse", "look", "invert", "vibration", "controls", "map_zoom", "handheld_ui", "large_minimap", "close_camera", "controller_test", "back"]
+const MENU_MODES = ["title", "solo_prep", "pause", "options", "controls", "controller_test", "choice", "inventory", "archive", "end", "run_log", "online", "lobby", "launch_preparing", "workshop", "purchase_review", "save_codes", "account", "android_update", "credits"]
 var credits_lines: PackedStringArray = []
 var credits_page = 0
 var options_return = "title"
+var controller_device = -1
+var controller_raw_page = 0
+var run_log_index = -1
+var run_log_guardian = 0
+var run_log_build_page = 0
+var run_log_events_page = 0
+var controller_snapshot: Dictionary = {}
+var controller_sample_at = 0
+var controller_last_button = "No button event yet"
 var workshop_return = "title"
 var workshop_character = 0
 var workshop_message = ""
@@ -558,6 +568,13 @@ func button(pos: Vector2, size: Vector2, title: String, action: String, value: i
     hits.append({"rect": area, "action": action, "value": value})
 
 func _input(event: InputEvent) -> void:
+    var reroll_event = (event is InputEventKey and (event.keycode == KEY_R or event.physical_keycode == KEY_R)) or (event is InputEventJoypadButton and event.button_index == JOY_BUTTON_Y)
+    if reroll_event and not event.is_echo():
+        if not event.is_pressed(): reroll_held = false
+        elif reroll_held:
+            get_viewport().set_input_as_handled()
+            return
+        else: reroll_held = true
     # Release is observed even while a text field or a different page owns input.
     # Repeated pressed events cannot carry a held A/Enter/B into the next layer.
     if event.is_action("nav_accept") and not event.is_echo():
@@ -572,6 +589,15 @@ func _input(event: InputEvent) -> void:
             get_viewport().set_input_as_handled()
             return
         else: back_held = true
+    if game.mode == "controller_test":
+        if event is InputEventJoypadButton:
+            controller_last_button = "Button %d: %s" % [event.button_index, "pressed" if event.pressed else "released"]
+            if event.button_index == JOY_BUTTON_B and event.pressed and not event.is_echo(): back()
+            get_viewport().set_input_as_handled()
+            return
+        if event is InputEventJoypadMotion:
+            get_viewport().set_input_as_handled()
+            return
     if event is InputEventMouseMotion:
         # Window/viewport updates can emit motion at the stationary pointer.
         if event.relative.is_zero_approx(): return
@@ -631,6 +657,10 @@ func _input(event: InputEvent) -> void:
     if event is InputEventMouseButton: return
     pointer = Vector2(-100, -100)
     pointer_travel = 0.0
+    if game.mode == "choice" and reroll_event:
+        game.reroll_choice()
+        get_viewport().set_input_as_handled()
+        return
     if game.mode == "workshop" and ((event is InputEventKey and event.keycode == KEY_Z) or (event is InputEventJoypadButton and event.button_index == JOY_BUTTON_X)):
         grid_zoom_by(1 if grid_zoom_step < GRID_ZOOMS.size() - 1 else -GRID_ZOOMS.size())
         game.sound.play("menu_move")
@@ -664,7 +694,9 @@ func navigate(delta: int, horizontal: bool) -> void:
     if game.mode != previous_mode: return
     pointer = Vector2(-100, -100)
     pointer_travel = 0.0
-    if game.mode == "options" and horizontal:
+    if game.mode == "controller_test" and horizontal:
+        cycle_controller(delta)
+    elif game.mode == "options" and horizontal:
         if focus_index < OPTIONS.size(): adjust_option(focus_index, delta)
     elif game.mode == "controls" and not horizontal and focus_index < DiverSettings.ACTIONS.size() * 2:
         focus_index = clampi(focus_index + delta * 2, focus_index % 2, hits.size() - 1)
@@ -722,7 +754,8 @@ func back() -> bool:
         "save_codes": activate("workshop")
         "inventory", "pause": activate("resume")
         "options": activate(options_return)
-        "controls": activate("options")
+        "controls", "controller_test": activate("options")
+        "run_log": activate("end")
         "choice": game.close_choice()
         _: return false
     return true
@@ -785,6 +818,11 @@ func activate(action: String, value: int = 0) -> void:
         return
     confirming = ""
     match action:
+        "controller_cycle": cycle_controller(value)
+        "controller_raw_page":
+            controller_raw_page = (controller_raw_page + 1) % 4
+            controller_sample_at = 0
+        "reroll": game.reroll_choice()
         "purchase_confirm": confirm_purchase()
         "purchase_cancel", "purchase_close": close_purchase_review()
         "purchase_retry":
@@ -913,6 +951,12 @@ func activate(action: String, value: int = 0) -> void:
             game.mode = "options"
         "option": activate_option(value)
         "controls": game.mode = "controls"
+        "controller_test":
+            controller_sample_at = 0
+            controller_raw_page = 0
+            game.mode = "controller_test"
+            game.pad_held.clear()
+            return
         "bind": listening = {"id": DiverSettings.ACTIONS[value / 2].id, "column": "kb" if value % 2 == 0 else "pad", "time": 6.0}
         "reset_controls":
             game.settings.reset_bindings()
@@ -923,6 +967,23 @@ func activate(action: String, value: int = 0) -> void:
             if game.net.active(): game.leave_online()
             else: game.finish_run(false)
         "pause": game.mode = "pause"
+        "run_log":
+            game.run_log.load_notes()
+            run_log_index = game.run_log.runs.size() - 1
+            run_log_guardian = 0
+            run_log_build_page = 0
+            run_log_events_page = 0
+            game.mode = "run_log"
+        "log_dig":
+            run_log_index = clampi(run_log_index + value, 0, game.run_log.runs.size() - 1)
+            run_log_guardian = 0
+            run_log_build_page = 0
+            run_log_events_page = 0
+        "log_guardian":
+            run_log_guardian = value
+            run_log_build_page = 0
+        "log_build_page": run_log_build_page += 1
+        "log_events_page": run_log_events_page += 1
         "end": game.mode = "end"
         "volume":
             var bus: String = ["Master", "Music", "Effects", "Ambience"][value]
@@ -1012,8 +1073,10 @@ func _draw() -> void:
         "pause": draw_pause()
         "options": draw_options()
         "controls": draw_controls()
+        "controller_test": draw_controller_test()
         "inventory": draw_parts(false)
         "end": draw_end()
+        "run_log": draw_run_log()
         "workshop": draw_workshop()
         "purchase_review": draw_purchase_review()
         "save_codes": draw_save_codes()
@@ -1440,7 +1503,7 @@ func draw_pause() -> void:
     menu_footer("Select", "Return")
 
 func option_label(id: String) -> String:
-    return {"master": "Master volume", "music": "Music", "effects": "Effects", "ambience": "Ambience", "mute": "Mute all", "fullscreen": "Fullscreen", "camera": "Camera motion", "fov": "Field of view", "mouse": "Mouse sensitivity", "look": "Controller look speed", "invert": "Invert look (up/down)", "vibration": "Controller vibration", "controls": "Controls & bindings…", "map_zoom": "Ruins map", "handheld_ui": "UI / text preset", "large_minimap": "Minimap size", "close_camera": "Camera framing", "back": "Back"}.get(id, id)
+    return {"master": "Master volume", "music": "Music", "effects": "Effects", "ambience": "Ambience", "mute": "Mute all", "fullscreen": "Fullscreen", "camera": "Camera motion", "fov": "Field of view", "mouse": "Mouse sensitivity", "look": "Controller look speed", "invert": "Invert look (up/down)", "vibration": "Controller vibration", "controls": "Controls & bindings…", "map_zoom": "Ruins map", "handheld_ui": "UI / text preset", "large_minimap": "Minimap size", "close_camera": "Camera framing", "controller_test": "Controller test…", "back": "Back"}.get(id, id)
 
 func option_value(id: String) -> String:
     var s = game.settings
@@ -1497,12 +1560,18 @@ func activate_option(index: int) -> void:
             s.vibration = not s.vibration
             s.rumble(0.4, 0.4, 0.15)
         "controls": game.mode = "controls"
+        "controller_test":
+            controller_sample_at = 0
+            controller_raw_page = 0
+            game.mode = "controller_test"
+            game.pad_held.clear()
+            return
         "back": activate(options_return)
     s.save_settings()
 
 func option_row(pos: Vector2, index: int) -> void:
     var id: String = OPTIONS[index]
-    var area = Rect2(pos, Vector2(640, 50))
+    var area = Rect2(pos, Vector2(640, 48))
     var hot = focus_index == index or area.has_point(pointer)
     window(pos, area.size, SELECT if hot else PANEL, YELLOW if hot else EDGE, false)
     if hot: cursor(pos + Vector2(-30, 12))
@@ -1520,9 +1589,84 @@ func draw_options() -> void:
     text_at(Vector2(66, 278), "SOUND & CAMERA", 20, CYAN, true)
     text_at(Vector2(738, 278), "INPUT & READABILITY", 20, CYAN, true)
     for i in OPTIONS.size():
-        option_row(Vector2(64, 292 + i * 56) if i < 9 else Vector2(736, 292 + (i - 9) * 56), i)
-    text_at(Vector2(66, 824), "Left / right adjusts. Readability and camera preferences save on this device.", 23, MUTED, false, 1310)
+        option_row(Vector2(64, 292 + i * 52) if i < 9 else Vector2(736, 292 + (i - 9) * 52), i)
+    text_at(Vector2(66, 830), "Left / right adjusts. Readability and camera preferences save on this device.", 20, MUTED, false, 1310)
     menu_footer("Select", "Back", "Change")
+
+func cycle_controller(delta: int) -> void:
+    var devices = Input.get_connected_joypads()
+    if devices.is_empty(): controller_device = -1
+    else: controller_device = devices[wrapi(devices.find(controller_device) + delta, 0, devices.size())]
+    controller_raw_page = 0
+    controller_sample_at = 0
+
+func sample_controller() -> Dictionary:
+    var devices = Input.get_connected_joypads()
+    if controller_device not in devices: controller_device = devices[0] if not devices.is_empty() else -1
+    return DiverControllerProbe.sample(controller_device)
+
+func probe_axes(pos: Vector2, values: Array, raw: bool) -> void:
+    var start = controller_raw_page * 8 if raw else 0
+    var count = mini(8, maxi(0, values.size() - start))
+    for row in count:
+        var index = start + row
+        var value = float(values[index])
+        var at = pos + Vector2(0, row * (21 if raw else 24))
+        var label = "Axis %d" % index if raw else DiverControllerProbe.AXIS_LABELS[index]
+        text_at(at + Vector2(0, 19), label, 19, WHITE, false, 190)
+        var bar = at + Vector2(200, 5)
+        rect(bar, Vector2(230, 15), INK)
+        draw_line(bar + Vector2(115, 0), bar + Vector2(115, 15), EDGE, 1)
+        rect(bar + Vector2(minf(115, 115 + value * 115), 2), Vector2(maxf(2, absf(value) * 115), 11), GREEN if value >= 0 else CYAN)
+        text_at(at + Vector2(450, 19), "%+.3f" % value, 19, YELLOW)
+
+func probe_buttons(pos: Vector2, values: Array, raw: bool) -> void:
+    var start = controller_raw_page * 16 if raw else 0
+    for i in mini(24 if not raw else 16, maxi(0, values.size() - start)):
+        var index = start + i
+        var columns = 4 if raw else 8
+        var at = pos + Vector2((i % columns) * (144 if raw else 72), (i / columns) * (26 if raw else 30))
+        var down = float(values[index]) > 0.1
+        window(at, Vector2(136 if raw else 64, 24 if raw else 26), SELECT if down else INK, YELLOW if down else EDGE, false)
+        text_at(at + Vector2(7, 20), "%d: %.2f" % [index, float(values[index])] if raw else str(index), 19, YELLOW if down else MUTED)
+
+func draw_controller_test() -> void:
+    backdrop()
+    page_title("CONTROLLER TEST", "Move sticks / press buttons. Read-only: bindings and deadzones stay as they are.")
+    if controller_snapshot.is_empty() or Time.get_ticks_msec() >= controller_sample_at:
+        controller_snapshot = sample_controller()
+        controller_sample_at = Time.get_ticks_msec() + 50
+    var info = controller_snapshot
+    window(Vector2(64, 276), Vector2(1312, 118))
+    text_at(Vector2(86, 312), "Godot pad #%d: %s" % [controller_device, str(info.name)] if info.connected else "No controller detected — connect a pad and move a stick.", 25, YELLOW, false, 1266)
+    text_at(Vector2(86, 349), "GUID: " + str(info.guid), 22, CYAN, false, 1266)
+    text_at(Vector2(86, 380), ("Known mapping" if info.known else "Unknown mapping") + " / " + controller_last_button, 21, MUTED, false, 1266)
+    window(Vector2(64, 414), Vector2(640, 366))
+    window(Vector2(736, 414), Vector2(640, 366))
+    text_at(Vector2(86, 449), "GODOT AXES / BUTTON NUMBERS", 22, CYAN, true)
+    if info.connected:
+        probe_axes(Vector2(86, 470), info.axes, false)
+        probe_buttons(Vector2(86, 654), info.buttons, false)
+    else: paragraph(Vector2(86, 510), "Waiting for a controller. No input settings are changed here.", 590, 25, MUTED, 3)
+    var browser = info.browser
+    var raw: Dictionary = {}
+    for entry in browser:
+        if int(entry.index) == controller_device: raw = entry
+    if raw.is_empty() and browser.size() == 1: raw = browser[0]
+    if not raw.is_empty():
+        text_at(Vector2(758, 449), "RAW BROWSER #%d / %s" % [int(raw.index), str(raw.mapping) if raw.mapping != "" else "non-standard"], 22, CYAN, true, 592)
+        probe_axes(Vector2(758, 470), raw.axes, true)
+        probe_buttons(Vector2(758, 650), raw.buttons, true)
+        text_at(Vector2(758, 778), "%d axes / %d buttons / %s" % [raw.axes.size(), raw.buttons.size(), str(raw.name)], 19, MUTED, false, 592)
+    else:
+        text_at(Vector2(758, 449), "RAW BROWSER INPUT", 22, CYAN, true)
+        paragraph(Vector2(758, 510), "Raw browser values are available in the Web build." if not OS.has_feature("web") else "No raw browser pad available. Press a button to let the browser detect it.", 592, 25, MUTED, 4)
+    if info.devices.size() > 1:
+        button(Vector2(64, 800), Vector2(260, 56), "Previous pad", "controller_cycle", -1)
+        button(Vector2(340, 800), Vector2(260, 56), "Next pad", "controller_cycle", 1)
+    if not raw.is_empty(): button(Vector2(620, 800), Vector2(380, 56), "Raw page %d / 4" % [controller_raw_page + 1], "controller_raw_page")
+    button(Vector2(1020, 800), Vector2(356, 56), "Back", "options")
+    text_at(Vector2(66, 884), "B / Esc: Return     Keyboard Left / Right: Pad     A is tested here; it does not close the page.", 21, MUTED, false, 1310)
 
 func draw_controls() -> void:
     backdrop()
@@ -1726,17 +1870,21 @@ func draw_choice_overlay() -> void:
     # Actions: apply (fresh press) or close; the offer keeps waiting.
     var actions_y = band.position.y + 450 if handheld() else band.position.y + 442
     var verb = {"relic": "Fit This Part", "level": "Apply Upgrade", "milestone": "Take Milestone"}.get(kind, "Choose")
-    button(Vector2(band.position.x, actions_y), Vector2(band.size.x - 276, 50 if handheld() else 46), verb, "choice", choice_preview, true)
-    keycap(Vector2(band.position.x + band.size.x - 276 - 92, actions_y + 9), "A" if pad() else "ENTER", 76)
-    button(Vector2(band.position.x + band.size.x - 260, actions_y), Vector2(260, 50 if handheld() else 46), "Later", "choice_later")
-    keycap(Vector2(band.position.x + band.size.x - 64, actions_y + 9), "B" if pad() else "ESC", 50)
+    var apply_width = 360.0 if handheld() else 280.0
+    var later_width = 180.0 if handheld() else 160.0
+    var reroll_width = band.size.x - apply_width - later_width - 32
+    var height = 50.0 if handheld() else 46.0
+    button(Vector2(band.position.x, actions_y), Vector2(apply_width, height), verb, "choice", choice_preview, true)
+    button(Vector2(band.position.x + apply_width + 16, actions_y), Vector2(later_width, height), "Later", "choice_later")
+    var reroll_pos = Vector2(band.end.x - reroll_width, actions_y)
+    if game.can_reroll_choice(): button(reroll_pos, Vector2(reroll_width, height), "Reroll ×%d" % game.rerolls_left, "reroll")
+    else: disabled_button(reroll_pos, Vector2(reroll_width, height), "Stat pick" if kind == "level" else "Rerolled" if int(game.choice_source.get("rerolls", 0)) > 0 else "No rerolls")
     # Quiet hints under the band, clear of the parts row and the dash meter.
     var hint_y = band.end.y + 30
     keycap(Vector2(band.position.x, hint_y - 22), "D-PAD" if pad() else "←→", 46 if not pad() else 66)
     text_at(Vector2(band.position.x + (78 if pad() else 56), hint_y), "Browse", 20, MUTED)
-    if not pad():
-        keycap(Vector2(band.position.x + 148, hint_y - 22), "1 2 3", 62)
-        text_at(Vector2(band.position.x + 220, hint_y), "Quick pick", 20, MUTED)
+    keycap(Vector2(band.position.x + 160, hint_y - 22), "Y" if pad() else "R", 50)
+    text_at(Vector2(band.position.x + 220, hint_y), "Reroll", 20, MUTED)
     keycap(Vector2(band.position.x + 360, hint_y - 22), p("parts"), 54)
     text_at(Vector2(band.position.x + 428, hint_y), "Close · picks keep waiting", 20, MUTED, false, band.size.x - 428)
 
@@ -1784,11 +1932,12 @@ func draw_end() -> void:
     var next_unlock = 40 if game.meta.kills < 40 else 100 if game.meta.kills < 100 else 220
     text_at(Vector2(948, 673), "%d to next unlock" % (next_unlock - game.meta.kills) if game.meta.kills < 220 else "All parts unlocked!", 27, YELLOW)
     if game.net.active():
-        button(Vector2(64, 764), Vector2(620, 62), "Workshop / Spend Zenny", "workshop", 0, true)
-        button(Vector2(716, 764), Vector2(660, 62), confirm_label("leave_online", 0, "Leave Lobby"), "leave_online")
+        button(Vector2(64, 764), Vector2(430, 62), "Workshop / Spend Zenny", "workshop", 0, true)
+        button(Vector2(964, 764), Vector2(412, 62), confirm_label("leave_online", 0, "Leave Lobby"), "leave_online")
     else:
-        button(Vector2(64, 764), Vector2(620, 62), "Workshop / Spend Zenny", "workshop", 0, true)
-        button(Vector2(716, 764), Vector2(660, 62), "Return to Title", "title")
+        button(Vector2(64, 764), Vector2(430, 62), "Workshop / Spend Zenny", "workshop", 0, true)
+        button(Vector2(964, 764), Vector2(412, 62), "Return to Title", "title")
+    button(Vector2(518, 764), Vector2(422, 62), "Dig Log / Playtest", "run_log")
     icon(Vector2(64, 848), "save", 32)
     text_at(Vector2(108, 873), ("%s / +%d pending / %d in wallet" % [game.account.status, game.account.pending_zenny(), game.meta.zenny]) if game.profile_source == "account" else "+%d Zenny earned / %d in wallet" % [game.zenny_earned, game.meta.zenny], 23, YELLOW)
 
@@ -2378,3 +2527,66 @@ func draw_relay_meter() -> void:
     var hint = "Stand in the lit ring to charge it" if relay.active else "Activate the console to start charging"
     window(Vector2(472, 198), Vector2(496, 39), INK, GREEN)
     text_at(Vector2(492, 226), hint, 22, GREEN, false, 460)
+
+# Local diagnostic history. No profile/account identifiers are stored or shown.
+func log_build_lines(build: Dictionary) -> Array:
+    var lines = []
+    var character = clampi(int(build.get("character", 0)), 0, DiverCharacter.COUNT - 1)
+    var weapon = clampi(int(build.get("weapon", 0)), 0, 3)
+    lines.append("%s / %s / Lv. %d" % [DiverCharacter.DISPLAY_NAMES[character], ["Pulse", "Needle", "Siege", "Salvage"][weapon], int(build.get("level", 1))])
+    if str(build.get("spec", "")) != "": lines.append("Specialization: " + str(build.spec))
+    for id in build.get("items", {}): lines.append("%s ×%d" % [game.ITEMS.get(id, {"name":id}).name, int(build.items[id])])
+    if build.has("power_picks") or build.has("haste_picks"): lines.append("Power picks %d / Haste picks %d" % [int(build.get("power_picks", 0)), int(build.get("haste_picks", 0))])
+    else: lines.append("Base power %.1f / rate ×%.2f" % [float(build.get("base_damage", 12)), float(build.get("fire_multiplier", 1))])
+    for id in build.get("milestones", []): lines.append(game.MILESTONES.get(id, {"name":id}).name)
+    if not build.get("skills", []).is_empty(): lines.append("Circuits: " + ", ".join(build.skills))
+    return lines
+
+func draw_run_log() -> void:
+    backdrop()
+    page_title("DIG LOG", "Last 20 digs on this device. Timings cover observed play; Life lost is sampled after physics.")
+    var notes = game.run_log
+    if notes.runs.is_empty():
+        paragraph(Vector2(92, 340), "No completed digs logged yet. The next dig will appear here when it ends.", 1180, 30, WHITE, 3)
+        button(Vector2(1020, 800), Vector2(356, 56), "Back", "end")
+        return
+    run_log_index = clampi(run_log_index, 0, notes.runs.size() - 1)
+    var record: Dictionary = notes.runs[run_log_index]
+    window(Vector2(64, 276), Vector2(1312, 62))
+    text_at(Vector2(88, 317), "DIG %d / %d · B%d · %s · %.1f Life lost · %d picks / %d rerolls" % [run_log_index + 1, notes.runs.size(), int(record.depth), "COMPLETE" if record.won else ("INTERRUPTED" if record.get("interrupted", false) else "ENDED"), float(record.life_lost), int(record.pick_count), int(record.reroll_count)], 24, YELLOW, false, 1260)
+    var guardians: Array = record.guardians
+    run_log_guardian = clampi(run_log_guardian, 0, maxi(0, guardians.size() - 1))
+    for depth_index in 3:
+        var pos = Vector2(64 + depth_index * 446, 356)
+        window(pos, Vector2(420, 128))
+        var index = -1
+        for i in guardians.size():
+            if int(guardians[i].depth) == depth_index + 1: index = i
+        if index < 0:
+            text_at(pos + Vector2(20, 40), "B%d · No fight recorded" % (depth_index + 1), 23, MUTED)
+        else:
+            var row: Dictionary = guardians[index]
+            button(pos, Vector2(420, 60), "B%d · %.1fs%s · %s" % [int(row.depth), float(row.seconds), "*" if row.partial else "", "DOWN" if row.defeated else "ENDED"], "log_guardian", index)
+            text_at(pos + Vector2(20, 99), "Life lost %.1f / Lv. %d" % [float(row.life_lost), int(row.build.get("level", 1))], 23, CYAN)
+    window(Vector2(64, 500), Vector2(640, 280))
+    window(Vector2(736, 500), Vector2(640, 280))
+    text_at(Vector2(88, 538), ("B%d BUILD AT FIRST OBSERVED FIGHT" % int(guardians[run_log_guardian].depth)) if not guardians.is_empty() else "BUILD AT FIRST OBSERVED FIGHT", 22, CYAN, true)
+    var lines = log_build_lines(guardians[run_log_guardian].build) if not guardians.is_empty() else ["No guardian engaged."]
+    var pages = maxi(1, ceili(lines.size() / 7.0))
+    run_log_build_page %= pages
+    for row in mini(7, lines.size() - run_log_build_page * 7): text_at(Vector2(88, 572 + row * 28), str(lines[row + run_log_build_page * 7]), 22, WHITE, false, 590)
+    text_at(Vector2(758, 538), "PICKS / REROLLS", 22, CYAN, true)
+    var events: Array = record.events
+    var event_pages = maxi(1, ceili(events.size() / 5.0))
+    run_log_events_page %= event_pages
+    for row in mini(5, events.size() - run_log_events_page * 5):
+        var event: Dictionary = events[events.size() - 1 - run_log_events_page * 5 - row]
+        var id = str(event.item)
+        var title = game.ITEMS.get(id, game.MILESTONES.get(id, {"name":id})).name if id != "" else " / ".join(event.cards)
+        text_at(Vector2(758, 574 + row * 39), "B%d %s · %s" % [int(event.depth), str(event.kind).capitalize(), title], 22, YELLOW if event.kind == "reroll" else WHITE, false, 590)
+    if pages > 1: small_button(Vector2(64, 798), Vector2(292, 42), "Build page %d/%d" % [run_log_build_page + 1, pages], "log_build_page")
+    if event_pages > 1: small_button(Vector2(372, 798), Vector2(292, 42), "Picks page %d/%d" % [run_log_events_page + 1, event_pages], "log_events_page")
+    if run_log_index > 0: small_button(Vector2(686, 798), Vector2(190, 42), "Older dig", "log_dig", -1)
+    if run_log_index + 1 < notes.runs.size(): small_button(Vector2(892, 798), Vector2(190, 42), "Newer dig", "log_dig", 1)
+    button(Vector2(1100, 798), Vector2(276, 56), "Back", "end")
+    text_at(Vector2(66, 884), "* Partial fight / reconnect gaps excluded. Same-tick healing can hide Life lost." if notes.storage_ok else "Local log could not save. Your progress and checkpoint are independent.", 21, MUTED, false, 1310)

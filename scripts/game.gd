@@ -113,7 +113,7 @@ var movement_heading = Vector3.FORWARD
 var test_enemy: DiverEnemy
 const SAVE_PATH = "res://save/archive.json"
 const WEB_SAVE_PATH = "user://archive.json"
-const OVERLAY_MODES = ["pause", "options", "controls", "inventory", "choice"]
+const OVERLAY_MODES = ["pause", "options", "controls", "controller_test", "inventory", "choice"]
 var save_path = SAVE_PATH
 # Online co-op state. Remote teammates are DiverPlayer proxies keyed by lobby slot.
 var net: DiverNet
@@ -130,6 +130,10 @@ var pickup_seq = 0
 # Solo opens a new pick at once and pauses; online, picks wait until the
 # digger opens them with the parts button while the dig carries on.
 var pending_choices: Array = []
+# Personal descent budget; carried by builds/checkpoints, never account currency.
+var rerolls_left = 1
+var rerolls_depth = 0
+var rerolls_run_id = ""
 var choice_source: Dictionary = {}
 const LEVEL_CHOICES = ["power", "vitality", "haste"]
 # A full dig has roughly 30 caches, 15 levels and 2 milestones, so a digger who
@@ -195,6 +199,9 @@ var pings: Array = []
 var spectate_index = 0
 var leave_guard = false
 var logged_checkpoint = ""
+var run_log: DiverRunLog
+var run_log_path = ""
+var info_publisher: DiverInfoPublisher
 
 func _ready() -> void:
 	# Keep paths a test assigned before adding the game, so checks never touch real saves.
@@ -210,6 +217,10 @@ func _ready() -> void:
 	net = DiverNet.new()
 	net.game = self
 	add_child(net)
+	info_publisher = DiverInfoPublisher.new()
+	info_publisher.game = self
+	info_publisher.published.connect(func(build): net.broadcast([DiverNet.M_INFO, build]))
+	add_child(info_publisher)
 	account = DiverAccount.new()
 	account.game = self
 	account.cache_root = DiverPaths.pick("res://save/accounts", "user://accounts")
@@ -221,6 +232,10 @@ func _ready() -> void:
 	android_updates = DiverAndroidUpdates.new()
 	android_updates.game = self
 	add_child(android_updates)
+	run_log = DiverRunLog.new()
+	run_log.game = self
+	run_log.path = run_log_path if run_log_path != "" else save_path.get_base_dir().path_join("dig-log.json")
+	add_child(run_log)
 	setup_environment()
 	var canvas = CanvasLayer.new()
 	add_child(canvas)
@@ -909,9 +924,9 @@ func milestone_owed_or_taken(at_depth: int) -> bool:
 
 # Three distinct milestones, weighted by fitted parts. Seeded by the dig, the
 # descent and the digger, so a rejoin or reload sees the same offer.
-func milestone_offer(at_depth: int, who: DiverPlayer) -> Array:
+func milestone_offer(at_depth: int, who: DiverPlayer, rerolls: int = 0) -> Array:
 	var picker = RandomNumberGenerator.new()
-	picker.seed = hash("%s/%d/%s/%d" % [run_id, at_depth, who.player_id, who.character])
+	picker.seed = hash("%s/%d/%s/%d" % [run_id, at_depth, who.player_id, who.character]) if rerolls == 0 else hash("%s/milestone:%d/%d/%s" % [run_id, at_depth, rerolls, who.player_id])
 	var options = []
 	var weights = []
 	for id in MILESTONES:
@@ -949,7 +964,7 @@ func earn_level(level: int) -> void:
 	else: auto_open_choice = true  # the overlay plays the level chime as it opens
 
 func choice_entry(kind: String, id: String, at_depth: int, cache: int = -1, items: Array = []) -> Dictionary:
-	return {"kind": kind, "id": id, "depth": clampi(at_depth, 1, 3), "cache": cache, "items": items.duplicate()}
+	return {"kind": kind, "id": id, "depth": clampi(at_depth, 1, 3), "cache": cache, "items": items.duplicate(), "rerolls": 0}
 
 # Solo shows a new pick straight away; online (or behind another menu, or
 # while downed) it waits and the HUD says so.
@@ -1026,7 +1041,8 @@ func present_next_choice() -> void:
 # and the digger: the same offer every time, without drawing on gameplay RNG.
 func relic_offer(entry: Dictionary) -> Array:
 	var picker = RandomNumberGenerator.new()
-	picker.seed = hash("%s/%s/%s" % [run_id, str(entry.get("id", "")), net.player_id])
+	var rerolls = clampi(int(entry.get("rerolls", 0)), 0, 1)
+	picker.seed = hash("%s/%s/%s" % [run_id, str(entry.get("id", "")), net.player_id]) if rerolls == 0 else hash("%s/%s/%d/%s" % [run_id, str(entry.get("id", "")), rerolls, net.player_id])
 	var options = pool()
 	var result = []
 	# Relay vaults (ROOM-01): skip your most-stacked part and favour ones you hold fewer of.
@@ -1047,6 +1063,46 @@ func relic_offer(entry: Dictionary) -> Array:
 		result.append(options[index])
 		options.remove_at(index)
 	return result
+
+# Refill only for a new run or a later descent. Applying a saved build below
+# restores the spent budget before any offer is opened, so rejoin grants nothing.
+func ensure_reroll_budget() -> void:
+	if rerolls_run_id != run_id or rerolls_depth == 0:
+		rerolls_run_id = run_id
+		rerolls_depth = depth
+		rerolls_left = 1
+	elif depth > rerolls_depth:
+		rerolls_depth = depth
+		rerolls_left = 1
+
+func clean_rerolls(value: Variant, fallback: int = 1) -> int:
+	if (value is int or value is float) and is_finite(float(value)) and float(value) == floor(float(value)):
+		return clampi(int(value), 0, 1)
+	return fallback
+
+func can_reroll_choice() -> bool:
+	ensure_reroll_budget()
+	return mode == "choice" and is_instance_valid(player) and not player.downed and choice_kind in ["relic", "milestone"] and choice_items.size() == 3 and rerolls_left > 0 and clean_rerolls(choice_source.get("rerolls", 0)) == 0
+
+func reroll_choice() -> bool:
+	if not can_reroll_choice() or not choice_input_ready(): return false
+	var entry = open_choice_entry()
+	entry.rerolls = 1
+	var cards = milestone_offer(int(entry.depth), player, 1) if choice_kind == "milestone" else relic_offer(entry)
+	if cards.size() != 3: return false
+	# Commit cards and budget together before publishing any recovery snapshot.
+	entry.items = cards.duplicate()
+	rerolls_left -= 1
+	run_log.event("reroll", entry)
+	choice_source = entry
+	choice_items = cards.duplicate()
+	hud.choice_preview = 0
+	hud.pointer = Vector2(-100, -100)
+	arm_choice()
+	sound.play("menu_confirm")
+	build_changed()
+	save_checkpoint()
+	return true
 
 func arm_choice() -> void:
 	choice_need_release = choice_confirm_held()
@@ -1126,13 +1182,14 @@ func clean_pending(value: Variant) -> Array:
 		var id = clean_choice_id(entry.get("id", ""), kind, at_depth, cache, result.size())
 		if seen.has(id): continue
 		seen[id] = true
-		result.append({"kind": kind, "id": id, "depth": at_depth, "cache": cache, "items": items})
+		result.append({"kind": kind, "id": id, "depth": at_depth, "cache": cache, "items": items, "rerolls": clean_rerolls(entry.get("rerolls", 0)) if kind != "level" else 0})
 	return result
 
 # Cache and milestone ids are rebuilt from their event so forged ids can't
 # sidestep the one-pick-per-event rule; level and loose part ids are kept when well formed.
 func clean_choice_id(value: Variant, kind: String, at_depth: int, cache: int, index: int) -> String:
 	if kind == "milestone": return "milestone:%d" % at_depth
+	if kind == "relic" and value is String and value == "relay:%d" % at_depth: return value
 	if kind == "relic" and cache >= 0: return "cache:%d:%d" % [at_depth, cache]
 	var prefix = "level:" if kind == "level" else "relic:"
 	var text = str(value) if value is String else ""
@@ -1145,6 +1202,7 @@ func clean_choice_id(value: Variant, kind: String, at_depth: int, cache: int, in
 func choose(index: int) -> void:
 	if index < 0 or index >= choice_items.size() or mode != "choice": return
 	var selected: String = choice_items[index]
+	run_log.event("pick", open_choice_entry(), selected)
 	var at_depth = int(choice_source.get("depth", depth))
 	# Reward helpers can publish the build synchronously. Retire the offer first
 	# so a peer's recovery snapshot cannot contain an already-applied reward.
@@ -1280,6 +1338,7 @@ func finish_run(won: bool) -> void:
 			return
 		finish_account_run(won)
 		return
+	run_log.finish(won)
 	run_recorded = true
 	outcome = won
 	zenny_earned = DiverProgression.reward(depth, depth - 1 + int(guardian_dead), scrap)
@@ -1345,6 +1404,7 @@ func run_outcome(won: bool, abandoned: bool = false) -> Dictionary:
 	return {"won": won, "depth": depth, "guardians": depth - 1 + int(guardian_dead), "scrap": scrap, "kills": kills, "run_time": run_time, "character": selected_character, "abandoned": abandoned}
 
 func finish_account_run(won: bool) -> void:
+	run_log.finish(won)
 	run_recorded = true
 	outcome = won
 	zenny_earned = DiverProgression.reward(depth, depth - 1 + int(guardian_dead), scrap)
@@ -1750,6 +1810,9 @@ func build_state() -> Dictionary:
 	var state = {"id": net.player_id, "name": net.player_name, "character": p.character, "weapon": p.weapon, "skills": p.skills.duplicate(), "spec": p.spec, "milestones": p.milestones.duplicate(), "milestone_depths": p.milestone_depths.duplicate(), "second_wind_depth": p.second_wind_depth, "shot_count": p.shot_count, "repair_cooldown": p.repair_cooldown, "items": p.items.duplicate(), "level": p.level, "xp": p.xp, "xp_required": p.xp_required, "base_health": p.base_health, "base_damage": p.base_damage, "fire_multiplier": p.fire_multiplier, "hp": p.hp, "downed": p.downed, "pending": waiting}
 	state.power_picks = p.power_picks
 	state.haste_picks = p.haste_picks
+	ensure_reroll_budget()
+	state.rerolls_left = rerolls_left
+	state.rerolls_depth = rerolls_depth
 	return state
 
 func apply_build(b: Dictionary) -> void:
@@ -1786,9 +1849,13 @@ func apply_build(b: Dictionary) -> void:
 	p.downed = bool(b.get("downed", false)) or p.hp <= 0
 	if p.downed: p.hp = 0
 	p.visual.current_clip = ""
+	rerolls_run_id = run_id
+	rerolls_depth = clampi(int(b.get("rerolls_depth", depth)), 1, 3)
+	rerolls_left = clean_rerolls(b.get("rerolls_left", 1), 0)
 	pending_choices = clean_pending(restored_choices(b))
 	choice_source = {}
 	auto_open_choice = false
+	if is_instance_valid(run_log): run_log.reset_baseline()
 	# Restored picks wait in the queue; the overlay never reopens by itself.
 	if mode == "choice": finish_choices()
 
@@ -2011,7 +2078,7 @@ func discard_saved_dig() -> void:
 
 # --- connection, hosting and lobby events ---------------------------------------
 
-func send_info() -> void:
+func send_info(force: bool = false) -> void:
 	if not is_instance_valid(player): return
 	var build = build_state()
 	if mode in ["lobby", "online", "title"]:
@@ -2021,8 +2088,9 @@ func send_info() -> void:
 		build.spec = equipped_spec(selected_character)
 	if net.active():
 		roster[net.player_id] = build
-		net.broadcast([DiverNet.M_INFO, build])
+		info_publisher.submit(build, force)
 		if not in_run(): net.publish_selection()
+	else: info_publisher.clear()
 
 func send_state() -> void:
 	var p = player
@@ -2314,7 +2382,8 @@ func lobby_updated() -> void:
 			remote_players[member_slot].player_id = net.member_id(member_slot)
 
 func peer_entered(member_slot: int, id: String) -> void:
-	send_info()
+	info_publisher.clear()
+	send_info(true)
 	# The newcomer may be a returning digger: hand back their build with the world.
 	if net.is_host() and in_run(): net.send(member_slot, [DiverNet.M_SYNC, world_state(), roster.get(id, {})])
 
