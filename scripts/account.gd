@@ -10,6 +10,8 @@ class_name DiverAccount
 # this device's Guest progress is discarded.
 signal changed
 signal message(text: String)
+# UI receipts observe the existing operation; retries keep its durable op_id.
+signal purchase_settled(operation_id: String, outcome: String)
 var game: Node
 var transport: Callable
 var cache_root = "user://accounts"
@@ -302,6 +304,8 @@ func flush() -> void:
 	pump()
 
 func operation_done(code: int, data: Dictionary, headers: PackedStringArray) -> void:
+	var operation: Dictionary = outbox[0].duplicate(true)
+	var outcome = ""
 	var error = data.get("error", {})
 	var reason = str(error.get("code", "")) if error is Dictionary else str(error)
 	if code >= 200 and code < 300:
@@ -317,6 +321,7 @@ func operation_done(code: int, data: Dictionary, headers: PackedStringArray) -> 
 				if game.ITEMS.has(id): game.new_unlocks.append(game.ITEMS[id].name)
 		outbox.pop_front()
 		attempts = 0
+		outcome = "confirmed"
 	elif code == 401:
 		state = "needs_sign_in"
 		status = "Sign-in needed"
@@ -327,6 +332,7 @@ func operation_done(code: int, data: Dictionary, headers: PackedStringArray) -> 
 		if reason == "not_empty" and outbox[0].path == "/api/v1/migrate-guest": game.discard_guest_progress()
 		message.emit("Your progress changed on another device. Please retry the purchase." if reason == "revision_conflict" else "Progress operation refused: " + reason)
 		outbox.pop_front()
+		outcome = reason if reason != "" else "refused"
 	else:
 		attempts += 1
 		retry_wait = minf(120, pow(2, mini(attempts, 7)))
@@ -338,8 +344,10 @@ func operation_done(code: int, data: Dictionary, headers: PackedStringArray) -> 
 	if not write_file("outbox.json", outbox):
 		status = "Offline"
 		retry_wait = 10
+		if operation.path == "/api/v1/purchases": purchase_settled.emit(str(operation.body.op_id), outcome)
 		return
 	status = "Synced" if outbox.is_empty() else "Saving"
+	if operation.path == "/api/v1/purchases": purchase_settled.emit(str(operation.body.op_id), outcome)
 	changed.emit()
 	flush()
 

@@ -301,7 +301,7 @@ func run() -> void:
 	verify(game.hud.grid_zoom_step == 2 and game.hud.GRID_RECT.has_point(game.hud.grid_point(game.hud.focus_index - tabs)), "Zooming in keeps the focused node visible")
 	game.hud.activate("grid_center")
 	verify(game.hud.grid_zoom_step == 1 and game.hud.grid_center == Vector2(0, 2.4), "Recenter restores the overview")
-	# Accepting a node buys it only when it is linked and affordable.
+	# Linked, affordable nodes are reviewed before an explicit purchase.
 	var wallet = game.meta.zenny
 	var probe = 3 - start_character if start_character != 3 else 0
 	game.hud.select_workshop_character(probe)
@@ -310,8 +310,15 @@ func run() -> void:
 	game.hud.activate("grid_node", index_of.call("mobility"))
 	verify(not "mobility" in DiverProgression.owned(game.meta, probe) and game.hud.workshop_message.begins_with("Buy a linked"), "Unlinked node explains the missing link")
 	game.hud.activate("grid_node", index_of.call("frame"))
+	verify(game.mode == "purchase_review" and game.meta.zenny == 1000, "Selecting a linked node opens review without spending")
+	game.hud.purchase_lock_until = 0
+	game.hud.confirm_purchase()
+	game.hud.close_purchase_review()
 	game.hud.activate("grid_node", index_of.call("mobility"))
-	verify(DiverProgression.owned(game.meta, probe) == ["frame", "mobility"] and game.meta.zenny == 760, "Linked nodes are bought from the grid")
+	game.hud.purchase_lock_until = 0
+	game.hud.confirm_purchase()
+	game.hud.close_purchase_review()
+	verify(DiverProgression.owned(game.meta, probe) == ["frame", "mobility"] and game.meta.zenny == 760, "Explicitly confirmed linked nodes are bought from the grid")
 	game.meta.zenny = 0
 	game.hud.select_workshop_character(start_character)
 	game.hud.queue_redraw()
