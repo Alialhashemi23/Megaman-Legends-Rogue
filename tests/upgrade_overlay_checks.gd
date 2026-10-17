@@ -137,6 +137,28 @@ func run() -> void:
 	game.finish_run(false)
 	verify(game.pending_choices.is_empty(), "Unpicked upgrades expire with the dig")
 
+	# The build published to teammates is the recovery source if a digger drops
+	# immediately after B or their final pick, before a local checkpoint refresh.
+	for kind in ["relic", "level", "milestone"]:
+		game.start_run(4242, 2, "overlay-published-" + kind)
+		var offered = ["lens", "coil", "echo"] if kind == "relic" else game.LEVEL_CHOICES.duplicate() if kind == "level" else game.milestone_offer(1, game.player)
+		var entry = game.choice_entry(kind, "cache:1:7" if kind == "relic" else "level:2" if kind == "level" else "milestone:1", 1, 7 if kind == "relic" else -1, offered)
+		game.enqueue_choice(entry)
+		game.open_pending_choice()
+		game.close_choice()
+		var published: Dictionary = game.roster[game.net.player_id].duplicate(true)
+		verify(published.pending.size() == 1, "Closing %s publishes exactly one waiting offer" % kind)
+		game.apply_build(published)
+		verify(game.pending_choices.size() == 1 and game.pending_choices[0].id == entry.id, "Reconnect immediately after closing %s keeps the original event once" % kind)
+		game.pending_choices = [entry.duplicate(true)]
+		game.open_pending_choice()
+		game.choose(0)
+		published = game.roster[game.net.player_id].duplicate(true)
+		verify(published.pending.is_empty(), "Taking the final %s publishes no unapplied offer" % kind)
+		game.apply_build(published)
+		verify(game.pending_choices.is_empty(), "Reconnect after taking %s cannot grant it again" % kind)
+		game.finish_run(false)
+
 	game.net.slot = 0
 	game.net.host_slot = 0
 	game.net.lobby = {}

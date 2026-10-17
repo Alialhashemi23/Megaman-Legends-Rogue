@@ -1035,9 +1035,10 @@ func close_choice() -> void:
 	if mode != "choice": return
 	var entry = open_choice_entry()
 	choice_source = {}
+	choice_items = []
 	if not entry.is_empty() and not choice_known(str(entry.id)): pending_choices.push_front(entry)
-	build_changed()
 	finish_choices()
+	build_changed()
 
 func finish_choices() -> void:
 	choice_need_release = false
@@ -1096,27 +1097,31 @@ func clean_choice_id(value: Variant, kind: String, at_depth: int, cache: int, in
 # is needed) or closes when none are left.
 func choose(index: int) -> void:
 	if index < 0 or index >= choice_items.size() or mode != "choice": return
+	var selected: String = choice_items[index]
+	var at_depth = int(choice_source.get("depth", depth))
+	# Reward helpers can publish the build synchronously. Retire the offer first
+	# so a peer's recovery snapshot cannot contain an already-applied reward.
+	choice_source = {}
+	choice_items = []
 	if choice_kind == "milestone":
-		var id: String = choice_items[index]
-		var at_depth = int(choice_source.get("depth", depth))
+		var id: String = selected
 		if id not in player.milestones and at_depth not in player.milestone_depths:
 			player.milestones.append(id)
 			player.milestone_depths.append(at_depth)
 			sound.play("win")
 			notify("MILESTONE / " + MILESTONES[id].name.to_upper(), MILESTONES[id].desc)
 	elif choice_kind == "relic":
-		player.add_item(choice_items[index])
+		player.add_item(selected)
 	else:
-		match choice_items[index]:
+		match selected:
 			"power": player.base_damage += 3; notify("BUSTER CALIBRATED", "+3 base damage")
 			"vitality": player.base_health += 20; player.heal(35); notify("CORE EXPANDED", "+20 maximum health · restore 35 health")
 			"haste": player.fire_multiplier += 0.15; notify("CAPACITOR TUNED", "+15% base fire rate")
-	choice_source = {}
 	choice_picks += 1
 	if not pending_choices.is_empty() and not player.downed: present_next_choice()
 	else:
-		build_changed()
 		finish_choices()
+		build_changed()
 
 func drop_pickup(pos: Vector3, kind: String, value: float) -> void:
 	if net.is_guest(): return
