@@ -51,6 +51,7 @@ var page_focus: Dictionary = {}
 var pending_focus: Dictionary = {}
 var accept_held = false
 var back_held = false
+var reroll_held = false
 var name_edit: LineEdit
 var code_edit: LineEdit
 var server_edit: LineEdit
@@ -554,6 +555,13 @@ func button(pos: Vector2, size: Vector2, title: String, action: String, value: i
     hits.append({"rect": area, "action": action, "value": value})
 
 func _input(event: InputEvent) -> void:
+    var reroll_event = (event is InputEventKey and (event.keycode == KEY_R or event.physical_keycode == KEY_R)) or (event is InputEventJoypadButton and event.button_index == JOY_BUTTON_Y)
+    if reroll_event and not event.is_echo():
+        if not event.is_pressed(): reroll_held = false
+        elif reroll_held:
+            get_viewport().set_input_as_handled()
+            return
+        else: reroll_held = true
     # Release is observed even while a text field or a different page owns input.
     # Repeated pressed events cannot carry a held A/Enter/B into the next layer.
     if event.is_action("nav_accept") and not event.is_echo():
@@ -627,6 +635,10 @@ func _input(event: InputEvent) -> void:
     if event is InputEventMouseButton: return
     pointer = Vector2(-100, -100)
     pointer_travel = 0.0
+    if game.mode == "choice" and reroll_event:
+        game.reroll_choice()
+        get_viewport().set_input_as_handled()
+        return
     if game.mode == "workshop" and ((event is InputEventKey and event.keycode == KEY_Z) or (event is InputEventJoypadButton and event.button_index == JOY_BUTTON_X)):
         grid_zoom_by(1 if grid_zoom_step < GRID_ZOOMS.size() - 1 else -GRID_ZOOMS.size())
         game.sound.play("menu_move")
@@ -781,6 +793,7 @@ func activate(action: String, value: int = 0) -> void:
         return
     confirming = ""
     match action:
+        "reroll": game.reroll_choice()
         "purchase_confirm": confirm_purchase()
         "purchase_cancel", "purchase_close": close_purchase_review()
         "purchase_retry":
@@ -1708,17 +1721,21 @@ func draw_choice_overlay() -> void:
     # Actions: apply (fresh press) or close; the offer keeps waiting.
     var actions_y = band.position.y + 450 if handheld() else band.position.y + 442
     var verb = {"relic": "Fit This Part", "level": "Apply Upgrade", "milestone": "Take Milestone"}.get(kind, "Choose")
-    button(Vector2(band.position.x, actions_y), Vector2(band.size.x - 276, 50 if handheld() else 46), verb, "choice", choice_preview, true)
-    keycap(Vector2(band.position.x + band.size.x - 276 - 92, actions_y + 9), "A" if pad() else "ENTER", 76)
-    button(Vector2(band.position.x + band.size.x - 260, actions_y), Vector2(260, 50 if handheld() else 46), "Later", "choice_later")
-    keycap(Vector2(band.position.x + band.size.x - 64, actions_y + 9), "B" if pad() else "ESC", 50)
+    var apply_width = 360.0 if handheld() else 280.0
+    var later_width = 180.0 if handheld() else 160.0
+    var reroll_width = band.size.x - apply_width - later_width - 32
+    var height = 50.0 if handheld() else 46.0
+    button(Vector2(band.position.x, actions_y), Vector2(apply_width, height), verb, "choice", choice_preview, true)
+    button(Vector2(band.position.x + apply_width + 16, actions_y), Vector2(later_width, height), "Later", "choice_later")
+    var reroll_pos = Vector2(band.end.x - reroll_width, actions_y)
+    if game.can_reroll_choice(): button(reroll_pos, Vector2(reroll_width, height), "Reroll ×%d" % game.rerolls_left, "reroll")
+    else: disabled_button(reroll_pos, Vector2(reroll_width, height), "Stat pick" if kind == "level" else "Rerolled" if int(game.choice_source.get("rerolls", 0)) > 0 else "No rerolls")
     # Quiet hints under the band, clear of the parts row and the dash meter.
     var hint_y = band.end.y + 30
     keycap(Vector2(band.position.x, hint_y - 22), "D-PAD" if pad() else "←→", 46 if not pad() else 66)
     text_at(Vector2(band.position.x + (78 if pad() else 56), hint_y), "Browse", 20, MUTED)
-    if not pad():
-        keycap(Vector2(band.position.x + 148, hint_y - 22), "1 2 3", 62)
-        text_at(Vector2(band.position.x + 220, hint_y), "Quick pick", 20, MUTED)
+    keycap(Vector2(band.position.x + 160, hint_y - 22), "Y" if pad() else "R", 50)
+    text_at(Vector2(band.position.x + 220, hint_y), "Reroll", 20, MUTED)
     keycap(Vector2(band.position.x + 360, hint_y - 22), p("parts"), 54)
     text_at(Vector2(band.position.x + 428, hint_y), "Close · picks keep waiting", 20, MUTED, false, band.size.x - 428)
 

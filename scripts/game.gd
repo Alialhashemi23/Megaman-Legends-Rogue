@@ -126,6 +126,10 @@ var pickup_seq = 0
 # Solo opens a new pick at once and pauses; online, picks wait until the
 # digger opens them with the parts button while the dig carries on.
 var pending_choices: Array = []
+# Personal descent budget; carried by builds/checkpoints, never account currency.
+var rerolls_left = 1
+var rerolls_depth = 0
+var rerolls_run_id = ""
 var choice_source: Dictionary = {}
 const LEVEL_CHOICES = ["power", "vitality", "haste"]
 # A full dig has roughly 30 caches, 15 levels and 2 milestones, so a digger who
@@ -875,9 +879,9 @@ func milestone_owed_or_taken(at_depth: int) -> bool:
 
 # Three distinct milestones, weighted by fitted parts. Seeded by the dig, the
 # descent and the digger, so a rejoin or reload sees the same offer.
-func milestone_offer(at_depth: int, who: DiverPlayer) -> Array:
+func milestone_offer(at_depth: int, who: DiverPlayer, rerolls: int = 0) -> Array:
 	var picker = RandomNumberGenerator.new()
-	picker.seed = hash("%s/%d/%s/%d" % [run_id, at_depth, who.player_id, who.character])
+	picker.seed = hash("%s/%d/%s/%d" % [run_id, at_depth, who.player_id, who.character]) if rerolls == 0 else hash("%s/milestone:%d/%d/%s" % [run_id, at_depth, rerolls, who.player_id])
 	var options = []
 	var weights = []
 	for id in MILESTONES:
@@ -915,7 +919,7 @@ func earn_level(level: int) -> void:
 	else: auto_open_choice = true  # the overlay plays the level chime as it opens
 
 func choice_entry(kind: String, id: String, at_depth: int, cache: int = -1, items: Array = []) -> Dictionary:
-	return {"kind": kind, "id": id, "depth": clampi(at_depth, 1, 3), "cache": cache, "items": items.duplicate()}
+	return {"kind": kind, "id": id, "depth": clampi(at_depth, 1, 3), "cache": cache, "items": items.duplicate(), "rerolls": 0}
 
 # Solo shows a new pick straight away; online (or behind another menu, or
 # while downed) it waits and the HUD says so.
@@ -992,7 +996,8 @@ func present_next_choice() -> void:
 # and the digger: the same offer every time, without drawing on gameplay RNG.
 func relic_offer(entry: Dictionary) -> Array:
 	var picker = RandomNumberGenerator.new()
-	picker.seed = hash("%s/%s/%s" % [run_id, str(entry.get("id", "")), net.player_id])
+	var rerolls = clampi(int(entry.get("rerolls", 0)), 0, 1)
+	picker.seed = hash("%s/%s/%s" % [run_id, str(entry.get("id", "")), net.player_id]) if rerolls == 0 else hash("%s/%s/%d/%s" % [run_id, str(entry.get("id", "")), rerolls, net.player_id])
 	var options = pool()
 	var result = []
 	while result.size() < 3 and not options.is_empty():
@@ -1000,6 +1005,45 @@ func relic_offer(entry: Dictionary) -> Array:
 		result.append(options[index])
 		options.remove_at(index)
 	return result
+
+# Refill only for a new run or a later descent. Applying a saved build below
+# restores the spent budget before any offer is opened, so rejoin grants nothing.
+func ensure_reroll_budget() -> void:
+	if rerolls_run_id != run_id or rerolls_depth == 0:
+		rerolls_run_id = run_id
+		rerolls_depth = depth
+		rerolls_left = 1
+	elif depth > rerolls_depth:
+		rerolls_depth = depth
+		rerolls_left = 1
+
+func clean_rerolls(value: Variant, fallback: int = 1) -> int:
+	if (value is int or value is float) and is_finite(float(value)) and float(value) == floor(float(value)):
+		return clampi(int(value), 0, 1)
+	return fallback
+
+func can_reroll_choice() -> bool:
+	ensure_reroll_budget()
+	return mode == "choice" and is_instance_valid(player) and not player.downed and choice_kind in ["relic", "milestone"] and choice_items.size() == 3 and rerolls_left > 0 and clean_rerolls(choice_source.get("rerolls", 0)) == 0
+
+func reroll_choice() -> bool:
+	if not can_reroll_choice() or not choice_input_ready(): return false
+	var entry = open_choice_entry()
+	entry.rerolls = 1
+	var cards = milestone_offer(int(entry.depth), player, 1) if choice_kind == "milestone" else relic_offer(entry)
+	if cards.size() != 3: return false
+	# Commit cards and budget together before publishing any recovery snapshot.
+	entry.items = cards.duplicate()
+	rerolls_left -= 1
+	choice_source = entry
+	choice_items = cards.duplicate()
+	hud.choice_preview = 0
+	hud.pointer = Vector2(-100, -100)
+	arm_choice()
+	sound.play("menu_confirm")
+	build_changed()
+	save_checkpoint()
+	return true
 
 func arm_choice() -> void:
 	choice_need_release = choice_confirm_held()
@@ -1079,13 +1123,14 @@ func clean_pending(value: Variant) -> Array:
 		var id = clean_choice_id(entry.get("id", ""), kind, at_depth, cache, result.size())
 		if seen.has(id): continue
 		seen[id] = true
-		result.append({"kind": kind, "id": id, "depth": at_depth, "cache": cache, "items": items})
+		result.append({"kind": kind, "id": id, "depth": at_depth, "cache": cache, "items": items, "rerolls": clean_rerolls(entry.get("rerolls", 0)) if kind != "level" else 0})
 	return result
 
 # Cache and milestone ids are rebuilt from their event so forged ids can't
 # sidestep the one-pick-per-event rule; level and loose part ids are kept when well formed.
 func clean_choice_id(value: Variant, kind: String, at_depth: int, cache: int, index: int) -> String:
 	if kind == "milestone": return "milestone:%d" % at_depth
+	if kind == "relic" and value is String and value == "relay:%d" % at_depth: return value
 	if kind == "relic" and cache >= 0: return "cache:%d:%d" % [at_depth, cache]
 	var prefix = "level:" if kind == "level" else "relic:"
 	var text = str(value) if value is String else ""
@@ -1700,7 +1745,11 @@ func build_state() -> Dictionary:
 	if mode == "choice":
 		var open = open_choice_entry()
 		if not open.is_empty(): waiting.push_front(open)
-	return {"id": net.player_id, "name": net.player_name, "character": p.character, "weapon": p.weapon, "skills": p.skills.duplicate(), "spec": p.spec, "milestones": p.milestones.duplicate(), "milestone_depths": p.milestone_depths.duplicate(), "second_wind_depth": p.second_wind_depth, "shot_count": p.shot_count, "repair_cooldown": p.repair_cooldown, "items": p.items.duplicate(), "level": p.level, "xp": p.xp, "xp_required": p.xp_required, "base_health": p.base_health, "base_damage": p.base_damage, "fire_multiplier": p.fire_multiplier, "hp": p.hp, "downed": p.downed, "pending": waiting}
+	var state = {"id": net.player_id, "name": net.player_name, "character": p.character, "weapon": p.weapon, "skills": p.skills.duplicate(), "spec": p.spec, "milestones": p.milestones.duplicate(), "milestone_depths": p.milestone_depths.duplicate(), "second_wind_depth": p.second_wind_depth, "shot_count": p.shot_count, "repair_cooldown": p.repair_cooldown, "items": p.items.duplicate(), "level": p.level, "xp": p.xp, "xp_required": p.xp_required, "base_health": p.base_health, "base_damage": p.base_damage, "fire_multiplier": p.fire_multiplier, "hp": p.hp, "downed": p.downed, "pending": waiting}
+	ensure_reroll_budget()
+	state.rerolls_left = rerolls_left
+	state.rerolls_depth = rerolls_depth
+	return state
 
 func apply_build(b: Dictionary) -> void:
 	var p = player
@@ -1728,6 +1777,9 @@ func apply_build(b: Dictionary) -> void:
 	p.downed = bool(b.get("downed", false)) or p.hp <= 0
 	if p.downed: p.hp = 0
 	p.visual.current_clip = ""
+	rerolls_run_id = run_id
+	rerolls_depth = clampi(int(b.get("rerolls_depth", depth)), 1, 3)
+	rerolls_left = clean_rerolls(b.get("rerolls_left", 1), 0)
 	pending_choices = clean_pending(restored_choices(b))
 	choice_source = {}
 	auto_open_choice = false
