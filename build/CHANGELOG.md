@@ -1,5 +1,11 @@
 # Local build history
 
+## 34 — Handheld readability and camera preferences
+
+- Options now offers a device-local Standard / Handheld UI preset, independent Standard / Large minimap, and Standard / Close camera framing. Desktop defaults and existing settings keep their original view. Fresh Android installs use the handheld UI and larger map.
+- Handheld layouts use larger text, taller title actions, wider upgrade cards, clearer prompts and more room for Workshop descriptions. Options rows remain reachable, account and purchase controls fit, and map markers grow with the larger minimap. Fixed unsupported arrow glyphs in the upgrade overlay.
+- Close framing is optional and keeps the existing collision and lock-on path; FOV, combat rules, account progress and co-op loadouts are unchanged. Preferences persist on each device/browser. Physical controller, Retroid readability and owner playtest remain pending.
+
 ## 33 — Review Workshop purchases before spending
 
 - Selecting an available circuit or specialization opens a purchase review with its original digger portrait, effect, cost and wallet before/after. Cancel is selected first. A fresh Confirm spends; Back returns to the exact node. Held input and the opening double click cannot buy accidentally.

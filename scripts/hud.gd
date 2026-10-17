@@ -61,7 +61,7 @@ var copied_time = 0.0
 # Destructive buttons need a second click within a few seconds.
 const CONFIRM = ["leave_online", "leave_dig", "abandon", "kick", "discard", "start_new", "give_up", "reset_controls", "takeover", "clear_session"]
 # Options page rows: sound, display, then controls.
-const OPTIONS = ["master", "music", "effects", "ambience", "mute", "fullscreen", "camera", "fov", "mouse", "look", "invert", "vibration", "controls", "map_zoom", "back"]
+const OPTIONS = ["master", "music", "effects", "ambience", "mute", "fullscreen", "camera", "fov", "mouse", "look", "invert", "vibration", "controls", "map_zoom", "handheld_ui", "large_minimap", "close_camera", "back"]
 const MENU_MODES = ["title", "solo_prep", "pause", "options", "controls", "choice", "inventory", "archive", "end", "online", "lobby", "launch_preparing", "workshop", "purchase_review", "save_codes", "account", "android_update", "credits"]
 var credits_lines: PackedStringArray = []
 var credits_page = 0
@@ -76,7 +76,7 @@ var purchase_need_release = false
 var purchase_lock_until = 0
 const PURCHASE_ARM_MS = 200
 # Workshop grid view: centre in grid cells, zoom step, mouse-drag state.
-const GRID_RECT = Rect2(394, 366, 982, 414)
+var GRID_RECT = Rect2(394, 366, 982, 414)
 const GRID_CELL = Vector2(96, 38)
 const GRID_ZOOMS = [0.8, 1.0, 1.35]
 var grid_center = Vector2(0, 2.4)
@@ -175,7 +175,7 @@ func place_field(field: LineEdit, pos: Vector2, size: Vector2, font_size: int = 
     field.visible = true
     field.position = ui_offset + pos * ui_scale
     field.size = size * ui_scale
-    field.add_theme_font_size_override("font_size", maxi(8, int(font_size * ui_scale)))
+    field.add_theme_font_size_override("font_size", maxi(8, int(readable_size(font_size) * ui_scale)))
 
 func editing() -> bool:
     return get_viewport().gui_get_focus_owner() is LineEdit
@@ -460,7 +460,15 @@ func title_account_copy() -> Dictionary:
             return {"label": "Checking account…", "detail": "Guest progress until confirmed"}
     return {"label": "Guest / Sign in to sync", "detail": "Guest progress / this device"}
 
+func handheld() -> bool:
+    return game.settings.handheld_ui
+
+# Enlarge small copy without changing large headings or the world camera.
+func readable_size(size: int) -> int:
+    return maxi(22, roundi(size * 1.18)) if handheld() and 19 <= size and size <= 28 else size
+
 func text_at(pos: Vector2, value: String, size: int = 24, color: Color = WHITE, display: bool = false, width: float = -1) -> void:
+    size = readable_size(size)
     var face: Font = heading if display else font
     var shown = value
     if width > 0:
@@ -473,11 +481,12 @@ func paragraph(pos: Vector2, value: String, width: float, size: int = 24, color:
     var line = ""
     var y = pos.y
     var row = 1
+    var measured_size = readable_size(size)
     for word in value.split(" "):
         var proposed = line + (" " if line != "" else "") + word
-        if font.get_string_size(proposed, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x > width and line != "":
+        if font.get_string_size(proposed, HORIZONTAL_ALIGNMENT_LEFT, -1, measured_size).x > width and line != "":
             text_at(Vector2(pos.x, y), line, size, color)
-            y += size * 1.3
+            y += measured_size * 1.3
             row += 1
             line = word
             if row > max_lines: return
@@ -518,15 +527,20 @@ func pad() -> bool:
     return game.settings.using_pad
 
 func keycap(pos: Vector2, value: String, width: float = 44) -> void:
-    width = maxf(width, heading.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x + 16) if value != "↑↓" else width
-    window(pos, Vector2(width, 28), Color("d1e5ed"), WHITE, false)
+    width = maxf(width, heading.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, 20 if handheld() else 17).x + 16) if value != "↑↓" else width
+    window(pos, Vector2(width, 32 if handheld() else 28), Color("d1e5ed"), WHITE, false)
     if value == "↑↓":
         draw_colored_polygon(PackedVector2Array([pos + Vector2(11, 12), pos + Vector2(17, 5), pos + Vector2(23, 12)]), INK)
         draw_line(pos + Vector2(17, 10), pos + Vector2(17, 23), INK, 3)
         draw_colored_polygon(PackedVector2Array([pos + Vector2(27, 16), pos + Vector2(33, 23), pos + Vector2(39, 16)]), INK)
         draw_line(pos + Vector2(33, 6), pos + Vector2(33, 18), INK, 3)
+    elif value == "←→":
+        draw_colored_polygon(PackedVector2Array([pos + Vector2(6, 15), pos + Vector2(13, 8), pos + Vector2(13, 22)]), INK)
+        draw_line(pos + Vector2(12, 15), pos + Vector2(21, 15), INK, 3)
+        draw_colored_polygon(PackedVector2Array([pos + Vector2(40, 15), pos + Vector2(33, 8), pos + Vector2(33, 22)]), INK)
+        draw_line(pos + Vector2(25, 15), pos + Vector2(34, 15), INK, 3)
     else:
-        draw_string(heading, pos + Vector2(8, 21), value, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, INK)
+        draw_string(heading, pos + Vector2(8, 21), value, HORIZONTAL_ALIGNMENT_LEFT, -1, 20 if handheld() else 17, INK)
 
 func cursor(pos: Vector2, side: float = 30) -> void:
     icon(pos + Vector2(sin(Time.get_ticks_msec() * 0.008) * 2, 0), "cursor", side)
@@ -949,6 +963,7 @@ func _draw() -> void:
         close_purchase_review()
         purchase_review = {}
         workshop_message = "Account changed. Submitted purchases stay with their original account. Review again here."
+    GRID_RECT = Rect2(454, 366, 922, 414) if handheld() else Rect2(394, 366, 982, 414)
     ui_scale = minf(get_viewport_rect().size.x / BASE.x, get_viewport_rect().size.y / BASE.y)
     ui_offset = (get_viewport_rect().size - BASE * ui_scale) * 0.5
     draw_set_transform(ui_offset, 0, Vector2.ONE * ui_scale)
@@ -1044,7 +1059,7 @@ func stats_header() -> void:
 func page_title(title: String, detail: String) -> void:
     text_at(Vector2(64, 207), title, 46, WHITE, true)
     rect(Vector2(66, 223), Vector2(80, 5), YELLOW)
-    text_at(Vector2(166, 242), detail, 24, MUTED)
+    text_at(Vector2(166, 242), detail, 24, MUTED, false, 1210)
 
 func menu_footer(detail: String = "Select", back: String = "Back", confirm: String = "Confirm") -> void:
     keycap(Vector2(64, 842), "D-PAD" if pad() else "↑↓", 46)
@@ -1055,6 +1070,9 @@ func menu_footer(detail: String = "Select", back: String = "Back", confirm: Stri
     text_at(Vector2(1220, 865), back, 21)
 
 func draw_title() -> void:
+    if handheld():
+        draw_handheld_title()
+        return
     var extra = ui_offset / ui_scale
     rect(-extra, Vector2(extra.x + 60, BASE.y + extra.y * 2), BLUE)
     var plate = PackedVector2Array([Vector2(0, 0), Vector2(626, 0), Vector2(586, 900), Vector2(0, 900)])
@@ -1105,6 +1123,41 @@ func draw_title() -> void:
         keycap(Vector2(1044, y), p(controls[i][0]), 76)
         text_at(Vector2(1140, y + 23), controls[i][1], 23)
 
+func draw_handheld_title() -> void:
+    var extra = ui_offset / ui_scale
+    rect(-extra, Vector2(extra.x + 610, BASE.y + extra.y * 2), Color(0.055, 0.14, 0.36, 0.96))
+    for y in range(0, 900, 256): draw_texture_rect(pattern, Rect2(0, y, 610, 256), true, Color(0.65, 0.8, 1, 0.26))
+    draw_line(Vector2(610, 0), Vector2(610, 900), EDGE, 3)
+    text_at(Vector2(62, 66), "MEGA MAN LEGENDS", 26, CYAN, true)
+    text_at(Vector2(62, 160), "RELIC", 84, YELLOW, true)
+    text_at(Vector2(62, 266), "DIVER", 100, WHITE, true)
+    text_at(Vector2(66, 312), "THE TIDAL ARCHIVE", 24, CYAN, true)
+    var account_copy = title_account_copy()
+    var menu_y = 340
+    var saved: Dictionary = game.saved_dig
+    if not saved.is_empty():
+        button(Vector2(64, menu_y), Vector2(500, 54), "Rejoin Dig" if saved.get("online", false) else "Continue Dig", "continue", 0, true)
+        menu_y += 60
+    var actions = [["Solo Dig / New Dig" if not saved.is_empty() else "Solo Dig", "solo"], ["Play Online", "online"], ["Workshop", "workshop"], ["Options", "options"], [account_copy.label, "account"], ["Credits / Licenses", "credits"], ["Parts Collection", "archive"]]
+    if not OS.has_feature("web"): actions.append(["Quit", "quit"])
+    for entry in actions:
+        button(Vector2(64, menu_y), Vector2(500, 54), entry[0], entry[1], 0, entry[1] == "solo")
+        menu_y += 60
+    window(Vector2(1020, 32), Vector2(372, 110))
+    text_at(Vector2(1042, 74), "DIG RECORD", 22, WHITE, true)
+    text_at(Vector2(1042, 116), "%d digs / %d clears" % [game.meta.runs, game.meta.wins], 25, YELLOW)
+    window(Vector2(1020, 166), Vector2(372, 150))
+    text_at(Vector2(1042, 206), "ACCOUNT", 22, WHITE, true)
+    paragraph(Vector2(1042, 250), account_copy.detail, 328, 25, CYAN, 2)
+    window(Vector2(1020, 352), Vector2(372, 232))
+    draw_texture_rect(portraits[game.selected_character], Rect2(1042, 374, 80, 90), false)
+    paragraph(Vector2(1136, 414), DiverCharacter.DISPLAY_NAMES[game.selected_character], 232, 26, YELLOW, 2)
+    paragraph(Vector2(1042, 510), "Choose a digger in Solo or the online lobby.", 328, 24, MUTED, 2)
+    window(Vector2(1020, 620), Vector2(372, 236))
+    text_at(Vector2(1042, 660), "CONTROLS", 24, WHITE, true)
+    paragraph(Vector2(1042, 708), "Left / right: select. A: accept. B: back." if pad() else "Arrows: select. Enter: accept. Esc: back.", 328, 26, WHITE, 3)
+    text_at(Vector2(1042, 830), "Options: UI / text preset", 21, CYAN, false, 328)
+
 func draw_solo_prep() -> void:
     # Keep the supplied model and ruins visible between the cobalt side panels.
     text_at(Vector2(64, 110), "SOLO DIG", 48, YELLOW, true)
@@ -1126,15 +1179,19 @@ func draw_solo_prep() -> void:
     text_at(Vector2(620, 710), DiverCharacter.DISPLAY_NAMES[character], 28, YELLOW, true, 350)
     hits.append({"rect": area, "action": "solo_character", "value": 0})
     small_button(Vector2(600, 756), Vector2(64, 48), "<", "solo_cycle", -1)
-    button(Vector2(680, 756), Vector2(230, 48), "Accept digger", "solo_character")
+    button(Vector2(680, 756), Vector2(230, 48), "Accept" if handheld() else "Accept digger", "solo_character")
     small_button(Vector2(926, 756), Vector2(64, 48), ">", "solo_cycle", 1)
     window(Vector2(1020, 560), Vector2(372, 244))
     button(Vector2(1042, 584), Vector2(328, 64), confirm_label("start_new", 0, "Start Dig"), "launch_solo", 0, true)
     button(Vector2(1042, 714), Vector2(328, 64), "Back to Title", "title")
     paragraph(Vector2(1042, 678), "Starts a new dig." if game.saved_dig.is_empty() else "Replaces your saved dig.", 328, 22, MUTED, 1)
     window(Vector2(64, 830), Vector2(1312, 54), INK, EDGE, false)
-    text_at(Vector2(84, 865), "Left / Right: Digger    Up / Down: Selection / Start / Back", 23, WHITE)
-    text_at(Vector2(832, 865), "A: Accept / Start    B: Back" if pad() else "Enter: Accept / Start    Esc: Back", 23, YELLOW)
+    if handheld():
+        text_at(Vector2(84, 853), "Left / Right: Digger    Up / Down: Selection / Start / Back", 21, WHITE)
+        text_at(Vector2(84, 882), "A: Accept / Start    B: Back" if pad() else "Enter: Accept / Start    Esc: Back", 21, YELLOW)
+    else:
+        text_at(Vector2(84, 865), "Left / Right: Digger    Up / Down: Selection / Start / Back", 23, WHITE)
+        text_at(Vector2(832, 865), "A: Accept / Start    B: Back" if pad() else "Enter: Accept / Start    Esc: Back", 23, YELLOW)
 
 # `overlay`: drawn beneath the pick overlay, keeping Life, map, team, boss and
 # warnings while leaving out the aim reticle and banners the cards replace.
@@ -1158,13 +1215,16 @@ func draw_hud(overlay: bool = false) -> void:
     window(Vector2(430, 22), Vector2(580, 49), Color(0.05, 0.13, 0.35, 0.86))
     text_at(Vector2(451, 55), "B%d  %s" % [game.depth, game.DEPTH_NAMES[game.depth - 1]], 23, WHITE, true, 538)
     text_at(Vector2(450, 96), "Find the guardian and restore the lift." if not game.guardian_dead else "The lift is ready. Head for the beacon.", 23, YELLOW)
-    window(Vector2(1186, 28), Vector2(222, 244), Color(0.05, 0.13, 0.35, 0.88))
-    text_at(Vector2(1203, 57), "RUINS MAP", 19, WHITE, true)
-    map_at(Vector2(1200, 72), 192)
-    icon(Vector2(1184, 289), "scrap", 45)
-    text_at(Vector2(1236, 323), "%06d" % game.scrap, 29, YELLOW, true)
-    text_at(Vector2(1222, 356), game.time_string(), 24, WHITE, true)
-    text_at(Vector2(1188, 391), "%d / %d rooms" % [visited_count(), game.rooms.size()], 21, WHITE)
+    var map_side = 256.0 if game.settings.large_minimap else 192.0
+    var map_x = 1392 - map_side
+    window(Vector2(map_x - 14, 28), Vector2(map_side + 30, map_side + 52), Color(0.05, 0.13, 0.35, 0.88))
+    text_at(Vector2(map_x + 3, 57), "RUINS MAP", 19, WHITE, true)
+    map_at(Vector2(map_x, 72), map_side)
+    var map_bottom = 72 + map_side
+    icon(Vector2(map_x - 16, map_bottom + 25), "scrap", 45)
+    text_at(Vector2(map_x + 36, map_bottom + 59), "%06d" % game.scrap, 29, YELLOW, true)
+    text_at(Vector2(map_x + 22, map_bottom + 92), game.time_string(), 24, WHITE, true)
+    text_at(Vector2(map_x - 12, map_bottom + 127), "%d / %d rooms" % [visited_count(), game.rooms.size()], 21, WHITE)
     var center = Vector2(720, 450)
     var spread = 5.0 + p.recoil * 5
     if not overlay:
@@ -1197,11 +1257,11 @@ func draw_hud(overlay: bool = false) -> void:
             icon(Vector2(480, 201), "warning", 31)
             var names = {"slam": "Shockwave! Jump or dash away!", "bombard": "Bombardment! Leave the rings!", "cross": "Cross beam! Clear the lanes!", "fan": "Burst incoming! Keep moving!"}
             text_at(Vector2(522, 226), names.get(enemy.planned, "Watch out!"), 23, YELLOW)
-    window(Vector2(30, 738), Vector2(310, 104), Color(0.05, 0.13, 0.35, 0.92))
+    window(Vector2(30, 738), Vector2(340 if handheld() else 310, 104), Color(0.05, 0.13, 0.35, 0.92))
     icon(Vector2(42, 750), ["pulse", "needle", "siege", "scrap"][p.weapon], 62)
-    text_at(Vector2(114, 774), ["Pulse Buster", "Needle Buster", "Siege Buster", "Salvage Bombs"][p.weapon], 25, WHITE, true, 212)
+    text_at(Vector2(114, 774), ["Pulse Buster", "Needle Buster", "Siege Buster", "Salvage Bombs"][p.weapon], 25, WHITE, true, 242 if handheld() else 212)
     text_at(Vector2(114, 805), "POWER %d  /  RAPID %.1f" % [buster_power(), 1 / p.fire_delay()], 21, MUTED)
-    pips(Vector2(48, 824), 270, 6, float(p.xp) / p.xp_required, 20, YELLOW)
+    pips(Vector2(48, 824), 300 if handheld() else 270, 6, float(p.xp) / p.xp_required, 20, YELLOW)
     keycap(Vector2(30, 856), p("parts"), 54)
     var waiting = game.pending_choices.size()
     if waiting > 0:
@@ -1214,7 +1274,7 @@ func draw_hud(overlay: bool = false) -> void:
         window(Vector2(x, 792), Vector2(48, 53), BLUE, EDGE, false)
         icon(Vector2(x + 2, 792), id, 44)
         var count_text = str(p.items[id])
-        var count_width = maxf(30, heading.get_string_size(count_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x + 18)
+        var count_width = maxf(30, heading.get_string_size(count_text, HORIZONTAL_ALIGNMENT_LEFT, -1, readable_size(20)).x + 18)
         badge(Vector2(x + 48 - count_width, 830), count_text, count_width)
         n += 1
     if n == 0:
@@ -1306,7 +1366,8 @@ func map_at(pos: Vector2, side: float) -> void:
         rect(corner, size, CYAN if i == game.current_room else YELLOW if i == game.exit_room else EDGE)
         rect(corner + Vector2.ONE, (size - Vector2.ONE * 2).max(Vector2.ZERO), Color("3f7fc4") if i == game.current_room else Color("668daf") if room.cleared and room.visited else Color("224779") if room.visited else INK)
         if i == game.exit_room and bounds.has_point(origin + Vector2(room.center.x, room.center.z) * zoom): draw_circle(origin + Vector2(room.center.x, room.center.z) * zoom, 2.5, YELLOW)
-    var inside = Rect2(pos + Vector2.ONE * 4, Vector2.ONE * (side - 8))
+    var marker_scale = 1.3 if game.settings.large_minimap else 1.0
+    var inside = Rect2(pos + Vector2.ONE * 4, Vector2.ONE * (side - 8)).grow(-10 if game.settings.large_minimap else 0)
     # Part caches in revealed rooms: grey while the room is sealed, gold when
     # ready, flashing cyan while this digger's pick from it waits, dim once opened.
     for i in game.interactables.size():
@@ -1323,11 +1384,11 @@ func map_at(pos: Vector2, side: float) -> void:
     for mate in game.remote_players.values():
         if not is_instance_valid(mate): continue
         var at = (origin + Vector2(mate.global_position.x, mate.global_position.z) * zoom).clamp(inside.position, inside.end)
-        draw_circle(at, 3.5, INK)
-        draw_circle(at, 2.5, ORANGE if mate.downed else DiverNet.SLOT_COLORS[clampi(mate.slot, 0, 4)])
+        draw_circle(at, 3.5 * marker_scale, INK)
+        draw_circle(at, 2.5 * marker_scale, ORANGE if mate.downed else DiverNet.SLOT_COLORS[clampi(mate.slot, 0, 4)])
     var p = game.player
     var here = (origin + Vector2(p.global_position.x, p.global_position.z) * zoom).clamp(inside.position, inside.end)
-    var forward = Vector2(-sin(p.yaw), -cos(p.yaw))
+    var forward = Vector2(-sin(p.yaw), -cos(p.yaw)) * marker_scale
     var right = Vector2(-forward.y, forward.x)
     draw_colored_polygon(PackedVector2Array([here + forward * 10.5, here - forward * 6.5 + right * 7.2, here - forward * 3, here - forward * 6.5 - right * 7.2]), INK)
     draw_colored_polygon(PackedVector2Array([here + forward * 8.2, here - forward * 4.9 + right * 5.2, here - forward * 2.2, here - forward * 4.9 - right * 5.2]), WHITE)
@@ -1365,7 +1426,7 @@ func draw_pause() -> void:
     menu_footer("Select", "Return")
 
 func option_label(id: String) -> String:
-    return {"master": "Master volume", "music": "Music", "effects": "Effects", "ambience": "Ambience", "mute": "Mute all", "fullscreen": "Fullscreen", "camera": "Camera motion", "fov": "Field of view", "mouse": "Mouse sensitivity", "look": "Controller look speed", "invert": "Invert look (up/down)", "vibration": "Controller vibration", "controls": "Controls & bindings…", "map_zoom": "Ruins map", "back": "Back"}.get(id, id)
+    return {"master": "Master volume", "music": "Music", "effects": "Effects", "ambience": "Ambience", "mute": "Mute all", "fullscreen": "Fullscreen", "camera": "Camera motion", "fov": "Field of view", "mouse": "Mouse sensitivity", "look": "Controller look speed", "invert": "Invert look (up/down)", "vibration": "Controller vibration", "controls": "Controls & bindings…", "map_zoom": "Ruins map", "handheld_ui": "UI / text preset", "large_minimap": "Minimap size", "close_camera": "Camera framing", "back": "Back"}.get(id, id)
 
 func option_value(id: String) -> String:
     var s = game.settings
@@ -1374,6 +1435,9 @@ func option_value(id: String) -> String:
         "mute": return "On" if game.sound.muted else "Off"
         "fullscreen": return "On" if s.fullscreen else "Off"
         "map_zoom": return "Follow / zoomed" if s.map_zoom else "Whole floor"
+        "handheld_ui": return "Handheld" if s.handheld_ui else "Standard"
+        "large_minimap": return "Large" if s.large_minimap else "Standard"
+        "close_camera": return "Close" if s.close_camera else "Standard"
         "camera": return "On" if s.camera_effects else "Off"
         "fov": return "%d°" % int(s.fov)
         "mouse": return "%.1f×" % s.mouse_sensitivity
@@ -1391,7 +1455,7 @@ func adjust_option(index: int, delta: int) -> void:
         "fov": s.fov = clampf(s.fov + delta * 2, 55, 85)
         "mouse": s.mouse_sensitivity = clampf(snappedf(s.mouse_sensitivity + delta * 0.1, 0.1), 0.2, 3.0)
         "look": s.look_speed = clampf(snappedf(s.look_speed + delta * 0.1, 0.1), 0.2, 3.0)
-        "mute", "fullscreen", "camera", "invert", "vibration", "map_zoom": activate_option(index)
+        "mute", "fullscreen", "camera", "invert", "vibration", "map_zoom", "handheld_ui", "large_minimap", "close_camera": activate_option(index)
         _: return
     s.save_settings()
 
@@ -1407,6 +1471,9 @@ func activate_option(index: int) -> void:
         "mute": game.sound.muted = not game.sound.muted
         "fullscreen": s.set_fullscreen(not s.fullscreen)
         "map_zoom": s.map_zoom = not s.map_zoom
+        "handheld_ui": s.handheld_ui = not s.handheld_ui
+        "large_minimap": s.large_minimap = not s.large_minimap
+        "close_camera": s.close_camera = not s.close_camera
         "camera": s.camera_effects = not s.camera_effects
         "fov": s.fov = 55.0 if s.fov >= 85 else s.fov + 5
         "mouse": s.mouse_sensitivity = 0.2 if s.mouse_sensitivity >= 3.0 else snappedf(s.mouse_sensitivity + 0.2, 0.1)
@@ -1421,27 +1488,26 @@ func activate_option(index: int) -> void:
 
 func option_row(pos: Vector2, index: int) -> void:
     var id: String = OPTIONS[index]
-    var area = Rect2(pos, Vector2(640, 54))
+    var area = Rect2(pos, Vector2(640, 50))
     var hot = focus_index == index or area.has_point(pointer)
     window(pos, area.size, SELECT if hot else PANEL, YELLOW if hot else EDGE, false)
     if hot: cursor(pos + Vector2(-30, 12))
-    text_at(pos + Vector2(22, 36), option_label(id), 25, WHITE, false, 400)
+    text_at(pos + Vector2(22, 36), option_label(id), 25, WHITE, false, 340)
     var value = option_value(id)
     if value != "":
         if id in ["master", "music", "effects", "ambience"]:
             pips(pos + Vector2(330, 21), 180, 12, game.sound.volumes[id.capitalize()], 12, CYAN if id == "music" else GREEN)
-        text_at(pos + Vector2(612 - heading.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x, 36), value, 22, YELLOW, true)
+        text_at(pos + Vector2(612 - heading.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, readable_size(22)).x, 36), value, 22, YELLOW, true)
     hits.append({"rect": area, "action": "option", "value": index})
 
 func draw_options() -> void:
     backdrop()
     page_title("OPTIONS", "Sound, display and controls. Changes save right away%s." % (" in this browser" if OS.has_feature("web") else " on this PC"))
-    text_at(Vector2(66, 278), "SOUND & DISPLAY", 20, CYAN, true)
-    text_at(Vector2(738, 278), "CONTROLS", 20, CYAN, true)
+    text_at(Vector2(66, 278), "SOUND & CAMERA", 20, CYAN, true)
+    text_at(Vector2(738, 278), "INPUT & READABILITY", 20, CYAN, true)
     for i in OPTIONS.size():
-        option_row(Vector2(64, 292 + i * 62) if i < 8 else Vector2(736, 292 + (i - 8) * 62), i)
-    window(Vector2(736, 752), Vector2(640, 72), Color(0.06, 0.16, 0.40, 0.9))
-    paragraph(Vector2(758, 780), "Left / right adjusts. Plug in a controller any time: prompts switch to it automatically.", 600, 23, MUTED, 2)
+        option_row(Vector2(64, 292 + i * 56) if i < 9 else Vector2(736, 292 + (i - 9) * 56), i)
+    text_at(Vector2(66, 824), "Left / right adjusts. Readability and camera preferences save on this device.", 23, MUTED, false, 1310)
     menu_footer("Select", "Back", "Change")
 
 func draw_controls() -> void:
@@ -1473,14 +1539,14 @@ func draw_controls() -> void:
     text_at(Vector2(1202, 290), "CONTROLLER", 17, CYAN, true)
     button(Vector2(736, 726), Vector2(310, 54), confirm_label("reset_controls", 0, "Reset to Defaults"), "reset_controls")
     button(Vector2(1066, 726), Vector2(310, 54), "Back", "options", 0, true)
-    var note = "Waiting for input… (Esc cancels)" if not listening.is_empty() else "The right stick always looks around. Taking a key from another action swaps them."
+    var note = "Waiting for input… (Esc cancels)" if not listening.is_empty() else ("Right stick: look. Reused bindings swap actions." if handheld() else "The right stick always looks around. Taking a key from another action swaps them.")
     text_at(Vector2(736, 812), note, 21, YELLOW if not listening.is_empty() else MUTED, false, 640)
     menu_footer("Select", "Options", "Rebind")
 
 func stat_line(pos: Vector2, title: String, value: String, width: float) -> void:
     text_at(pos, title, 26, MUTED)
     draw_line(pos + Vector2(0, 12), pos + Vector2(width, 12), Color("416399"), 1)
-    text_at(pos + Vector2(width - heading.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, 25).x, 0), value, 25, WHITE, true)
+    text_at(pos + Vector2(width - heading.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, readable_size(25)).x, 0), value, 25, WHITE, true)
 
 func total_parts() -> int:
     var count = 0
@@ -1593,8 +1659,8 @@ func choice_line(i: int) -> String:
 # Centred card text; long names step down a few sizes before being shortened.
 func centered(center_x: float, y: float, value: String, size: int, color: Color, display: bool, width: float) -> void:
     var face: Font = heading if display else font
-    while size > 18 and face.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x > width: size -= 1
-    var shown_width = minf(width, face.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x)
+    while size > 18 and face.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, readable_size(size)).x > width: size -= 1
+    var shown_width = minf(width, face.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, readable_size(size)).x)
     text_at(Vector2(center_x - shown_width / 2, y), value, size, color, display, width)
 
 func draw_choice_overlay() -> void:
@@ -1604,7 +1670,7 @@ func draw_choice_overlay() -> void:
     draw_hud(true)
     var kind: String = game.choice_kind
     var gold = Color("e7b85a")
-    var band = CHOICE_BAND
+    var band = Rect2(290, 230, 860, 506) if handheld() else CHOICE_BAND
     # Header: what kind of pick, and where it sits in the queue.
     var total = game.choice_picks + 1 + game.pending_choices.size()
     window(band.position, Vector2(band.size.x, 62), Color(0.05, 0.13, 0.35, 0.94), gold if kind != "relic" else EDGE)
@@ -1619,33 +1685,33 @@ func draw_choice_overlay() -> void:
     # Three cards side by side.
     choice_preview = clampi(choice_preview, 0, maxi(0, game.choice_items.size() - 1))
     for i in game.choice_items.size():
-        var pos = band.position + Vector2(i * 234, 74)
-        var size = Vector2(212, 214)
+        var pos = band.position + Vector2(i * ((band.size.x + 22) / 3), 74)
+        var size = Vector2((band.size.x - 44) / 3, 214)
         var selected = i == choice_preview
         window(pos, size, SELECT if selected else Color(0.07, 0.20, 0.43, 0.96), YELLOW if selected else (gold if kind == "milestone" else EDGE))
         badge(pos + Vector2(10, 10), str(i + 1), 38)
-        window(pos + Vector2(56, 24), Vector2(100, 100), INK, Color("6285b8") if kind != "milestone" else gold, false)
-        icon(pos + Vector2(62, 30), choice_icon(i), 88, Color("ffe7a8") if kind == "milestone" else Color.WHITE)
-        centered(pos.x + size.x / 2, pos.y + 160, choice_title(i), 24, YELLOW if kind == "milestone" else WHITE, true, 192)
+        window(pos + Vector2((size.x - 100) / 2, 24), Vector2(100, 100), INK, Color("6285b8") if kind != "milestone" else gold, false)
+        icon(pos + Vector2((size.x - 88) / 2, 30), choice_icon(i), 88, Color("ffe7a8") if kind == "milestone" else Color.WHITE)
+        centered(pos.x + size.x / 2, pos.y + 160, choice_title(i), 24, YELLOW if kind == "milestone" else WHITE, true, size.x - 20)
         var line = choice_line(i)
-        centered(pos.x + size.x / 2, pos.y + 192, line, 19, GREEN if line.begins_with("Matches") else CYAN, false, 192)
+        centered(pos.x + size.x / 2, pos.y + 192, line, 19, GREEN if line.begins_with("Matches") else CYAN, false, size.x - 20)
         hits.append({"rect": Rect2(pos, size), "action": "choice", "value": i})
     # Details for the highlighted card.
     var detail_pos = band.position + Vector2(0, 300)
-    window(detail_pos, Vector2(band.size.x, 132), Color(0.05, 0.13, 0.35, 0.94), gold if kind == "milestone" else EDGE)
+    window(detail_pos, Vector2(band.size.x, 144 if handheld() else 132), Color(0.05, 0.13, 0.35, 0.94), gold if kind == "milestone" else EDGE)
     var id: String = game.choice_items[choice_preview]
     text_at(detail_pos + Vector2(24, 36), choice_title(choice_preview), 26, YELLOW if kind == "milestone" else WHITE, true, 400)
-    var effect = "Fitted ×%d → ×%d" % [game.player.count(id), game.player.count(id) + 1] if kind == "relic" else ("Milestone %d of %d" % [game.player.milestones.size() + 1, game.MILESTONE_DEPTHS.size()] if kind == "milestone" else "Lv. %02d" % game.player.level)
+    var effect = "Fitted %d to %d" % [game.player.count(id), game.player.count(id) + 1] if kind == "relic" else ("Milestone %d of %d" % [game.player.milestones.size() + 1, game.MILESTONE_DEPTHS.size()] if kind == "milestone" else "Lv. %02d" % game.player.level)
     text_at(detail_pos + Vector2(band.size.x - 210, 36), effect, 22, YELLOW, false, 190)
     var detail: String = DESCRIPTIONS[id] if kind == "relic" else (game.MILESTONES[id].desc if kind == "milestone" else LEVEL_DETAILS[choice_preview])
     paragraph(detail_pos + Vector2(24, 70), detail, band.size.x - 48, 22, WHITE, 3)
     # Actions: apply (fresh press) or close; the offer keeps waiting.
-    var actions_y = band.position.y + 442
+    var actions_y = band.position.y + 450 if handheld() else band.position.y + 442
     var verb = {"relic": "Fit This Part", "level": "Apply Upgrade", "milestone": "Take Milestone"}.get(kind, "Choose")
-    button(Vector2(band.position.x, actions_y), Vector2(404, 46), verb, "choice", choice_preview, true)
-    keycap(Vector2(band.position.x + 404 - 92, actions_y + 9), "A" if pad() else "ENTER", 76)
-    button(Vector2(band.position.x + 420, actions_y), Vector2(260, 46), "Later", "choice_later")
-    keycap(Vector2(band.position.x + 680 - 64, actions_y + 9), "B" if pad() else "ESC", 50)
+    button(Vector2(band.position.x, actions_y), Vector2(band.size.x - 276, 50 if handheld() else 46), verb, "choice", choice_preview, true)
+    keycap(Vector2(band.position.x + band.size.x - 276 - 92, actions_y + 9), "A" if pad() else "ENTER", 76)
+    button(Vector2(band.position.x + band.size.x - 260, actions_y), Vector2(260, 50 if handheld() else 46), "Later", "choice_later")
+    keycap(Vector2(band.position.x + band.size.x - 64, actions_y + 9), "B" if pad() else "ESC", 50)
     # Quiet hints under the band, clear of the parts row and the dash meter.
     var hint_y = band.end.y + 30
     keycap(Vector2(band.position.x, hint_y - 22), "D-PAD" if pad() else "←→", 46 if not pad() else 66)
@@ -1654,7 +1720,7 @@ func draw_choice_overlay() -> void:
         keycap(Vector2(band.position.x + 148, hint_y - 22), "1 2 3", 62)
         text_at(Vector2(band.position.x + 220, hint_y), "Quick pick", 20, MUTED)
     keycap(Vector2(band.position.x + 360, hint_y - 22), p("parts"), 54)
-    text_at(Vector2(band.position.x + 428, hint_y), "Close · picks keep waiting", 20, MUTED, false, 250)
+    text_at(Vector2(band.position.x + 428, hint_y), "Close · picks keep waiting", 20, MUTED, false, band.size.x - 428)
 
 # Which of a milestone's favoured parts this digger has fitted.
 func milestone_match(id: String) -> String:
@@ -1798,7 +1864,7 @@ func digger_card(pos: Vector2, member: Dictionary) -> void:
     text_at(pos + Vector2(430, 70), "READY" if member.get("ready", false) else "NOT READY", 20, GREEN if member.get("ready", false) else YELLOW, true, 136)
     if member_slot == net.host_slot: badge(pos + Vector2(576, 8), "HOST", 86, YELLOW)
     elif member_slot == net.slot: badge(pos + Vector2(576, 8), "YOU", 80, CYAN)
-    if net.is_host() and member_slot != net.slot: small_button(pos + Vector2(576, 48), Vector2(86, 30), "Remove", "kick", member_slot, Color(0.30, 0.10, 0.14))
+    if net.is_host() and member_slot != net.slot: small_button(pos + Vector2(576, 48), Vector2(86, 30), "Kick" if handheld() else "Remove", "kick", member_slot, Color(0.30, 0.10, 0.14))
 
 func draw_lobby() -> void:
     backdrop()
@@ -1835,7 +1901,7 @@ func draw_lobby() -> void:
     if phase == "running": disabled_button(Vector2(64, 740), Vector2(270, 44), "Joining active dig...")
     elif not game.account_ready_to_prepare(): disabled_button(Vector2(64, 740), Vector2(270, 44), "Confirm account first")
     elif net.server_ready and not net.readiness().is_empty() and net.selection_acknowledged():
-        button(Vector2(64, 740), Vector2(270, 44), "Unready / Cancel" if net.own_ready() else "Ready", "ready", 0, true)
+        button(Vector2(64, 740), Vector2(270, 44), ("Unready" if handheld() else "Unready / Cancel") if net.own_ready() else "Ready", "ready", 0, true)
     else: disabled_button(Vector2(64, 740), Vector2(270, 44), "Confirming loadout..." if net.server_ready else "Server update needed")
     if game.account.takeover_needed: button(Vector2(354, 740), Vector2(270, 44), confirm_label("takeover", 0, "Take over account dig"), "takeover")
     elif game.account.pending_run_callback.is_valid() and (game.account.server_run == "" or game.account.lease_retry.is_valid()): button(Vector2(354, 740), Vector2(270, 44), "Retry account dig", "retry_run")
@@ -1881,7 +1947,7 @@ func draw_chat(bottom_left: Vector2, width: float, lines: int, fade: bool) -> vo
         var entry: Dictionary = shown[shown.size() - 1 - i]
         var y = bottom_left.y - i * 25
         var who = "%s:" % str(entry.name)
-        var name_width = font.get_string_size(who, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x + 8
+        var name_width = font.get_string_size(who, HORIZONTAL_ALIGNMENT_LEFT, -1, readable_size(20)).x + 8
         rect(Vector2(bottom_left.x - 4, y - 19), Vector2(width, 24), Color(0.03, 0.07, 0.2, 0.55))
         text_at(Vector2(bottom_left.x, y), who, 20, DiverNet.SLOT_COLORS[clampi(int(entry.slot), 0, 4)])
         text_at(Vector2(bottom_left.x + name_width, y), str(entry.text), 20, YELLOW if entry.quick else WHITE, false, width - name_width - 8)
@@ -1924,7 +1990,7 @@ func draw_team() -> void:
 
 func draw_workshop() -> void:
     backdrop()
-    page_title("THE WORKSHOP", "Permanent circuits / Each digger has their own tree. Parts and levels reset each dig.")
+    page_title("THE WORKSHOP", "Permanent circuits. Parts and levels reset each dig." if handheld() else "Permanent circuits / Each digger has their own tree. Parts and levels reset each dig.")
     text_at(Vector2(1090, 232), "%d ZENNY" % game.meta.zenny, 30, YELLOW, true)
     if game.profile_source == "account": text_at(Vector2(64, 262), "%s / +%d pending" % [game.account.status, game.account.pending_zenny()], 21, CYAN)
     var first_node = workshop_first_node() if workshop_focus_pending else -1
@@ -1941,8 +2007,8 @@ func draw_workshop() -> void:
     draw_grid(first_node)
     workshop_focus_pending = false
     var hint = "LB / RB: Digger   D-pad / Stick: Circuits   X: Zoom" if pad() else "C: Digger   Arrows: Circuits   Z / Wheel: Zoom   Drag: Pan"
-    text_at(Vector2(394, 812), workshop_message if workshop_message != "" else hint, 21, CYAN, false, 982)
-    button(Vector2(64, 828), Vector2(300, 56), "Save Codes / Backup", "save_codes")
+    text_at(Vector2(GRID_RECT.position.x, 812), workshop_message if workshop_message != "" else hint, 21, CYAN, false, GRID_RECT.size.x)
+    button(Vector2(64, 828), Vector2(300, 56), "Save Codes" if handheld() else "Save Codes / Backup", "save_codes")
     button(Vector2(394, 828), Vector2(460, 56), "Return to Lobby" if game.net.active() else "Start Another Dig", "lobby_room" if game.net.active() else "start", 0, true)
     button(Vector2(884, 828), Vector2(492, 56), "Back", workshop_return)
 
@@ -2099,23 +2165,23 @@ func draw_grid(first_node: int) -> void:
     if shown < 0 or shown >= nodes.size(): shown = workshop_first_node()
     var entry = nodes[shown]
     var state = grid_state(shown)
-    window(Vector2(64, 366), Vector2(300, 414))
+    window(Vector2(64, 366), Vector2(360 if handheld() else 300, 414))
     window(Vector2(82, 384), Vector2(72, 72), SELECT if state == "owned" else PANEL, GREEN if state == "owned" else EDGE, false)
     icon(Vector2(86, 388), grid_icon(entry), 64, Color(1, 1, 1, 0.45) if state == "locked" else Color.WHITE)
     var special = entry.id in DiverProgression.SPEC_NODES
-    paragraph(Vector2(168, 410), grid_name(entry), 180, 23, YELLOW if state == "owned" else WHITE, 2)
+    paragraph(Vector2(168, 410), grid_name(entry), 240 if handheld() else 180, 23, YELLOW if state == "owned" else WHITE, 2)
     var tag = {"owned": "FITTED", "available": "AVAILABLE", "short": "NEED ZENNY", "syncing": "SYNCING", "locked": "NOT LINKED"}[state]
     if special and state == "owned": tag = "EQUIPPED" if grid_equipped(entry) else "UNLOCKED"
     badge(Vector2(82, 470), tag, 160, {"owned": GREEN, "available": YELLOW, "short": ORANGE, "syncing": CYAN, "locked": MUTED}[state] if tag != "EQUIPPED" else YELLOW)
     text_at(Vector2(256, 493), "" if state == "owned" else "%d Z" % entry.cost, 22, YELLOW, true)
-    paragraph(Vector2(84, 534), grid_detail(entry), 262, 21, MUTED, 6)
+    paragraph(Vector2(84, 534), grid_detail(entry), 322 if handheld() else 262, 21, MUTED, 6)
     var linked = []
     for other in DiverProgression.neighbors(entry.id): linked.append(grid_name(DiverProgression.node(other)))
-    paragraph(Vector2(84, 700), "Links: " + ", ".join(linked), 262, 19, CYAN, 2)
+    paragraph(Vector2(84, 700), "Links: " + ", ".join(linked), 322 if handheld() else 262, 19, CYAN, 2)
     var action = {"owned": "Already fitted.", "available": ("A" if pad() else "Enter / click") + ": review purchase", "short": "Earn Zenny in digs.", "syncing": "Waiting for sync.", "locked": "Buy a linked circuit first."}[state]
     if special and state == "owned": action = ("A" if pad() else "Enter / click") + (": unequip" if grid_equipped(entry) else ": equip for next dig")
     elif special: action = "Unlock, then equip one per dig."
-    text_at(Vector2(84, 764), action, 20, YELLOW if state == "available" or (special and state == "owned") else MUTED, false, 262)
+    text_at(Vector2(84, 764), action, 20, YELLOW if state == "available" or (special and state == "owned") else MUTED, false, 322 if handheld() else 262)
 
 func draw_save_codes() -> void:
     if waiting_for_paste:
@@ -2223,7 +2289,7 @@ func draw_account() -> void:
                 button(Vector2(x + 288, 518), Vector2(272, 50), "Forgot password", "auth_view", AUTH_VIEWS.find("forgot"))
             "create":
                 text_at(Vector2(x, 160), "CREATE AN ACCOUNT", 32, CYAN, true)
-                paragraph(Vector2(x, 202), "Your Guest progress on this device moves into the new account.", 560, 21, MUTED, 2)
+                paragraph(Vector2(x, 202), ("Your Guest progress moves into the new account." if handheld() else "Your Guest progress on this device moves into the new account."), 560, 21, MUTED, 2)
                 auth_field(auth_name_edit, 0, Vector2(x, 272), "Digger name")
                 auth_field(auth_email_edit, 1, Vector2(x, 352), "Email")
                 auth_field(auth_password_edit, 2, Vector2(x, 432), "Password (10+ characters)")
@@ -2243,7 +2309,7 @@ func draw_account() -> void:
                 auth_field(auth_code_edit, 3, Vector2(x, 300), "Backup code" if auth_backup else "Code")
                 shown = [auth_code_edit]
                 button(Vector2(x, 370), Vector2(560, 54), "Checking…" if a.auth.busy else "Continue", "auth_submit", 0, true)
-                button(Vector2(x, 434), Vector2(272, 50), "Use authenticator" if auth_backup else "Use a backup code", "auth_backup")
+                button(Vector2(x, 434), Vector2(272, 50), ("Authenticator" if handheld() else "Use authenticator") if auth_backup else ("Backup code" if handheld() else "Use a backup code"), "auth_backup")
                 button(Vector2(x + 288, 434), Vector2(272, 50), "Back to sign in", "auth_view", AUTH_VIEWS.find("sign_in"))
             "check_email":
                 text_at(Vector2(x, 160), "CHECK YOUR EMAIL", 32, CYAN, true)

@@ -162,6 +162,8 @@ Hosting it on your own domain (Docker Compose + Cloudflare Tunnel, or **Host-Onl
 
 Sound (Master, Music, Effects, Ambience), display (fullscreen, camera motion, field of view), the ruins map (whole-floor survey or a scrolling 80 m local view) and controls (mouse sensitivity, look speed, invert, vibration, rebinding). Settings save separately from progress.
 
+**UI / text preset** switches between Standard and Handheld. Handheld uses larger copy, taller title actions, wider upgrade cards and a roomier Workshop description panel. **Minimap size** is independent of whole-floor/follow zoom. **Camera framing** independently offers Standard or Close; Standard keeps the original PC view. These preferences stay on this device/browser and do not change your account or Ready loadout. Fresh Android installs select Handheld and Large map; existing settings keep their prior layout until you choose otherwise. Retroid physical readability and controller checks remain pending.
+
 ## For developers
 
 - Game direction: [DESIGN.md](DESIGN.md). Build history: [CHANGELOG.md](CHANGELOG.md). Latest validation notes: [docs/FEATURE-REPORT.md](docs/FEATURE-REPORT.md).

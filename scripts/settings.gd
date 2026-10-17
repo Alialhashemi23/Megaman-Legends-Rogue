@@ -43,6 +43,10 @@ var vibration = true
 var fullscreen = false
 var camera_effects = true
 var map_zoom = false
+# Device-local readability; never part of an account profile or a ready loadout.
+var handheld_ui = OS.has_feature("android")
+var large_minimap = OS.has_feature("android")
+var close_camera = false
 # Equipped specialization per digger ("0".."3" -> "spec_a"/"spec_b"); per device.
 var specs: Dictionary = {}
 var fov = 67.0
@@ -202,6 +206,9 @@ func load_settings() -> void:
 	vibration = data.get("vibration", true) == true
 	fullscreen = data.get("fullscreen", false) == true
 	map_zoom = data.get("map_zoom", false) == true
+	handheld_ui = data.get("handheld_ui", false) == true
+	large_minimap = data.get("large_minimap", false) == true
+	close_camera = data.get("close_camera", false) == true
 	camera_effects = data.get("camera_effects", true) == true
 	fov = clampf(float(data.get("fov", 67.0)), 55.0, 85.0)
 	specs = {}
@@ -233,4 +240,4 @@ func save_settings() -> void:
 	if game and game.get("smoke_test"): return
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path.get_base_dir()))
 	var f = FileAccess.open(path, FileAccess.WRITE)
-	if f: f.store_string(JSON.stringify({"mouse_sensitivity": mouse_sensitivity, "look_speed": look_speed, "invert_y": invert_y, "vibration": vibration, "fullscreen": fullscreen, "camera_effects": camera_effects, "map_zoom": map_zoom, "fov": fov, "specs": specs, "bindings": bindings}, "\t"))
+	if f: f.store_string(JSON.stringify({"mouse_sensitivity": mouse_sensitivity, "look_speed": look_speed, "invert_y": invert_y, "vibration": vibration, "fullscreen": fullscreen, "camera_effects": camera_effects, "map_zoom": map_zoom, "handheld_ui": handheld_ui, "large_minimap": large_minimap, "close_camera": close_camera, "fov": fov, "specs": specs, "bindings": bindings}, "\t"))

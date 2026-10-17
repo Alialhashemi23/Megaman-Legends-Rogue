@@ -258,7 +258,7 @@ func update_camera(dt: float) -> void:
 		if mate: focus = mate
 	var pivot = focus.global_position + Vector3(0, 0.85 if focus.character == 3 else 1.55, 0)
 	var basis_cam = Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, pitch)
-	var desired = pivot + basis_cam * Vector3(-0.78, 0.60, 5.8)
+	var desired = pivot + basis_cam * Vector3(-0.78, 0.60, 4.8 if game.settings.close_camera else 5.8)
 	var ray = PhysicsRayQueryParameters3D.create(pivot, desired, 1)
 	var hit = get_world_3d().direct_space_state.intersect_ray(ray)
 	if not hit.is_empty(): desired = hit.position + hit.normal * 0.25
