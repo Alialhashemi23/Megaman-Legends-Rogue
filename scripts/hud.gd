@@ -13,7 +13,7 @@ const CYAN = Color("7ad6ef")
 const YELLOW = Color("ffdc68")
 const GREEN = Color("9cde70")
 const ORANGE = Color("ff9565")
-const ICONS = {"lens": 0, "spring": 1, "heart": 2, "boots": 3, "shell": 4, "moss": 5, "ember": 6, "coil": 7, "prism": 8, "echo": 9, "split": 10, "frost": 11, "clover": 12, "pulse": 13, "needle": 14, "siege": 15, "scrap": 16, "xp": 17, "map": 18, "lock": 19, "dash": 20, "cache": 21, "wrench": 22, "exit": 23, "life": 24, "settings": 25, "save": 26, "cursor": 27, "warning": 28, "record": 29, "eye": 30, "unknown": 31}
+const ICONS = {"lens": 0, "spring": 1, "heart": 2, "boots": 3, "shell": 4, "moss": 5, "ember": 6, "coil": 7, "prism": 8, "echo": 9, "split": 10, "frost": 11, "clover": 12, "pulse": 13, "needle": 14, "siege": 15, "scrap": 16, "xp": 17, "map": 18, "lock": 19, "dash": 20, "cache": 21, "wrench": 22, "exit": 23, "life": 24, "settings": 25, "save": 26, "cursor": 27, "warning": 28, "record": 29, "eye": 30, "unknown": 31, "refractor": 32, "flare": 33, "shatter": 34, "overclock": 35}
 const DESCRIPTIONS = {
     "lens": "Raises buster power by 16% for each lens fitted.",
     "spring": "Raises fire rate by 14% for each spring fitted.",
