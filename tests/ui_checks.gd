@@ -267,6 +267,6 @@ func run() -> void:
 	press(KEY_ESCAPE)
 	await refresh()
 	verify(game.mode == "title", "Collection returns to title with Escape")
-	verify(game.hud.ICONS.size() == 32, "UI has a full set of distinct equipment and status icons")
+	verify(game.hud.ICONS.size() == 36, "UI has a full set of distinct equipment and status icons")
 	print("UI_CHECKS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)

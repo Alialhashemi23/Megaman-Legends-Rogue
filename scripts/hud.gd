@@ -62,11 +62,16 @@ var copied_time = 0.0
 # Destructive buttons need a second click within a few seconds.
 const CONFIRM = ["leave_online", "leave_dig", "abandon", "kick", "discard", "start_new", "give_up", "reset_controls", "takeover", "clear_session"]
 # Options page rows: sound, display, then controls.
-const OPTIONS = ["master", "music", "effects", "ambience", "mute", "fullscreen", "camera", "fov", "mouse", "look", "invert", "vibration", "controls", "map_zoom", "handheld_ui", "large_minimap", "close_camera", "back"]
-const MENU_MODES = ["title", "solo_prep", "pause", "options", "controls", "choice", "inventory", "archive", "end", "online", "lobby", "launch_preparing", "workshop", "purchase_review", "save_codes", "account", "android_update", "credits"]
+const OPTIONS = ["master", "music", "effects", "ambience", "mute", "fullscreen", "camera", "fov", "mouse", "look", "invert", "vibration", "controls", "map_zoom", "handheld_ui", "large_minimap", "close_camera", "controller_test", "back"]
+const MENU_MODES = ["title", "solo_prep", "pause", "options", "controls", "controller_test", "choice", "inventory", "archive", "end", "online", "lobby", "launch_preparing", "workshop", "purchase_review", "save_codes", "account", "android_update", "credits"]
 var credits_lines: PackedStringArray = []
 var credits_page = 0
 var options_return = "title"
+var controller_device = -1
+var controller_raw_page = 0
+var controller_snapshot: Dictionary = {}
+var controller_sample_at = 0
+var controller_last_button = "No button event yet"
 var workshop_return = "title"
 var workshop_character = 0
 var workshop_message = ""
@@ -576,6 +581,15 @@ func _input(event: InputEvent) -> void:
             get_viewport().set_input_as_handled()
             return
         else: back_held = true
+    if game.mode == "controller_test":
+        if event is InputEventJoypadButton:
+            controller_last_button = "Button %d: %s" % [event.button_index, "pressed" if event.pressed else "released"]
+            if event.button_index == JOY_BUTTON_B and event.pressed and not event.is_echo(): back()
+            get_viewport().set_input_as_handled()
+            return
+        if event is InputEventJoypadMotion:
+            get_viewport().set_input_as_handled()
+            return
     if event is InputEventMouseMotion:
         # Window/viewport updates can emit motion at the stationary pointer.
         if event.relative.is_zero_approx(): return
@@ -672,7 +686,9 @@ func navigate(delta: int, horizontal: bool) -> void:
     if game.mode != previous_mode: return
     pointer = Vector2(-100, -100)
     pointer_travel = 0.0
-    if game.mode == "options" and horizontal:
+    if game.mode == "controller_test" and horizontal:
+        cycle_controller(delta)
+    elif game.mode == "options" and horizontal:
         if focus_index < OPTIONS.size(): adjust_option(focus_index, delta)
     elif game.mode == "controls" and not horizontal and focus_index < DiverSettings.ACTIONS.size() * 2:
         focus_index = clampi(focus_index + delta * 2, focus_index % 2, hits.size() - 1)
@@ -730,7 +746,7 @@ func back() -> bool:
         "save_codes": activate("workshop")
         "inventory", "pause": activate("resume")
         "options": activate(options_return)
-        "controls": activate("options")
+        "controls", "controller_test": activate("options")
         "choice": game.close_choice()
         _: return false
     return true
@@ -793,6 +809,10 @@ func activate(action: String, value: int = 0) -> void:
         return
     confirming = ""
     match action:
+        "controller_cycle": cycle_controller(value)
+        "controller_raw_page":
+            controller_raw_page = (controller_raw_page + 1) % 4
+            controller_sample_at = 0
         "reroll": game.reroll_choice()
         "purchase_confirm": confirm_purchase()
         "purchase_cancel", "purchase_close": close_purchase_review()
@@ -922,6 +942,12 @@ func activate(action: String, value: int = 0) -> void:
             game.mode = "options"
         "option": activate_option(value)
         "controls": game.mode = "controls"
+        "controller_test":
+            controller_sample_at = 0
+            controller_raw_page = 0
+            game.mode = "controller_test"
+            game.pad_held.clear()
+            return
         "bind": listening = {"id": DiverSettings.ACTIONS[value / 2].id, "column": "kb" if value % 2 == 0 else "pad", "time": 6.0}
         "reset_controls":
             game.settings.reset_bindings()
@@ -1021,6 +1047,7 @@ func _draw() -> void:
         "pause": draw_pause()
         "options": draw_options()
         "controls": draw_controls()
+        "controller_test": draw_controller_test()
         "inventory": draw_parts(false)
         "end": draw_end()
         "workshop": draw_workshop()
@@ -1439,7 +1466,7 @@ func draw_pause() -> void:
     menu_footer("Select", "Return")
 
 func option_label(id: String) -> String:
-    return {"master": "Master volume", "music": "Music", "effects": "Effects", "ambience": "Ambience", "mute": "Mute all", "fullscreen": "Fullscreen", "camera": "Camera motion", "fov": "Field of view", "mouse": "Mouse sensitivity", "look": "Controller look speed", "invert": "Invert look (up/down)", "vibration": "Controller vibration", "controls": "Controls & bindings…", "map_zoom": "Ruins map", "handheld_ui": "UI / text preset", "large_minimap": "Minimap size", "close_camera": "Camera framing", "back": "Back"}.get(id, id)
+    return {"master": "Master volume", "music": "Music", "effects": "Effects", "ambience": "Ambience", "mute": "Mute all", "fullscreen": "Fullscreen", "camera": "Camera motion", "fov": "Field of view", "mouse": "Mouse sensitivity", "look": "Controller look speed", "invert": "Invert look (up/down)", "vibration": "Controller vibration", "controls": "Controls & bindings…", "map_zoom": "Ruins map", "handheld_ui": "UI / text preset", "large_minimap": "Minimap size", "close_camera": "Camera framing", "controller_test": "Controller test…", "back": "Back"}.get(id, id)
 
 func option_value(id: String) -> String:
     var s = game.settings
@@ -1496,12 +1523,18 @@ func activate_option(index: int) -> void:
             s.vibration = not s.vibration
             s.rumble(0.4, 0.4, 0.15)
         "controls": game.mode = "controls"
+        "controller_test":
+            controller_sample_at = 0
+            controller_raw_page = 0
+            game.mode = "controller_test"
+            game.pad_held.clear()
+            return
         "back": activate(options_return)
     s.save_settings()
 
 func option_row(pos: Vector2, index: int) -> void:
     var id: String = OPTIONS[index]
-    var area = Rect2(pos, Vector2(640, 50))
+    var area = Rect2(pos, Vector2(640, 48))
     var hot = focus_index == index or area.has_point(pointer)
     window(pos, area.size, SELECT if hot else PANEL, YELLOW if hot else EDGE, false)
     if hot: cursor(pos + Vector2(-30, 12))
@@ -1519,9 +1552,84 @@ func draw_options() -> void:
     text_at(Vector2(66, 278), "SOUND & CAMERA", 20, CYAN, true)
     text_at(Vector2(738, 278), "INPUT & READABILITY", 20, CYAN, true)
     for i in OPTIONS.size():
-        option_row(Vector2(64, 292 + i * 56) if i < 9 else Vector2(736, 292 + (i - 9) * 56), i)
-    text_at(Vector2(66, 824), "Left / right adjusts. Readability and camera preferences save on this device.", 23, MUTED, false, 1310)
+        option_row(Vector2(64, 292 + i * 52) if i < 9 else Vector2(736, 292 + (i - 9) * 52), i)
+    text_at(Vector2(66, 830), "Left / right adjusts. Readability and camera preferences save on this device.", 20, MUTED, false, 1310)
     menu_footer("Select", "Back", "Change")
+
+func cycle_controller(delta: int) -> void:
+    var devices = Input.get_connected_joypads()
+    if devices.is_empty(): controller_device = -1
+    else: controller_device = devices[wrapi(devices.find(controller_device) + delta, 0, devices.size())]
+    controller_raw_page = 0
+    controller_sample_at = 0
+
+func sample_controller() -> Dictionary:
+    var devices = Input.get_connected_joypads()
+    if controller_device not in devices: controller_device = devices[0] if not devices.is_empty() else -1
+    return DiverControllerProbe.sample(controller_device)
+
+func probe_axes(pos: Vector2, values: Array, raw: bool) -> void:
+    var start = controller_raw_page * 8 if raw else 0
+    var count = mini(8, maxi(0, values.size() - start))
+    for row in count:
+        var index = start + row
+        var value = float(values[index])
+        var at = pos + Vector2(0, row * (21 if raw else 24))
+        var label = "Axis %d" % index if raw else DiverControllerProbe.AXIS_LABELS[index]
+        text_at(at + Vector2(0, 19), label, 19, WHITE, false, 190)
+        var bar = at + Vector2(200, 5)
+        rect(bar, Vector2(230, 15), INK)
+        draw_line(bar + Vector2(115, 0), bar + Vector2(115, 15), EDGE, 1)
+        rect(bar + Vector2(minf(115, 115 + value * 115), 2), Vector2(maxf(2, absf(value) * 115), 11), GREEN if value >= 0 else CYAN)
+        text_at(at + Vector2(450, 19), "%+.3f" % value, 19, YELLOW)
+
+func probe_buttons(pos: Vector2, values: Array, raw: bool) -> void:
+    var start = controller_raw_page * 16 if raw else 0
+    for i in mini(24 if not raw else 16, maxi(0, values.size() - start)):
+        var index = start + i
+        var columns = 4 if raw else 8
+        var at = pos + Vector2((i % columns) * (144 if raw else 72), (i / columns) * (26 if raw else 30))
+        var down = float(values[index]) > 0.1
+        window(at, Vector2(136 if raw else 64, 24 if raw else 26), SELECT if down else INK, YELLOW if down else EDGE, false)
+        text_at(at + Vector2(7, 20), "%d: %.2f" % [index, float(values[index])] if raw else str(index), 19, YELLOW if down else MUTED)
+
+func draw_controller_test() -> void:
+    backdrop()
+    page_title("CONTROLLER TEST", "Move sticks / press buttons. Read-only: bindings and deadzones stay as they are.")
+    if controller_snapshot.is_empty() or Time.get_ticks_msec() >= controller_sample_at:
+        controller_snapshot = sample_controller()
+        controller_sample_at = Time.get_ticks_msec() + 50
+    var info = controller_snapshot
+    window(Vector2(64, 276), Vector2(1312, 118))
+    text_at(Vector2(86, 312), "Godot pad #%d: %s" % [controller_device, str(info.name)] if info.connected else "No controller detected — connect a pad and move a stick.", 25, YELLOW, false, 1266)
+    text_at(Vector2(86, 349), "GUID: " + str(info.guid), 22, CYAN, false, 1266)
+    text_at(Vector2(86, 380), ("Known mapping" if info.known else "Unknown mapping") + " / " + controller_last_button, 21, MUTED, false, 1266)
+    window(Vector2(64, 414), Vector2(640, 366))
+    window(Vector2(736, 414), Vector2(640, 366))
+    text_at(Vector2(86, 449), "GODOT AXES / BUTTON NUMBERS", 22, CYAN, true)
+    if info.connected:
+        probe_axes(Vector2(86, 470), info.axes, false)
+        probe_buttons(Vector2(86, 654), info.buttons, false)
+    else: paragraph(Vector2(86, 510), "Waiting for a controller. No input settings are changed here.", 590, 25, MUTED, 3)
+    var browser = info.browser
+    var raw: Dictionary = {}
+    for entry in browser:
+        if int(entry.index) == controller_device: raw = entry
+    if raw.is_empty() and browser.size() == 1: raw = browser[0]
+    if not raw.is_empty():
+        text_at(Vector2(758, 449), "RAW BROWSER #%d / %s" % [int(raw.index), str(raw.mapping) if raw.mapping != "" else "non-standard"], 22, CYAN, true, 592)
+        probe_axes(Vector2(758, 470), raw.axes, true)
+        probe_buttons(Vector2(758, 650), raw.buttons, true)
+        text_at(Vector2(758, 778), "%d axes / %d buttons / %s" % [raw.axes.size(), raw.buttons.size(), str(raw.name)], 19, MUTED, false, 592)
+    else:
+        text_at(Vector2(758, 449), "RAW BROWSER INPUT", 22, CYAN, true)
+        paragraph(Vector2(758, 510), "Raw browser values are available in the Web build." if not OS.has_feature("web") else "No raw browser pad available. Press a button to let the browser detect it.", 592, 25, MUTED, 4)
+    if info.devices.size() > 1:
+        button(Vector2(64, 800), Vector2(260, 56), "Previous pad", "controller_cycle", -1)
+        button(Vector2(340, 800), Vector2(260, 56), "Next pad", "controller_cycle", 1)
+    if not raw.is_empty(): button(Vector2(620, 800), Vector2(380, 56), "Raw page %d / 4" % [controller_raw_page + 1], "controller_raw_page")
+    button(Vector2(1020, 800), Vector2(356, 56), "Back", "options")
+    text_at(Vector2(66, 884), "B / Esc: Return     Keyboard Left / Right: Pad     A is tested here; it does not close the page.", 21, MUTED, false, 1310)
 
 func draw_controls() -> void:
     backdrop()

@@ -2,6 +2,7 @@
 param(
  [string]$Script,
  [switch]$Import,
+ [switch]$Render,
  [int]$TimeoutSeconds = 120,
  [string]$Godot = 'D:\code repos\Megaman-Legends-Rogue\tools\Godot_v4.7.1-stable_win64_console.exe'
 )
@@ -29,7 +30,8 @@ $taskInfo.CreateNoWindow = $true
 $taskInfo.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
 $taskInfo.RedirectStandardOutput = $true
 $taskInfo.RedirectStandardError = $true
-foreach ($taskArg in @('--headless','--path',$taskRoot)) { $taskInfo.ArgumentList.Add($taskArg) }
+if (-not $Render) { $taskInfo.ArgumentList.Add('--headless') }
+foreach ($taskArg in @('--path',$taskRoot)) { $taskInfo.ArgumentList.Add($taskArg) }
 if ($Import) { foreach ($taskArg in @('--editor','--import')) { $taskInfo.ArgumentList.Add($taskArg) } }
 else { foreach ($taskArg in @('--script',$Script)) { $taskInfo.ArgumentList.Add($taskArg) } }
 $taskProcess = [Diagnostics.Process]::Start($taskInfo)

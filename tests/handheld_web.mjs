@@ -24,7 +24,7 @@ try {
   await command('preset',true);
   for(const mode of ['title','solo_prep','options','controls','account','lobby','workshop']){
    await screen(mode);await snap(`handheld-${mode}`);
-   if(mode==='options')assert.equal((await state()).buttons.length,18);
+   if(mode==='options')assert.equal((await state()).buttons.length,19);
    if(mode==='lobby')for(const action of ['ready','start_online','leave_online','lobby_workshop'])assert((await state()).buttons.some(b=>b.action===action),action);
   }
   for(const view of ['create','two_factor']){await command('auth',view);await snap(`handheld-account-${view}`);}

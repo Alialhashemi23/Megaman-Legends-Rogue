@@ -109,7 +109,7 @@ var movement_heading = Vector3.FORWARD
 var test_enemy: DiverEnemy
 const SAVE_PATH = "res://save/archive.json"
 const WEB_SAVE_PATH = "user://archive.json"
-const OVERLAY_MODES = ["pause", "options", "controls", "inventory", "choice"]
+const OVERLAY_MODES = ["pause", "options", "controls", "controller_test", "inventory", "choice"]
 var save_path = SAVE_PATH
 # Online co-op state. Remote teammates are DiverPlayer proxies keyed by lobby slot.
 var net: DiverNet
