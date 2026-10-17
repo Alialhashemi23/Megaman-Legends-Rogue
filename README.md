@@ -58,7 +58,7 @@ Gameplay actions can be rebound in **Options → Controls & bindings** (sticks, 
 | Jump | Space | A |
 | Dash (brief invulnerability) | Left Shift | B |
 | Open a cache, salvage, use a well or lift | E | X |
-| Buster parts and stats (pauses solo); opens a waiting part pick first | Tab | Select / View |
+| Buster parts and stats (pauses solo); opens waiting upgrades first | Tab | Select / View |
 | Pause / menu | Escape | Start |
 | Pick an upgrade on a choice screen | 1, 2, 3 | D-pad / stick + A |
 | Ping (online) | G or middle mouse | LB |
@@ -68,6 +68,8 @@ Gameplay actions can be rebound in **Options → Controls & bindings** (sticks, 
 | Mute | M | — |
 
 Menus: arrows or the mouse to browse, Enter to confirm, Escape to go back (controller: D-pad or left stick, A, B). The mouse wheel scrolls part lists.
+
+Upgrade choices appear over the current game view. Solo pauses; in co-op, earned part, level and milestone choices wait until opened with Tab / Select. Your digger stands still and remains vulnerable while choosing online. Each pick needs a fresh press; Esc / B keeps unused offers for later. Exact waiting offers survive rejoining; unpicked upgrades expire at final extraction.
 
 ## Your first descent
 

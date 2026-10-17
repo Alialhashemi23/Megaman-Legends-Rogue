@@ -1,5 +1,12 @@
 # Local build history
 
+## 32 — Upgrade overlays and queued co-op choices
+
+- Part, level and guardian-milestone choices now appear over the same camera view with a brief fade, cobalt dim and the Life/map/team HUD kept visible. Solo pauses; Back or the parts button returns an unused offer to pending.
+- Online, every earned choice waits until opened with Tab / Select. Picks advance in one overlay, with a fresh press for each. Your digger stands still while choosing; combat continues and hits can land. Downing closes the overlay and keeps unused offers. Unpicked upgrades expire at final extraction.
+- Exact offers survive reload and host migration without rerolls or duplicate rewards. Fixed an intermediate recovery snapshot that could include a closed or already-applied offer.
+- Validation: overlay 248, co-op feedback 60, resume 31, milestone 59 and readiness 57 checks pass. Real signed-in two-browser co-op verified four queued offers, held input, Back/reload, final-pick/reload and host migration against a disposable account service. Ordinary Web menus/Ready/cancel/reload and pointer-capture checks pass. Physical controller, Retroid and owner playtest remain pending.
+
 ## 31 — Deliberate Solo selection and confirmed co-op starts
 
 - Main-menu actions now include Account / Sign in. Solo opens a preparation screen with the original digger model, signature attack and equipped specialization. Accept the digger, then press again to start; Back restores useful focus. Held buttons and an idle mouse no longer activate the next screen or steal controller focus.

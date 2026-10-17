@@ -64,12 +64,12 @@ The Windows build can join the same lobbies. It defaults to `wss://megaman.galos
 ## How co-op plays
 
 - Everyone shares one run: the same seeded ruins, the same robots, shared **scrap** and shared **XP** (each digger levels up and picks their own upgrade).
-- Builds are personal. Every **part cache** gives *each* digger their own pick, and each guardian drops one core per digger. Whoever opens a cache chooses right away; everyone else gets a *Part Choice Waiting* notice and picks with **Tab** (controller **Select**) when ready. **Tab / Select** or **Esc / B** puts a pick aside for later without changing its options.
+- Builds are personal. Every **part cache** gives *each* digger their own pick, and each guardian drops one core per digger. Cache, level and guardian-milestone choices wait until you open them with **Tab** (controller **Select**). Pick sequentially with a fresh press for each offer. **Tab / Select** or **Esc / B** puts unused choices aside without changing their options; exact waiting offers survive rejoining. Unpicked upgrades expire at final extraction.
 - The ruins map is shared: rooms any teammate explores show up for everyone, with part caches marked (gold ready, flashing cyan waiting for you, dark opened).
 - Robots gain Life, and rooms gain extra robots, for each digger in the party. Guardians scale the most.
 - At 0 Life a digger goes **down**. Any teammate standing next to them for about 2.5 seconds revives them with 35% Life. The dig ends only when everyone is down. Taking the lift also revives downed diggers.
 - The lift waits until every standing digger is aboard.
-- Menus and part choices don't pause the dig online. While you choose a part you're protected and robots look for other targets.
+- Menus and upgrade choices don't pause the dig online. Your digger stands still while choosing, and hits can still land, so find a safe spot before opening your waiting upgrades. Going down closes the overlay and keeps unused offers for after a revive.
 - Controllers work everywhere (see Options → Controls & bindings to remap). In a dig: LB pings and the D-pad sends callouts.
 - Talk with **T** (or Enter), mark a spot, robot, cache or lift for the team with **G** (or middle mouse), and shout quick callouts with **1–4** (*Help!*, *Over here!*, *Nice!*, *Wait up!*). Chat also works in the lobby room.
 - While you're down, the camera follows a standing teammate. Click to switch who you watch.
