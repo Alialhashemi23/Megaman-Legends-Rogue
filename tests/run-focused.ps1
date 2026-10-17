@@ -3,6 +3,7 @@ param(
  [string]$Script,
  [switch]$Import,
  [switch]$Render,
+ [string]$NodeScript,
  [int]$TimeoutSeconds = 120,
  [string]$Godot = 'D:\code repos\Megaman-Legends-Rogue\tools\Godot_v4.7.1-stable_win64_console.exe'
 )
@@ -21,19 +22,24 @@ $taskRuntime = Join-Path $taskRoot 'save/overnight-runtime'
 New-Item -ItemType Directory -Force -Path $taskRuntime | Out-Null
 $env:APPDATA = $taskRuntime
 $env:LOCALAPPDATA = $taskRuntime
-$taskLabel = if ($Import) { 'import' } else { [IO.Path]::GetFileNameWithoutExtension($Script) }
-if (-not $Import -and -not $Script) { throw 'Specify -Import or -Script' }
-$taskInfo = [Diagnostics.ProcessStartInfo]::new($Godot)
+$taskLabel = if ($Import) { 'import' } elseif ($NodeScript) { [IO.Path]::GetFileNameWithoutExtension($NodeScript) } else { [IO.Path]::GetFileNameWithoutExtension($Script) }
+if (-not $Import -and -not $Script -and -not $NodeScript) { throw 'Specify -Import, -Script or -NodeScript' }
+$env:GODOT = $Godot
+$taskExecutable = if ($NodeScript) { (Get-Command node).Source } else { $Godot }
+$taskInfo = [Diagnostics.ProcessStartInfo]::new($taskExecutable)
 $taskInfo.WorkingDirectory = $taskRoot
 $taskInfo.UseShellExecute = $false
 $taskInfo.CreateNoWindow = $true
 $taskInfo.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
 $taskInfo.RedirectStandardOutput = $true
 $taskInfo.RedirectStandardError = $true
-if (-not $Render) { $taskInfo.ArgumentList.Add('--headless') }
-foreach ($taskArg in @('--path',$taskRoot)) { $taskInfo.ArgumentList.Add($taskArg) }
-if ($Import) { foreach ($taskArg in @('--editor','--import')) { $taskInfo.ArgumentList.Add($taskArg) } }
-else { foreach ($taskArg in @('--script',$Script)) { $taskInfo.ArgumentList.Add($taskArg) } }
+if ($NodeScript) { $taskInfo.ArgumentList.Add($NodeScript) }
+else {
+ if (-not $Render) { $taskInfo.ArgumentList.Add('--headless') }
+ foreach ($taskArg in @('--path',$taskRoot)) { $taskInfo.ArgumentList.Add($taskArg) }
+ if ($Import) { foreach ($taskArg in @('--editor','--import')) { $taskInfo.ArgumentList.Add($taskArg) } }
+ else { foreach ($taskArg in @('--script',$Script)) { $taskInfo.ArgumentList.Add($taskArg) } }
+}
 $taskProcess = [Diagnostics.Process]::Start($taskInfo)
 $taskStdout = $taskProcess.StandardOutput.ReadToEndAsync()
 $taskStderr = $taskProcess.StandardError.ReadToEndAsync()

@@ -187,6 +187,7 @@ var leave_guard = false
 var logged_checkpoint = ""
 var run_log: DiverRunLog
 var run_log_path = ""
+var info_publisher: DiverInfoPublisher
 
 func _ready() -> void:
 	# Keep paths a test assigned before adding the game, so checks never touch real saves.
@@ -202,6 +203,10 @@ func _ready() -> void:
 	net = DiverNet.new()
 	net.game = self
 	add_child(net)
+	info_publisher = DiverInfoPublisher.new()
+	info_publisher.game = self
+	info_publisher.published.connect(func(build): net.broadcast([DiverNet.M_INFO, build]))
+	add_child(info_publisher)
 	account = DiverAccount.new()
 	account.game = self
 	account.cache_root = DiverPaths.pick("res://save/accounts", "user://accounts")
@@ -2007,7 +2012,7 @@ func discard_saved_dig() -> void:
 
 # --- connection, hosting and lobby events ---------------------------------------
 
-func send_info() -> void:
+func send_info(force: bool = false) -> void:
 	if not is_instance_valid(player): return
 	var build = build_state()
 	if mode in ["lobby", "online", "title"]:
@@ -2017,8 +2022,9 @@ func send_info() -> void:
 		build.spec = equipped_spec(selected_character)
 	if net.active():
 		roster[net.player_id] = build
-		net.broadcast([DiverNet.M_INFO, build])
+		info_publisher.submit(build, force)
 		if not in_run(): net.publish_selection()
+	else: info_publisher.clear()
 
 func send_state() -> void:
 	var p = player
@@ -2310,7 +2316,8 @@ func lobby_updated() -> void:
 			remote_players[member_slot].player_id = net.member_id(member_slot)
 
 func peer_entered(member_slot: int, id: String) -> void:
-	send_info()
+	info_publisher.clear()
+	send_info(true)
 	# The newcomer may be a returning digger: hand back their build with the world.
 	if net.is_host() and in_run(): net.send(member_slot, [DiverNet.M_SYNC, world_state(), roster.get(id, {})])
 
