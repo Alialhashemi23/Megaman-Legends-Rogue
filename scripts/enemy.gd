@@ -634,4 +634,4 @@ func mender_repair(dt: float) -> void:
 	if ally == null: return
 	game.beam_flash(global_position + Vector3.UP * 1.5, ally.global_position + Vector3.UP * (2.5 if ally.kind == 3 else 1.1), 0.06, Color("8ee3a0"))
 	if game.net.is_guest(): return
-	ally.health = minf(ally.max_health, ally.health + ally.max_health * (0.01 if ally.kind == 3 else 0.04))
+	ally.health = minf(ally.max_health, ally.health + ally.max_health * (0.005 if ally.kind == 3 else 0.04))
