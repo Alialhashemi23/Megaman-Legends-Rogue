@@ -1,5 +1,14 @@
 # Local build history
 
+## 35 — Tougher guardians, new robots, the Power Relay, rerolls and four parts
+
+- Balance: Forked Antenna side bolts spread wider, so they only hit a guardian up close. Ember Engines keep burning with 12% of each hit per stack; Storm Coils ground into a lone target; frost-slowed machines wind up slower and take 10% more; Oracle Prisms give 10% crit per stack. Level-up power and fire-rate picks now count like one more Sunken Lens or Clockwork Spring. Guardians are much tougher on deeper descents (and in larger parties) and call helpers at half Life.
+- Every guardian vents a glowing core on its back after its big attacks; core hits deal 2.5× damage. The last guardian's arena has crumbling stone pillars that block its shots.
+- New robots from the second descent: Grenadiers lob shell volleys over cover, and Menders repair nearby machines.
+- One chamber per floor is a Power Relay: activate it and hold the lit rings through small waves; the vault gives every digger a better part pick.
+- Four new parts: Refractor Crystal (exposed machines and cores), Flare Cartridge (burning patches), Shatter Core (slowed machines) and Overclock Relay (faster while untouched).
+- One reroll per descent per digger for part and milestone offers (R / controller Y). Options → Controller test shows what the game sees from a pad. Dig ended → Dig Log keeps your last 20 digs: build at each guardian, fight length, Life lost and picks. Co-op sends fewer redundant build updates.
+- Game protocol is now 12: refresh browser tabs and update native/Android clients before joining. Validation: variety 45, reroll 49, controller 58, dig log 33, network trim 122 and every existing suite pass; real-relay seven-role co-op recovery (including synced helpers and the Relay) and four-player readiness journeys pass. Physical controller, Retroid and owner playtest remain pending.
 ## 34 — Handheld readability and camera preferences
 
 - Options now offers a device-local Standard / Handheld UI preset, independent Standard / Large minimap, and Standard / Close camera framing. Desktop defaults and existing settings keep their original view. Fresh Android installs use the handheld UI and larger map.

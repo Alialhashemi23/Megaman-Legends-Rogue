@@ -43,13 +43,7 @@ Built for handhelds with controllers (such as the Retroid Pocket 5); a gamepad o
 
 Press **C** (controller **Y**) on the title screen to cycle diggers. Each has their own Workshop tree (see [Progression](#progression)).
 
-**Solo** opens preparation: left/right chooses a digger; confirm the selection, then press again on **Start Dig**. Online, everyone selects **Ready** before the host starts the cancellable countdown. Current browser/Windows co-op uses game protocol 11; the published Android 0.19.0 APK needs a matching future update to join these lobbies.
-
-## Overnight source candidate
-
-The overnight branches add rerolls, controller diagnostics, a local dig log and
-combat/content changes. They are **not included in the shipped build-34 packages**.
-See [candidate features and validation gaps](docs/OVERNIGHT-CANDIDATE.md).
+**Solo** opens preparation: left/right chooses a digger; confirm the selection, then press again on **Start Dig**. Online, everyone selects **Ready** before the host starts the cancellable countdown. Current browser/Windows co-op uses game protocol 12; older Android APKs need a matching update to join these lobbies.
 
 ## Controls
 
@@ -67,6 +61,7 @@ Gameplay actions can be rebound in **Options → Controls & bindings** (sticks, 
 | Buster parts and stats (pauses solo); opens waiting upgrades first | Tab | Select / View |
 | Pause / menu | Escape | Start |
 | Pick an upgrade on a choice screen | 1, 2, 3 | D-pad / stick + A |
+| Reroll a part or milestone offer (once per descent) | R | Y |
 | Ping (online) | G or middle mouse | LB |
 | Chat (online) | T or Enter | — |
 | Quick callouts (online) | 1–4 | D-pad |
@@ -75,7 +70,9 @@ Gameplay actions can be rebound in **Options → Controls & bindings** (sticks, 
 
 Menus: arrows or the mouse to browse, Enter to confirm, Escape to go back (controller: D-pad or left stick, A, B). The mouse wheel scrolls part lists.
 
-Upgrade choices appear over the current game view. Solo pauses; in co-op, earned part, level and milestone choices wait until opened with Tab / Select. Your digger stands still and remains vulnerable while choosing online. Each pick needs a fresh press; Esc / B keeps unused offers for later. Exact waiting offers survive rejoining; unpicked upgrades expire at final extraction.
+Upgrade choices appear over the current game view. Solo pauses; in co-op, earned part, level and milestone choices wait until opened with Tab / Select. Your digger stands still and remains vulnerable while choosing online. Each pick needs a fresh press; Esc / B keeps unused offers for later. Exact waiting offers survive rejoining; unpicked upgrades expire at final extraction. Each digger has **one reroll per descent** for a part or milestone offer (not level-ups).
+
+**Options → Controller test** shows what the game sees from your pad (name, axes, buttons, browser mapping) without changing bindings. **Dig ended → Dig Log** keeps your last 20 digs on this device: your build at each guardian, the fight length, Life lost and every pick.
 
 ## Your first descent
 
@@ -83,10 +80,13 @@ Upgrade choices appear over the current game view. Solo pauses; in co-op, earned
 2. Follow doorways into connected chambers. The ruins map reveals rooms as you explore and outlines the guardian chamber in gold once you're nearby.
 3. Shoot the machines, dash through attacks and collect their scrap and experience. Nearby drops move toward you.
 4. Clear a room to unlock its cache and earn five bonus scrap. Spend scrap on a choice of three parts, or save it for a restoration well. Vessels hold free salvage.
-5. Levelling up offers a choice of damage, Life or fire-rate upgrades.
+5. Levelling up offers a choice of damage, Life or fire-rate upgrades. A power pick counts like one more Sunken Lens and a fire-rate pick like one more Clockwork Spring.
 6. Defeat the guardian to power the lift. You can keep exploring first. Lifts keep your build and restore 25% Life.
    The first and second guardians also give each digger a **guardian milestone**: a choice of three major upgrades for the rest of the dig, weighted toward parts you have fitted (each also works without them). They are Arc Conductor, Wildfire Core, Glacier Drive, Twin Capacitor, Fortune Prism, Bulwark Frame, Scavenger's Instinct, Opening Salvo, Second Wind and Kinetic Loader. The final guardian ends the dig, so it gives its part reward only. Regular parts and level-ups still stack as before.
+   Guardians vent a glowing **core** on their back after big attacks: hits there deal far more damage for a few seconds. At half Life they shield briefly and call for helpers. The last guardian's arena has stone pillars that block its shots until they crumble.
 7. Survive three descents and activate the extraction beacon to win.
+
+From the second descent, **Grenadiers** lob shell volleys over cover (keep moving) and **Menders** repair nearby machines (shoot them first). Each floor also has a **Power Relay** chamber: activate the console, then stand in the lit ring while machines pour in. When it's charged, the vault gives every digger a better part pick.
 
 There is no countdown or time-based difficulty. Explore at your own pace; difficulty rises with each descent.
 

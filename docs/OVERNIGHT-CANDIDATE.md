@@ -1,10 +1,9 @@
-# Overnight candidate — not packaged or live
+# Build 35 feature notes
 
-The shipped Windows/Web packages remain build 34 (`0e50a95`). These source
-changes are being developed in two isolated branches. Integrate and validate
-both before assigning a build number or replacing any download.
+Shipped in build 35 (protocol 12). Player-facing summary: build/CHANGELOG.md.
+These notes keep the detail on rerolls, the controller test and the dig log.
 
-## New controls and playtest tools (Codex branch)
+## New controls and playtest tools
 
 - Part and guardian-milestone offers have **one reroll per descent per digger**.
   Unused rerolls do not accumulate. Each offer can be rerolled once. Choose
@@ -44,29 +43,13 @@ Desktop storage is `save/dig-log.json`; Web/Android use the game's `user://`
 storage. A full disk or invalid log does not block progress or checkpoint
 saving. The log has no account ids, player names, tokens or network addresses.
 
-## Combat/content candidate (Claude branch, per its handoff)
+## Combat and content
 
-Claude reports part-fairness tuning, additive level-up power/haste pools,
+Part-fairness tuning, additive level-up power/haste pools,
 stronger later guardians with Overdrive helpers, Grenadier and Mender robots,
 exposed guardian cores, B3 crumbling cover, a Power Relay event and four new
 parts: Refractor Crystal, Flare Cartridge, Shatter Core and Overclock Relay.
 The Relay vault gives each digger a better part offer. The combined reroll
 implementation must retain that weighted offer rule.
 
-These combat changes require **protocol 12**. Codex did not change the protocol
-or add messages. The morning integrator must preserve Claude's protocol bump,
-rebuild the relay/container for its account part gates, and produce matching
-Web, Windows and signed Android packages. Build-34/protocol-11 APKs will not
-join protocol-12 lobbies.
-
-## Validation still required before delivery
-
-Codex's focused native checks and disposable seven-role recovery journey pass
-on its own branch. Native screenshots at 1440×900 and 960×540 were reviewed.
-Synthetic controller data was used for the diagnostic previews. Both branches
-still need combined focused checks and a real Relay/reroll recovery journey.
-The actual exported browser build (including trusted-click mouse recapture),
-signed-in co-op, physical Xbox/Elite, Retroid readability/performance and the
-owner's playtest remain open. No export or package test was done overnight.
-
-[Permanent gear proposal](GEAR-01-PROPOSAL.md) is design only and adds no gear.
+These changes use **protocol 12**: build-34 / protocol-11 clients (including older APKs) can't join protocol-12 lobbies.
