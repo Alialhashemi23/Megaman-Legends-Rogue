@@ -19,6 +19,10 @@ var clock = 0.0
 var total = 0.0
 var waiting_for = ""
 var marker = 0
+# Guest-side evidence for protocol 12: synced helpers, the relay finish, its own relay pick.
+var saw_spawn = false
+var saw_relay = false
+var saw_relay_pick = false
 
 func _ready() -> void:
 	name = "NetDriver"
@@ -88,6 +92,10 @@ func _process(dt: float) -> void:
 	if total > 170: fail("overall timeout (%s)" % waiting_for)
 	# Keep test diggers safe from robots unless a step downs one on purpose.
 	if is_instance_valid(game.player) and game.in_run() and not game.player.downed and not (role == "guest" and step == 6): game.player.invincible = 999
+	if role == "guest" and game.in_run() and game.depth == 1:
+		if game.spawned.size() > 0: saw_spawn = true
+		if game.relay.get("done", false): saw_relay = true
+		if game.choice_known("relay:1"): saw_relay_pick = true
 	call(role + "_step")
 
 func host_step() -> void:
@@ -119,6 +127,17 @@ func host_step() -> void:
 			if game.mode != "choice": fail("parts button should open the host's waiting picks")
 			if not game.world_running(): fail("online choices must not pause the world")
 			take_all_picks()
+			# Protocol 12: a synced mid-fight helper and a finished Power Relay.
+			if game.spawn_dynamic(4, game.player.position + Vector3(5, 0, 5), 0) == null: fail("host should spawn a helper")
+			if game.relay.is_empty(): fail("B1 should have a Power Relay")
+			game.perform_interact(game.interactables[game.relay.console], game.player)
+			game.relay.charge = 99.9
+			game.relay.ring = 2
+			var ring: Vector3 = game.relay.rings[2]
+			game.player.position = Vector3(ring.x, 0.12, ring.z)
+			game.relay_update(0.1)
+			if not game.relay.done or not game.choice_known("relay:1"): fail("host relay should finish with a waiting vault pick")
+			print("CHECK host spawned a helper and finished the relay, spawned=%d" % game.spawned.size())
 			step += 1
 		6:
 			var p = proxy(2)
@@ -207,6 +226,8 @@ func guest_step() -> void:
 				# Each digger earns their own guardian milestone (shown now or waiting).
 				if not game.milestone_owed_or_taken(1): fail("guest should be offered a guardian milestone")
 				print("CHECK guest has a personal guardian milestone")
+				if not (saw_spawn and saw_relay and saw_relay_pick): fail("guest should see the synced helper (%s), relay finish (%s) and its own relay pick (%s)" % [saw_spawn, saw_relay, saw_relay_pick])
+				print("CHECK guest saw synced helpers, the relay finish and got a relay pick")
 		9:
 			if wait(proxy(3) != null, "late joiner seen", 40):
 				game.save_checkpoint()
