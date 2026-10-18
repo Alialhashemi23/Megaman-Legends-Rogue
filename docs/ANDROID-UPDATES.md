@@ -1,5 +1,17 @@
 # Android accounts and updates
 
+## Current GitHub release
+
+Android **0.21.0**, version code **7**, carries build-35 gameplay and **game protocol 12**.
+Download the release-signed ARM64 APK from the repository's [latest release](https://github.com/Alialhashemi23/Megaman-Legends-Rogue/releases/latest).
+It supports Android 7.0+ and uses the established release certificate. Install
+over an earlier matching release to retain saves and sign-in. The checksum and
+certificate fingerprint are recorded in the release notes. Physical Retroid
+validation is still pending. GitHub publication does not enable or update the
+optional domain-hosted Android metadata/routes described below.
+
+The build-3 account/update implementation notes below are historical.
+
 Build 3 (`0.18.0`) introduces Android device approval, Keystore-backed saved
 sessions and startup update checks. It keeps app id `dev.galosengen.relicdiver`,
 game protocol 7, checkpoint 3 and profile 2. Guest solo remains available offline.

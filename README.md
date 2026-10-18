@@ -6,6 +6,8 @@ A third-person 3D dungeon roguelike fan prototype made in Godot 4.7.1, inspired 
 
 ## Download for Android
 
+**Current release: Android 0.21.0 (version code 7), matching build 35 and co-op protocol 12.**
+
 **[Download the latest APK](https://github.com/Alialhashemi23/Megaman-Legends-Rogue/releases/latest/download/RelicDiver-android.apk)** (Android 7.0 or newer, 64-bit ARM; about 31 MB). All versions and release notes: [Releases](https://github.com/Alialhashemi23/Megaman-Legends-Rogue/releases).
 
 Built for handhelds with controllers (such as the Retroid Pocket 5); a gamepad or a Bluetooth controller is needed, as there are no touch controls.

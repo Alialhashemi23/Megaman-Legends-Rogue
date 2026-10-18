@@ -1,5 +1,11 @@
 # Local build history
 
+## Android 0.21.0 — build 35 compatibility
+
+- ARM64 Android release, version code 7, includes the integrated build-35 gameplay and UI with co-op protocol 12. This updates the previous public 0.19.0 APK.
+- Uses the established release-signing certificate; install over the existing release to retain local data. No uninstall is needed for matching release signatures.
+- Android checks 48/0, release signature v2/v3, manifest and archive checks pass. Physical-device installation, Retroid performance/readability and cross-play remain pending.
+
 ## 35 — Tougher guardians, new robots, the Power Relay, rerolls and four parts
 
 - Balance: Forked Antenna side bolts spread wider, so they only hit a guardian up close. Ember Engines keep burning with 12% of each hit per stack; Storm Coils ground into a lone target; frost-slowed machines wind up slower and take 10% more; Oracle Prisms give 10% crit per stack. Level-up power and fire-rate picks now count like one more Sunken Lens or Clockwork Spring. Guardians are much tougher on deeper descents (and in larger parties) and call helpers at half Life.
