@@ -67,6 +67,7 @@ var scrap = 0
 var kills = 0
 var run_time = 0.0
 var run_seed = 0
+var floor_generation = 36
 var total_damage = 0.0
 var guardian_dead = false
 # Solo: open the waiting picks on the next frame (a level-up mid-update).
@@ -99,7 +100,7 @@ var launch_lease_checked = false
 var start_controls_blocked = false
 var loadout_change_requested = false
 # An aborted preparation restores the inactive lobby view without touching disk.
-const PREPARATION_FIELDS = ["run_seed", "run_id", "party_size", "depth", "scrap", "kills", "run_time", "total_damage", "auto_open_choice", "pending_choices", "choice_source", "end_reason", "pickup_seq", "new_unlocks", "run_recorded", "zenny_earned", "roster"]
+const PREPARATION_FIELDS = ["floor_generation", "run_seed", "run_id", "party_size", "depth", "scrap", "kills", "run_time", "total_damage", "auto_open_choice", "pending_choices", "choice_source", "end_reason", "pickup_seq", "new_unlocks", "run_recorded", "zenny_earned", "roster"]
 var zenny_earned = 0
 var run_recorded = false
 var screenshot_timer = -1.0
@@ -381,6 +382,7 @@ func start_run(seed_value: int = 0, party: int = 1, id: String = "") -> void:
 
 # Shared deterministic world construction; callers decide when it becomes live.
 func configure_run(seed_value: int, party: int, id: String) -> void:
+	floor_generation = 36
 	run_seed = seed_value
 	run_id = id
 	if not net.active(): roster.clear()
@@ -1895,6 +1897,7 @@ func world_state() -> Dictionary:
 		if is_instance_valid(p.node): items.append([p.net_id, p.node.position, p.kind, float(p.value), p.id, p.owner])
 	var state = {"run_id": run_id, "seed": run_seed, "depth": depth, "party": party_size, "floor_seed": run_seed if depth == 1 else floor_seed(depth), "scrap": scrap, "kills": kills, "run_time": run_time, "total_damage": total_damage, "guardian_dead": guardian_dead, "alive": alive, "used": used, "cleared": cleared, "visited": visited, "pickups": items, "pickup_seq": pickup_seq}
 	state.spawned = spawned.duplicate(true)
+	state.floor_generation = floor_generation
 	if not relay.is_empty(): state.relay = [relay.charge, relay.ring, relay.active, relay.done]
 	return state
 
@@ -1903,6 +1906,8 @@ func apply_world_state(w: Dictionary, keep_player: bool) -> void:
 	if run_id != str(w.get("run_id", "")): run_recorded = false
 	run_id = str(w.get("run_id", ""))
 	run_seed = int(w.get("seed", 1))
+	# Keep old checkpoint object IDs and random draws stable until that dig ends.
+	floor_generation = int(w.get("floor_generation", 35))
 	party_size = clampi(int(w.get("party", 1)), 1, DiverNet.MAX_PLAYERS)
 	depth = clampi(int(w.get("depth", 1)), 1, 3)
 	auto_open_choice = false
@@ -1916,7 +1921,7 @@ func apply_world_state(w: Dictionary, keep_player: bool) -> void:
 	restore_spawned(w.get("spawned", []))
 	if not relay.is_empty() and w.get("relay") is Array and (w.relay as Array).size() == 4:
 		relay.charge = clampf(float(w.relay[0]), 0.0, 100.0)
-		relay.ring = clampi(int(w.relay[1]), 0, 2)
+		relay.ring = clampi(int(w.relay[1]), 0, relay.rings.size() - 1)
 		relay.active = bool(w.relay[2])
 		relay.done = bool(w.relay[3])
 	scrap = int(w.get("scrap", 0))
@@ -2775,10 +2780,11 @@ func guardian_adds(guardian) -> void:
 # --- Power Relay (ROOM-01) ---------------------------------------------------
 
 const RELAY_RING = 2.6
-const RELAY_SECONDS = 45.0
+const RELAY_SECONDS = 24.0
 
-# One ordinary chamber per floor becomes the relay chamber.
+# One seeded descent per dig offers a relay. All clients derive the same floor.
 func pick_relay_room() -> int:
+	if floor_generation >= 36 and depth != posmod(run_seed, 3) + 1: return -1
 	var options = []
 	for i in range(1, rooms.size()):
 		if i != exit_room and rooms[i].kind == "chamber": options.append(i)
@@ -2786,8 +2792,9 @@ func pick_relay_room() -> int:
 
 func build_relay(room: Dictionary, room_id: int) -> void:
 	var rings = []
-	for n in 3:
-		var angle = TAU * n / 3.0 + 0.5
+	var ring_count = 2 if floor_generation >= 36 else 3
+	for n in ring_count:
+		var angle = TAU * n / float(ring_count) + 0.5
 		var at = room.center + Vector3(cos(angle), 0, sin(angle)) * 7.0
 		if not navigation.open_at(at) or floor_height(at) != 0: at = room.center + Vector3(cos(angle), 0, sin(angle)) * 4.0
 		rings.append(Vector3(at.x, 0, at.z))
@@ -2822,7 +2829,7 @@ func relay_update(dt: float) -> void:
 	for p in all_players():
 		if not p.downed and Vector2(p.position.x - lit.x, p.position.z - lit.z).length() < RELAY_RING: charging = true
 	if charging: relay.charge = minf(100.0, relay.charge + dt * 100.0 / RELAY_SECONDS)
-	relay.ring = mini(2, int(relay.charge / 33.34))
+	relay.ring = mini(relay.rings.size() - 1, int(relay.charge / (100.0 / relay.rings.size())))
 	relay.wave -= dt
 	if relay.wave <= 0:
 		relay.wave = 8.0
@@ -2842,14 +2849,14 @@ func finish_relay() -> void:
 	relay.active = false
 	relay.done = true
 	relay.charge = 100.0
-	net.broadcast([DiverNet.M_RELAY, depth, 100.0, 2, 2])
+	net.broadcast([DiverNet.M_RELAY, depth, 100.0, relay.rings.size() - 1, 2])
 	drop_pickup(interactables[relay.console].node.position + Vector3(1.5, 0.5, 0), "scrap", 20 + 10 * depth)
 	earn_relay_choice()
 
 func remote_relay(m: Array) -> void:
 	if relay.is_empty(): return
 	relay.charge = clampf(float(m[2]), 0.0, 100.0)
-	relay.ring = clampi(int(m[3]), 0, 2)
+	relay.ring = clampi(int(m[3]), 0, relay.rings.size() - 1)
 	relay.active = int(m[4]) == 1
 	if int(m[4]) == 2 and not relay.done:
 		relay.done = true

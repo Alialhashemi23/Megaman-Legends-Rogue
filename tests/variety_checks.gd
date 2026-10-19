@@ -51,7 +51,7 @@ func run() -> void:
 	game.meta = DiverProgression.fresh()
 	game.meta.kills = 400
 	await process_frame
-	verify(DiverNet.NET_VERSION == 12, "Protocol bumped for the new messages, enemies and parts")
+	verify(DiverNet.NET_VERSION == 13, "Protocol separates build36 floor generation from build35")
 
 	# --- Level-ups count like parts (BAL-02 C, half) --------------------------
 	fresh_run(31337, 1)
@@ -220,8 +220,8 @@ func run() -> void:
 		verify(hurt.health > hurt_before, "A mender repairs a nearby machine")
 
 	# --- Power Relay (ROOM-01) -----------------------------------------------------
-	fresh_run(31337, 2)
-	verify(not game.relay.is_empty() and game.relay.rings.size() == 3, "Each floor has a Power Relay chamber")
+	fresh_run(31336, 2)
+	verify(not game.relay.is_empty() and game.relay.rings.size() == 2, "Seeded relay descent has two rings")
 	var console = game.interactables[game.relay.console]
 	verify(console.kind == "relay", "The relay has a console")
 	game.mode = "play"
@@ -240,6 +240,7 @@ func run() -> void:
 		game.relay_update(1.0)
 		guard += 1
 	verify(game.relay.done and game.spawned.size() > 0, "Holding the rings finishes the relay; waves arrived (%d)" % game.spawned.size())
+	verify(guard == 24, "Relay completes in 24 occupied seconds")
 	verify(game.mode == "choice" and str(game.choice_source.get("id", "")) == "relay:2", "Solo, the vault pick opens at once")
 	verify(not "lens" in game.choice_items, "The vault skips your most-stacked part")
 	game.choose(0)
@@ -247,7 +248,24 @@ func run() -> void:
 	verify(relay_state[3] == true, "A finished relay is saved as done")
 	game.remote_relay([DiverNet.M_RELAY, 2, 100.0, 2, 2])
 	verify(game.pending_choices.is_empty(), "A repeated finish message grants nothing more")
+	for seed_value in [11, 12, 13]:
+		var offered = 0
+		for d in [1, 2, 3]:
+			fresh_run(seed_value, d)
+			if not game.relay.is_empty():
+				offered += 1
+				verify(d == posmod(seed_value, 3) + 1, "Relay floor follows run seed")
+		verify(offered == 1, "Exactly one relay offered per three-descent dig")
 
+	game.floor_generation = 35
+	game.rng.seed = game.floor_seed(game.depth)
+	game.build_floor(true)
+	var legacy = game.world_state()
+	legacy.erase("floor_generation")
+	var old_enemies = game.enemies.size()
+	var old_objects = game.interactables.size()
+	game.apply_world_state(legacy, true)
+	verify(game.floor_generation == 35 and game.relay.rings.size() == 3 and game.enemies.size() == old_enemies and game.interactables.size() == old_objects, "Build35 checkpoint keeps old generation and object IDs")
 	for path in ["res://save/variety-test.json", "res://save/variety-test.dat"]:
 		if FileAccess.file_exists(path): DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	print("VARIETY_CHECKS: %d checks, %d failures" % [checks, failures])
