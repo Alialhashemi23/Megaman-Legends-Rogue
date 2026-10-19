@@ -169,6 +169,9 @@ func run() -> void:
 	verify(game.mode == "workshop" and hud.focus_index == node_focus, "Save Codes Back restores the selected circuit")
 	press(KEY_ESCAPE)
 	await refresh()
+	verify(game.mode == "workshop" and hud.focused_action() == "tree_character", "Workshop Back first reaches digger header")
+	press(KEY_ESCAPE)
+	await refresh()
 	verify(game.mode == "title" and hud.focused_action() == "workshop", "Workshop Back restores its title action")
 	# Saved-dig priority may insert/remove a row without moving focus to another action.
 	hud.focus_action("account")

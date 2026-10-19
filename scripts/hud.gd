@@ -755,7 +755,11 @@ func back() -> bool:
                 if a.state == "signing_in" or a.auth.busy: a.cancel_sign_in()
                 activate("title")
         "archive", "online": activate("title")
-        "workshop": activate(workshop_return)
+        "workshop":
+            if focused_action() != "tree_character":
+                focus_action("tree_character", workshop_character)
+                game.sound.play("menu_move", 0.8)
+            else: activate(workshop_return)
         "save_codes": activate("workshop")
         "inventory", "pause": activate("resume")
         "options": activate(options_return)
