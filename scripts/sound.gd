@@ -2,8 +2,8 @@ extends Node
 class_name DiverSound
 
 const MUSIC_NAMES = ["title", "tidal", "garden", "core", "guardian", "clear", "lost"]
-const EFFECT_NAMES = ["shot_0", "shot_1", "shot_2", "hit_0", "hit_1", "hit_2", "step_0", "step_1", "step_2", "needle", "siege", "loot", "scrap", "health", "hurt", "dash", "jump", "land", "level", "enemy", "door", "win", "warning", "slam", "destroy", "guardian_down", "menu_move", "menu_confirm", "lock"]
-const LEVELS = {"shot": -5.0, "needle": -6.0, "siege": -3.5, "hit": -7.0, "step": -9.0, "scrap": -10.0, "loot": -5.0, "health": -6.0, "hurt": -4.0, "warning": -2.0, "slam": -3.0, "enemy": -7.0, "destroy": -7.0, "guardian_down": -2.0, "menu_move": -7.0, "menu_confirm": -6.0, "lock": -6.0}
+const EFFECT_NAMES = ["shot_0", "shot_1", "shot_2", "hit_0", "hit_1", "hit_2", "step_0", "step_1", "step_2", "needle", "siege", "loot", "scrap", "health", "hurt", "dash", "jump", "land", "level", "enemy", "door", "win", "warning", "slam", "destroy", "guardian_down", "menu_move", "menu_confirm", "lock", "flare_ignite"]
+const LEVELS = {"flare_ignite": -12.0, "shot": -5.0, "needle": -6.0, "siege": -3.5, "hit": -7.0, "step": -9.0, "scrap": -10.0, "loot": -5.0, "health": -6.0, "hurt": -4.0, "warning": -2.0, "slam": -3.0, "enemy": -7.0, "destroy": -7.0, "guardian_down": -2.0, "menu_move": -7.0, "menu_confirm": -6.0, "lock": -6.0}
 const SETTINGS_PATH = "res://save/audio.json"
 var streams: Dictionary = {}
 var tracks: Dictionary = {}

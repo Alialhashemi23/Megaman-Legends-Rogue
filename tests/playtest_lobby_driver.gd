@@ -36,6 +36,7 @@ func run() -> void:
 	var stage = 0
 	var run_seen = 0
 	var ended = false
+	var saw_remote_fire = false
 	var deadline = Time.get_ticks_msec() + 35000
 	while Time.get_ticks_msec() < deadline:
 		await process_frame
@@ -58,6 +59,10 @@ func run() -> void:
 			stage = 1
 			run_seen = Time.get_ticks_msec()
 			for enemy in game.enemies: enemy.set_physics_process(false)
+			game.flare_patch(game.enemies[0].position, 12, 1, game.player)
+		if stage == 1:
+			for patch in game.flare_patches:
+				if not patch.local: saw_remote_fire = true
 		if stage == 1 and Time.get_ticks_msec() - run_seen > 600 and not ended:
 			ended = true
 			if scenario == "down":
@@ -65,6 +70,7 @@ func run() -> void:
 				game.player.downed = true
 			elif index == 1: game.end_run_all(scenario in ["win", "guest_leave"])
 		if stage == 1 and game.mode == "end" and game.hud.previous_mode == "end":
+			if not saw_remote_fire: fail("PT09 teammate ignition was not replicated"); return
 			if not net.active() or net.lobby_code != code: fail("results lost lobby"); return
 			if not game.hud.hits.any(func(h): return h.action == "lobby_room"): fail("no Return to Lobby action"); return
 			game.hud.activate("lobby_room")

@@ -16,7 +16,7 @@ const ITEMS = {
 	"frost": {"name": "Winter Flywheel", "desc": "Dashing slows nearby machines. Stacks extend the slow.", "color": "b2e4ef", "unlock": 220},
 	"clover": {"name": "Salvager's Charm", "desc": "+2.5 percentage points to relic drop chance per stack.", "color": "c1dc8e", "unlock": 220},
 	"refractor": {"name": "Refractor Crystal", "desc": "+40% damage per stack to exposed machines and venting guardian cores.", "color": "ffe9a0", "unlock": 150},
-	"flare": {"name": "Flare Cartridge", "desc": "Every sixth shot leaves a burning patch. Stacks burn hotter and wider.", "color": "ff9e5e", "unlock": 150},
+	"flare": {"name": "Flare Cartridge", "desc": "Every sixth shot ignites machines for 2 seconds. Stacks burn hotter and wider.", "color": "ff9e5e", "unlock": 150},
 	"shatter": {"name": "Shatter Core", "desc": "Slowed machines take +15% damage per stack and burst into frost when destroyed.", "color": "c8ecf7", "unlock": 300},
 	"overclock": {"name": "Overclock Relay", "desc": "+12% fire rate per stack while you have not been hit for 4 seconds.", "color": "f2c46b", "unlock": 300}
 }
@@ -161,6 +161,8 @@ var relay_clock = 0.0
 var pillar_life: Dictionary = {}
 # Flare Cartridge burning patches fired from this machine.
 var flare_patches: Array = []
+var flare_pool: Array[DiverFire] = []
+const FLARE_CAP = 6
 # Guardian milestones (polish P6): a major personal upgrade for the rest of the
 # dig, offered when the first and second guardians fall. The final guardian
 # ends the dig, so it keeps its part reward instead. Offers lean toward the
@@ -445,6 +447,7 @@ func build_floor(keep_player: bool, arrive: bool = true) -> void:
 	relay = {}
 	pillar_life.clear()
 	flare_patches.clear()
+	flare_pool.clear()
 	hit_confirm = 0
 	kill_confirm = 0
 	guardian_dead = false
@@ -1749,7 +1752,7 @@ func damage_enemy(enemy: DiverEnemy, amount: float, source: Node3D, effects: boo
 		enemy.take_damage(amount, effects, source)
 		return
 	if source != player: return
-	net.to_host([DiverNet.M_HIT, depth, enemy.net_id, amount])
+	net.to_host([DiverNet.M_HIT, depth, enemy.net_id, amount, effects])
 	hit_confirm = 0.14
 	enemy.flash = 0.1
 	enemy.my_last_hit = Time.get_ticks_msec()
@@ -2585,9 +2588,10 @@ const SHAPES = {
 	DiverNet.M_VISITED: [NUM, NUM],
 	DiverNet.M_SPAWN: [NUM, NUM, NUM, TYPE_VECTOR3, NUM],
 	DiverNet.M_RELAY: [NUM, NUM, NUM, NUM],
+	DiverNet.M_FLARE: [NUM, TYPE_VECTOR3, NUM],
 }
 # Messages tied to the current floor carry its descent number first.
-const FLOOR_MESSAGES = [DiverNet.M_STATE, DiverNet.M_SHOT, DiverNet.M_SNAP, DiverNet.M_ATTACK, DiverNet.M_RESOLVE, DiverNet.M_DAMAGE, DiverNet.M_DIE, DiverNet.M_PICKUP, DiverNet.M_PICKUP_GONE, DiverNet.M_USED, DiverNet.M_HIT, DiverNet.M_INTERACT, DiverNet.M_FROST, DiverNet.M_LIGHTNING, DiverNet.M_CLEARED, DiverNet.M_PING, DiverNet.M_CHOICE, DiverNet.M_VISITED, DiverNet.M_SPAWN, DiverNet.M_RELAY]
+const FLOOR_MESSAGES = [DiverNet.M_STATE, DiverNet.M_SHOT, DiverNet.M_SNAP, DiverNet.M_ATTACK, DiverNet.M_RESOLVE, DiverNet.M_DAMAGE, DiverNet.M_DIE, DiverNet.M_PICKUP, DiverNet.M_PICKUP_GONE, DiverNet.M_USED, DiverNet.M_HIT, DiverNet.M_INTERACT, DiverNet.M_FROST, DiverNet.M_LIGHTNING, DiverNet.M_CLEARED, DiverNet.M_PING, DiverNet.M_CHOICE, DiverNet.M_VISITED, DiverNet.M_SPAWN, DiverNet.M_RELAY, DiverNet.M_FLARE]
 
 func well_formed(m: Array) -> bool:
 	if typeof(m[0]) != TYPE_INT or not SHAPES.has(m[0]): return false
@@ -2633,6 +2637,8 @@ func net_message(from_slot: int, m: Array) -> void:
 			if roster.has(id):
 				roster[id].hp = float(m[8])
 				roster[id].downed = int(m[7]) & DiverPlayer.FLAG_DOWN != 0
+		DiverNet.M_FLARE:
+			if sender(from_slot): show_flare(m[2], clampf(float(m[3]), 1.8, 3.4))
 		DiverNet.M_SHOT:
 			spawn_bolt(m[2], m[3], 0, false, m[4], clampi(int(m[5]), 0, 1), sender(from_slot), true)
 			if sender(from_slot): sender(from_slot).remote_shot(m[2])
@@ -2709,7 +2715,7 @@ func net_message(from_slot: int, m: Array) -> void:
 				if int(m[2]) == current_room: notify("CHAMBER SECURED", "+5 scrap · caches available")
 		DiverNet.M_HIT:
 			var e = enemy_by_id(int(m[2]))
-			if net.is_host() and e and sender(from_slot): e.take_damage(clampf(float(m[3]), 0, 5000), true, sender(from_slot))
+			if net.is_host() and e and sender(from_slot): e.take_damage(clampf(float(m[3]), 0, 5000), bool(m[4]) if m.size() > 4 else true, sender(from_slot))
 		DiverNet.M_INTERACT:
 			var index = int(m[2])
 			if net.is_host() and sender(from_slot) and index >= 0 and index < interactables.size(): perform_interact(interactables[index], sender(from_slot))
@@ -2920,26 +2926,47 @@ func damage_pillars(pos: Vector3, radius: float, amount: float) -> void:
 
 # --- Flare Cartridge patches (RELIC-01) ----------------------------------------
 
-# A burning patch where an incendiary landed. The shooter's machine decides its hits.
-func flare_patch(pos: Vector3, amount: float, stacks: int, source: Node3D) -> void:
-	if source != player: return
-	var at = Vector3(pos.x, floor_height(pos) + 0.07, pos.z)
-	var radius = 1.8 + 0.4 * (stacks - 1)
-	var node = DiverArt.ring(world, at, radius, Color("ff9e5e"), radius * 0.6)
-	flare_patches.append({"node": node, "pos": at, "radius": radius, "damage": amount * 0.15 * stacks, "life": 3.0, "tick": 0.0})
-	burst(at + Vector3.UP * 0.4, Color("ff9e5e"), 8)
+# The shooter owns damage; replicas only draw the same ignition at its landing.
+func flare_patch(pos: Vector3, amount: float, stacks: int, source: Node3D, hit_machine: bool = false) -> void:
+	if source != player or stacks <= 0: return
+	if not hit_machine:
+		var near = false
+		for e in enemies:
+			if is_instance_valid(e) and not e.dead and e.global_position.distance_to(pos) <= 2.0:
+				var ray = PhysicsRayQueryParameters3D.create(pos + Vector3.UP * 0.2, e.global_position + Vector3.UP, 1)
+				if get_world_3d().direct_space_state.intersect_ray(ray).is_empty(): near = true; break
+		if not near: return
+	var at = Vector3(pos.x, floor_height(pos) + 0.04, pos.z)
+	var radius = minf(3.4, 1.8 + 0.4 * (stacks - 1))
+	# Four ticks over two seconds retain the old six-tick total damage budget.
+	show_flare(at, radius, amount * 0.225 * stacks, true)
+	net.broadcast([DiverNet.M_FLARE, depth, at, radius])
+
+func show_flare(at: Vector3, radius: float, damage: float = 0, local_damage: bool = false) -> void:
+	if flare_patches.size() >= FLARE_CAP:
+		flare_patches[0].node.visible = false
+		flare_patches.remove_at(0)
+	var node: DiverFire = null
+	for candidate in flare_pool:
+		if not candidate.visible: node = candidate; break
+	if node == null:
+		node = DiverFire.new()
+		world.add_child(node)
+		flare_pool.append(node)
+	node.ignite(at, radius, flare_pool.find(node) < 2)
+	flare_patches.append({"node": node, "pos": at, "radius": radius, "damage": damage, "local": local_damage, "age": 0.0, "tick": 0.0})
+	sound.play("flare_ignite", 1.0, at)
 
 func flare_update(dt: float) -> void:
 	for i in range(flare_patches.size() - 1, -1, -1):
 		var patch = flare_patches[i]
-		patch.life -= dt
+		patch.age += dt
 		patch.tick -= dt
-		if patch.tick <= 0:
-			patch.tick = 0.5
+		if patch.local and patch.tick <= 0 and patch.age < DiverFire.SECONDS:
+			patch.tick += 0.5
 			for e in enemies.duplicate():
-				if is_instance_valid(e) and not e.dead and Vector2(e.global_position.x - patch.pos.x, e.global_position.z - patch.pos.z).length() < patch.radius:
-					damage_enemy(e, patch.damage, player, false)
-		if is_instance_valid(patch.node): patch.node.visible = patch.life > 0.6 or int(patch.life * 10) % 2 == 0
-		if patch.life <= 0:
-			if is_instance_valid(patch.node): patch.node.queue_free()
-			flare_patches.remove_at(i)
+				if is_instance_valid(e) and not e.dead and absf(e.global_position.y - patch.pos.y) < 2.0 and Vector2(e.global_position.x - patch.pos.x, e.global_position.z - patch.pos.z).length() < patch.radius:
+					var ray = PhysicsRayQueryParameters3D.create(patch.pos + Vector3.UP * 0.2, e.global_position + Vector3.UP, 1)
+					if get_world_3d().direct_space_state.intersect_ray(ray).is_empty(): damage_enemy(e, patch.damage, player, false)
+		patch.node.animate(patch.age)
+		if patch.age >= DiverFire.SECONDS: flare_patches.remove_at(i)

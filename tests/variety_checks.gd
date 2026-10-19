@@ -149,6 +149,24 @@ func run() -> void:
 	verify(game.flare_patches.size() == 1 and patch_before - a.health > 29.0, "A flare patch burns machines inside it")
 	game.flare_update(3.5)
 	verify(game.flare_patches.is_empty(), "Flare patches burn out")
+	var pool_size = game.flare_pool.size()
+	game.flare_patch(Vector3(9999, 0, 9999), 100, 1, p)
+	verify(game.flare_patches.is_empty(), "PT09 empty floor or wall never ignites")
+	a.global_position = Vector3(4, 0.1, 4)
+	a.health = 100000
+	game.flare_patch(a.global_position, 100, 1, p)
+	verify(game.flare_pool.size() == pool_size, "PT09 extinguished fire reuses meshes")
+	var fire_before = a.health
+	for dt in [0.01, 0.5, 0.5, 0.5, 0.5]: game.flare_update(dt)
+	verify(is_equal_approx(fire_before - a.health, 90.0), "PT09 four burn ticks preserve 90% total shot damage")
+	verify(game.flare_patches.is_empty(), "PT09 clean two-second burnout")
+	for n in 20: game.show_flare(Vector3(n, 0, 0), 1.8)
+	verify(game.flare_pool.size() == game.FLARE_CAP and game.flare_patches.size() == game.FLARE_CAP, "PT09 active fires and reusable pool capped at six")
+	var cosmetic_before = a.health
+	game.flare_update(0.1)
+	verify(a.health == cosmetic_before, "PT09 remote fire visuals never duplicate damage")
+	verify(game.well_formed([DiverNet.M_FLARE, game.depth, Vector3.ZERO, 1.8]) and not game.well_formed([DiverNet.M_FLARE, game.depth, 0, 1.8]), "PT09 fire message is shape checked")
+	game.flare_update(3)
 
 	# --- Guardian vents and core hits (BOSS-01) ---------------------------------
 	var g = guardian()

@@ -56,7 +56,7 @@ func _physics_process(dt: float) -> void:
 			game.damage_enemy(collider, dealt, source)
 			if spec() == "breaker" and heavy: game.frost_burst(hit.position, 0.5, 2.0)
 			if spec() == "ricochet" and not bounced: ricochet(collider, hit.position + hit.normal * 0.2)
-		if flare > 0 and not hostile and not cosmetic: game.flare_patch(hit.position, amount, flare, source)
+		if flare > 0 and not hostile and not cosmetic: game.flare_patch(hit.position, amount, flare, source, collider is DiverEnemy)
 		if heavy and not hostile:
 			explode(hit.position + hit.normal * 0.1, collider)
 		game.burst(hit.position, Color("ff8060") if hostile else DiverArt.GOLD, 3)

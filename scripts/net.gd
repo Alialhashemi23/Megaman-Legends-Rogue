@@ -8,7 +8,7 @@ class_name DiverNet
 # frame: [target slot][var_to_bytes(Array of messages)]. Target 255 stores the
 # host's run checkpoint on the server so a dig survives everyone dropping out.
 
-enum {M_INFO, M_STATE, M_SHOT, M_START, M_SNAP, M_ATTACK, M_RESOLVE, M_DAMAGE, M_DIE, M_PICKUP, M_PICKUP_GONE, M_USED, M_HIT, M_INTERACT, M_FROST, M_HEAL, M_ITEM, M_XP, M_CHOICE, M_NOTIFY, M_FLOOR, M_END, M_SYNC, M_LIGHTNING, M_CLEARED, M_RESTORE, M_CHAT, M_PING, M_VISITED, M_SPAWN, M_RELAY}
+enum {M_INFO, M_STATE, M_SHOT, M_START, M_SNAP, M_ATTACK, M_RESOLVE, M_DAMAGE, M_DIE, M_PICKUP, M_PICKUP_GONE, M_USED, M_HIT, M_INTERACT, M_FROST, M_HEAL, M_ITEM, M_XP, M_CHOICE, M_NOTIFY, M_FLOOR, M_END, M_SYNC, M_LIGHTNING, M_CLEARED, M_RESTORE, M_CHAT, M_PING, M_VISITED, M_SPAWN, M_RELAY, M_FLARE}
 # Bump when game messages change so mismatched builds can't share a lobby.
 const NET_VERSION = 13
 const READY_FEATURE = "ready_v1"

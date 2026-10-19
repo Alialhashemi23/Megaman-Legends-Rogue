@@ -29,7 +29,7 @@ const DESCRIPTIONS = {
     "frost": "Dashing slows nearby machines. Extra flywheels extend the effect.",
     "clover": "Adds 2.5 percentage points to the chance of finding a part on a machine.",
     "refractor": "Exposed machines and a venting guardian's core take 40% more per crystal. Aim for the glowing core.",
-    "flare": "Every sixth shot leaves a burning patch for 3 seconds. Stacks burn hotter and spread wider.",
+    "flare": "Every sixth shot ignites a machine for 2 seconds. Stacks burn hotter and spread wider.",
     "shatter": "Slowed machines take 15% more per core, and burst into a damaging frost ring when destroyed.",
     "overclock": "Fire 12% faster per relay while you avoid being hit for 4 seconds. Any hit resets it."
 }
@@ -1808,7 +1808,7 @@ func current_effect(id: String) -> String:
         "frost": return "%d seconds of slow" % (2 + n)
         "clover": return "+%.1f%% part drop chance" % (n * 2.5)
         "refractor": return "+%d%% on exposed / cores" % (n * 40)
-        "flare": return "Patch burns %d%% per tick" % (n * 15)
+        "flare": return "Patch burns %d%% per tick" % (roundi(n * 22.5))
         "shatter": return "+%d%% vs slowed" % (n * 15)
         "overclock": return "+%d%% rapid while untouched" % (n * 12)
     return ""
