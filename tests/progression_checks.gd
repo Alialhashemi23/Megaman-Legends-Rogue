@@ -312,7 +312,7 @@ func run() -> void:
 	game.hud.activate("grid_node", index_of.call("mobility"))
 	verify(not "mobility" in DiverProgression.owned(game.meta, probe) and game.hud.workshop_message.begins_with("Buy a linked"), "Unlinked node explains the missing link")
 	game.hud.activate("grid_node", index_of.call("frame"))
-	verify(game.mode == "purchase_review" and game.meta.zenny == 1000, "Selecting a linked node opens review without spending")
+	verify(game.mode == "workshop" and game.meta.zenny == 1000, "Selecting a linked node opens review without spending")
 	game.hud.purchase_lock_until = 0
 	game.hud.confirm_purchase()
 	game.hud.close_purchase_review()
@@ -352,7 +352,11 @@ func run() -> void:
 	game.hud.activate("check_import")
 	verify(not game.hud.pending_import.is_empty(), "Import previews progress before replacing it")
 	verify(game.hud.back() and game.mode == "workshop", "Back returns to workshop")
-	verify(game.hud.back() and game.mode == "end", "Workshop returns to results")
+	game.hud.queue_redraw()
+	await process_frame
+	await process_frame
+	game.hud.back() # Grid -> digger header.
+	verify(game.hud.back() and game.mode == "end", "Workshop header returns to results")
 	for path in ["res://save/progression-test.json", "res://save/progression-test.json.tmp"]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	print("PROGRESSION_CHECKS: %d checks, %d failures" % [checks, failures])

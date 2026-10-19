@@ -72,7 +72,7 @@ func run() -> void:
 	game.meta.zenny = 500
 	hud.buy_grid_node(0)
 	await refresh()
-	verify(game.mode == "purchase_review" and hud.focused_action() == "purchase_cancel", "Handheld purchase keeps Cancel first")
+	verify(game.mode == "workshop" and hud.purchase_selected == 0, "Handheld purchase selects inline")
 	hud.back()
 	await refresh()
 	verify(game.mode == "workshop" and hud.focused_action() == "grid_node" and game.meta.zenny == 500, "Back restores the selected node without spending")

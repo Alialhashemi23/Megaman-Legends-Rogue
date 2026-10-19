@@ -67,7 +67,7 @@ var copied_time = 0.0
 const CONFIRM = ["leave_online", "leave_dig", "abandon", "kick", "discard", "start_new", "give_up", "reset_controls", "takeover", "clear_session"]
 # Options page rows: sound, display, then controls.
 const OPTIONS = ["master", "music", "effects", "ambience", "mute", "fullscreen", "camera", "fov", "mouse", "look", "invert", "vibration", "controls", "map_zoom", "handheld_ui", "large_minimap", "close_camera", "controller_test", "back"]
-const MENU_MODES = ["title", "solo_prep", "pause", "options", "controls", "controller_test", "choice", "inventory", "archive", "end", "run_log", "online", "lobby", "launch_preparing", "workshop", "purchase_review", "save_codes", "account", "android_update", "credits"]
+const MENU_MODES = ["title", "solo_prep", "pause", "options", "controls", "controller_test", "choice", "inventory", "archive", "end", "run_log", "online", "lobby", "launch_preparing", "workshop", "save_codes", "account", "android_update", "credits"]
 var credits_lines: PackedStringArray = []
 var credits_page = 0
 var options_return = "title"
@@ -86,6 +86,7 @@ var workshop_message = ""
 var workshop_focus_pending = false
 # One reviewed node and its existing purchase operation; never a second outbox.
 var purchase_review: Dictionary = {}
+var purchase_selected = -1
 var purchase_need_release = false
 var purchase_lock_until = 0
 const PURCHASE_ARM_MS = 200
@@ -223,7 +224,7 @@ func select_character(index: int) -> void:
     game.send_info()
 
 func select_workshop_character(index: int) -> void:
-    if game.mode == "purchase_review": close_purchase_review()
+    deselect_purchase()
     workshop_character = wrapi(index, 0, DiverCharacter.COUNT)
     workshop_message = ""
     pointer = Vector2(-100, -100)
@@ -315,6 +316,10 @@ func grid_icon(entry: Dictionary) -> String:
 func buy_grid_node(i: int) -> void:
     if game.mode != "workshop": return
     if i < 0 or i >= DiverProgression.NODES.size(): return
+    if purchase_selected == i and not purchase_review.is_empty() and purchase_review.phase == "review":
+        confirm_purchase()
+        return
+    if purchase_selected != i: deselect_purchase()
     if not purchase_review.is_empty() and purchase_review.phase == "pending" and purchase_review.character == workshop_character and purchase_review.index == i and purchase_context_matches():
         show_purchase_review()
         return
@@ -350,8 +355,8 @@ func begin_purchase_review(i: int) -> void:
     show_purchase_review()
 
 func show_purchase_review() -> void:
-    page_focus.purchase_review = {"action": "purchase_cancel" if purchase_review.phase == "review" else "purchase_close", "value": 0}
-    game.mode = "purchase_review"
+    purchase_selected = int(purchase_review.index)
+    focus_action("grid_node", purchase_selected)
     grid_dragging = false
     purchase_need_release = purchase_confirm_held()
     purchase_lock_until = Time.get_ticks_msec() + PURCHASE_ARM_MS
@@ -360,7 +365,7 @@ func purchase_confirm_held() -> bool:
     return Input.is_action_pressed("nav_accept") or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 
 func purchase_input_ready() -> bool:
-    return game.mode == "purchase_review" and not purchase_need_release and Time.get_ticks_msec() >= purchase_lock_until
+    return game.mode == "workshop" and purchase_selected >= 0 and not purchase_need_release and Time.get_ticks_msec() >= purchase_lock_until
 
 func purchase_problem() -> String:
     if not purchase_context_matches() or workshop_character != int(purchase_review.character): return "Your account or digger changed. Close and review this circuit again."
@@ -392,7 +397,7 @@ func confirm_purchase() -> void:
         purchase_review.note = "Purchase was not queued. Restore account sync or free device storage, then review again." if game.profile_source == "account" else "Could not save the purchase. Your Zenny and circuits are unchanged. Free device storage and try again."
     elif game.profile_source == "account":
         purchase_review.op_id = str(game.account.outbox.back().body.op_id)
-        workshop_message = "Purchase submitted. Closing the review does not cancel it."
+        workshop_message = "Purchase submitted. Your account confirmation is pending."
     else:
         purchase_review.phase = "confirmed"
         purchase_review.note = "Fitted %s. Saved on this device." % purchase_review.name
@@ -407,14 +412,18 @@ func purchase_settled(operation_id: String, outcome: String) -> void:
     workshop_message = "%s / %s" % [DiverCharacter.DISPLAY_NAMES[int(purchase_review.character)], purchase_review.note]
 
 func close_purchase_review() -> void:
-    if game.mode != "purchase_review" or purchase_review.is_empty(): return
+    if purchase_review.is_empty(): return
     if purchase_review.phase == "pending": workshop_message = "Purchase still pending / %s. Closing does not cancel it." % game.account.status
     elif purchase_review.phase == "review": workshop_message = "Purchase canceled. Nothing spent."
     else: workshop_message = purchase_review.note
     page_focus.workshop = {"action": "grid_node", "value": int(purchase_review.index)}
     workshop_focus_pending = false
     game.mode = "workshop"
-    if purchase_review.phase == "review": purchase_review = {}
+    deselect_purchase()
+
+func deselect_purchase() -> void:
+    purchase_selected = -1
+    if not purchase_review.is_empty() and purchase_review.phase == "review": purchase_review = {}
 
 # The Workshop is three rows: digger headers, the circuit grid and the bottom
 # buttons. Inside the grid each direction moves to the nearest node that way;
@@ -612,7 +621,9 @@ func _input(event: InputEvent) -> void:
         if game.mode != "play":
             for i in hits.size():
                 if hits[i].rect.has_point(pointer):
-                    if focus_index != i: game.sound.play("menu_move")
+                    if focus_index != i:
+                        if game.mode == "workshop": deselect_purchase()
+                        game.sound.play("menu_move")
                     focus_index = i
                     if hits[i].action == "inspect": selected_item = hits[i].value
                     if hits[i].action == "choice": choice_preview = hits[i].value
@@ -702,7 +713,10 @@ func navigate(delta: int, horizontal: bool) -> void:
         focus_index = clampi(focus_index + delta * 2, focus_index % 2, hits.size() - 1)
     elif game.mode == "choice": choice_preview = wrapi(choice_preview + delta, 0, 3)
     elif game.mode in ["archive", "inventory"]: select_part(delta)
-    elif game.mode == "workshop": workshop_navigate(delta, horizontal)
+    elif game.mode == "workshop":
+        var old_focus = focus_index
+        workshop_navigate(delta, horizontal)
+        if focus_index != old_focus: deselect_purchase()
     elif game.mode == "solo_prep":
         if horizontal:
             if focused_action() in ["solo_character", "solo_cycle"]: select_character(game.selected_character + delta)
@@ -733,7 +747,6 @@ func back() -> bool:
         get_viewport().gui_release_focus()
         return true
     match game.mode:
-        "purchase_review": close_purchase_review()
         "lobby", "launch_preparing":
             if game.net.loadout_locked(): game.net.cancel_launch()
             else: activate("leave_online")
@@ -756,7 +769,10 @@ func back() -> bool:
                 activate("title")
         "archive", "online": activate("title")
         "workshop":
-            if focused_action() != "tree_character":
+            if purchase_selected >= 0:
+                close_purchase_review()
+                game.sound.play("menu_move", 0.8)
+            elif focused_action() != "tree_character":
                 focus_action("tree_character", workshop_character)
                 game.sound.play("menu_move", 0.8)
             else: activate(workshop_return)
@@ -800,6 +816,7 @@ func remember_focus(mode: String) -> void:
 func focus_action(action: String, value: int = 0) -> bool:
     for i in hits.size():
         if hits[i].action == action and hits[i].value == value:
+            if game.mode == "workshop" and purchase_selected >= 0 and (action != "grid_node" or value != purchase_selected): deselect_purchase()
             focus_index = i
             return true
     return false
@@ -817,6 +834,7 @@ func confirm_label(action: String, value: int, normal: String) -> String:
     return "Press again to confirm" if confirming == "%s:%d" % [action, value] else normal
 
 func activate(action: String, value: int = 0) -> void:
+    if game.mode == "workshop" and action not in ["grid_node", "purchase_retry"]: deselect_purchase()
     # A pick needs a fresh press on a settled offer (no held A, no double click).
     if action == "choice" and not game.choice_input_ready(): return
     if game.mode == previous_mode: remember_focus(game.mode)
@@ -1033,7 +1051,7 @@ func activate(action: String, value: int = 0) -> void:
 
 func _draw() -> void:
     if purchase_need_release and not purchase_confirm_held(): purchase_need_release = false
-    if game.mode == "purchase_review" and not purchase_context_matches():
+    if not purchase_review.is_empty() and not purchase_context_matches():
         close_purchase_review()
         purchase_review = {}
         workshop_message = "Account changed. Submitted purchases stay with their original account. Review again here."
@@ -1087,7 +1105,6 @@ func _draw() -> void:
         "end": draw_end()
         "run_log": draw_run_log()
         "workshop": draw_workshop()
-        "purchase_review": draw_purchase_review()
         "save_codes": draw_save_codes()
         "account": draw_account()
         "android_update": draw_android_update()
@@ -2189,54 +2206,6 @@ func draw_workshop() -> void:
     button(Vector2(394, 828), Vector2(460, 56), "Return to Lobby" if game.net.active() else "Start Another Dig", "lobby_room" if game.net.active() else "start", 0, true)
     button(Vector2(884, 828), Vector2(492, 56), "Back", workshop_return)
 
-func draw_purchase_review() -> void:
-    if purchase_review.is_empty():
-        game.mode = "workshop"
-        return
-    # The spatial grid remains visible, but none of its controls own hit targets.
-    underlay = true
-    var saved_pointer = pointer
-    var saved_focus = focus_index
-    pointer = Vector2(-100, -100)
-    focus_index = DiverCharacter.COUNT + int(purchase_review.index)
-    draw_workshop()
-    pointer = saved_pointer
-    focus_index = saved_focus
-    underlay = false
-    hits.clear()
-    var extra = ui_offset / ui_scale
-    rect(-extra, BASE + extra * 2, Color(0.02, 0.05, 0.18, 0.68))
-    window(Vector2(280, 132), Vector2(880, 670), PANEL, EDGE)
-    text_at(Vector2(320, 190), "PURCHASE REVIEW", 32, YELLOW, true)
-    var character = int(purchase_review.character)
-    draw_texture_rect(portraits[character], Rect2(320, 218, 72, 82), false)
-    text_at(Vector2(410, 266), DiverCharacter.DISPLAY_NAMES[character], 29, CYAN, true, 700)
-    icon(Vector2(320, 318), str(purchase_review.icon), 72)
-    text_at(Vector2(410, 360), str(purchase_review.name), 30, WHITE, true, 690)
-    paragraph(Vector2(320, 418), str(purchase_review.detail), 800, 26, WHITE, 3)
-    var phase = str(purchase_review.phase)
-    var result_wallet = phase in ["confirmed", "refused"]
-    for column in 3:
-        var pos = Vector2(320 + column * 274, 508)
-        window(pos, Vector2(252, 90), INK, EDGE, false)
-        text_at(pos + Vector2(18, 29), ["WALLET BEFORE", "COST", "ACCOUNT WALLET" if result_wallet and game.profile_source == "account" else "CURRENT WALLET" if result_wallet else "IF CONFIRMED" if phase == "pending" else "AFTER PURCHASE"][column], 20, CYAN)
-        var after = int(game.meta.zenny) if result_wallet else int(purchase_review.wallet) - int(purchase_review.cost)
-        var value = [int(purchase_review.wallet), int(purchase_review.cost), after][column]
-        text_at(pos + Vector2(18, 68), "%d Z" % value, 30, YELLOW if column != 2 else GREEN if value >= 0 else ORANGE, true)
-    var note = str(purchase_review.note)
-    if phase == "review": note = purchase_problem()
-    if phase == "review" and note == "": note = "Review this one circuit. Confirm spends Zenny; Cancel spends nothing."
-    if phase == "pending": note = "Purchase submitted / %s. It may already be charged; closing does not cancel it." % game.account.status
-    if phase == "confirmed" and game.profile_source == "account" and game.account.status != "Synced": note += " Progress still needs sync; Retry keeps the same purchase."
-    paragraph(Vector2(320, 634), note, 800, 23, GREEN if phase == "confirmed" else ORANGE if phase == "refused" or (phase == "review" and purchase_problem() != "") else CYAN, 2)
-    if phase == "review":
-        button(Vector2(320, 710), Vector2(384, 62), "Cancel", "purchase_cancel")
-        if purchase_problem() == "": button(Vector2(736, 710), Vector2(384, 62), "Confirm Purchase", "purchase_confirm", 0, true)
-    else:
-        button(Vector2(320, 710), Vector2(384, 62), "Close", "purchase_close")
-        if purchase_context_matches() and game.account.signed_in() and game.account.status == "Offline": button(Vector2(736, 710), Vector2(384, 62), "Retry Sync", "purchase_retry")
-    text_at(Vector2(320, 792), ("Last synced wallet: %d Z" if game.profile_source == "account" else "Current wallet: %d Z") % int(game.meta.zenny), 20, MUTED)
-
 # Liang-Barsky: the part of a segment inside the grid frame, or [] if none.
 func clip_segment(a: Vector2, b: Vector2, box: Rect2) -> Array:
     var t0 = 0.0
@@ -2354,10 +2323,19 @@ func draw_grid(first_node: int) -> void:
     paragraph(Vector2(84, 534), grid_detail(entry), 322 if handheld() else 262, 21, MUTED, 6)
     var linked = []
     for other in DiverProgression.neighbors(entry.id): linked.append(grid_name(DiverProgression.node(other)))
-    paragraph(Vector2(84, 700), "Links: " + ", ".join(linked), 322 if handheld() else 262, 19, CYAN, 2)
-    var action = {"owned": "Already fitted.", "available": ("A" if pad() else "Enter / click") + ": review purchase", "short": "Earn Zenny in digs.", "syncing": "Waiting for sync.", "locked": "Buy a linked circuit first."}[state]
+    if purchase_selected != shown or purchase_review.is_empty() or purchase_review.phase != "review":
+        paragraph(Vector2(84, 700), "Links: " + ", ".join(linked), 322 if handheld() else 262, 19, CYAN, 2)
+    var action = {"owned": "Already fitted.", "available": ("A" if pad() else "Enter / click") + ": select circuit", "short": "Earn Zenny in digs.", "syncing": "Waiting for sync.", "locked": "Buy a linked circuit first."}[state]
     if special and state == "owned": action = ("A" if pad() else "Enter / click") + (": unequip" if grid_equipped(entry) else ": equip for next dig")
     elif special: action = "Unlock, then equip one per dig."
+    if purchase_selected == shown and not purchase_review.is_empty():
+        if purchase_review.phase == "review":
+            action = "Press again to buy / B: deselect"
+            paragraph(Vector2(84, 700), "%d Z - %d Z = %d Z" % [purchase_review.wallet, purchase_review.cost, purchase_review.wallet - purchase_review.cost], 262, 21, YELLOW, 2)
+        else:
+            action = "CONFIRMED" if purchase_review.phase == "confirmed" else "REFUSED" if purchase_review.phase == "refused" else "PENDING / " + game.account.status
+            if purchase_review.phase == "pending" and game.account.signed_in():
+                small_button(Vector2(84, 712), Vector2(250, 34), "Retry Sync", "purchase_retry")
     text_at(Vector2(84, 764), action, 20, YELLOW if state == "available" or (special and state == "owned") else MUTED, false, 322 if handheld() else 262)
 
 func draw_save_codes() -> void:

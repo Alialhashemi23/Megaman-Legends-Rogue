@@ -186,6 +186,8 @@ func run() -> void:
 	verify(game.mode == "solo_prep" and game.saved_dig == saved, "New-dig review preserves the saved dig before confirmation")
 	press(KEY_ESCAPE)
 	await refresh()
+	press(KEY_ESCAPE)
+	await refresh()
 	game.saved_dig = {}
 	await refresh()
 	for state in ["guest", "restoring", "needs_sign_in"]:
