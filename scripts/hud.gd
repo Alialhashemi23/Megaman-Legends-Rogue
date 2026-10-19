@@ -1933,11 +1933,12 @@ func draw_end() -> void:
     text_at(Vector2(948, 673), "%d to next unlock" % (next_unlock - game.meta.kills) if game.meta.kills < 220 else "All parts unlocked!", 27, YELLOW)
     if game.net.active():
         button(Vector2(64, 764), Vector2(430, 62), "Workshop / Spend Zenny", "workshop", 0, true)
+        button(Vector2(518, 764), Vector2(422, 62), "Dig Log / Playtest", "run_log")
         button(Vector2(964, 764), Vector2(412, 62), confirm_label("leave_online", 0, "Leave Lobby"), "leave_online")
     else:
         button(Vector2(64, 764), Vector2(430, 62), "Workshop / Spend Zenny", "workshop", 0, true)
+        button(Vector2(518, 764), Vector2(422, 62), "Dig Log / Playtest", "run_log")
         button(Vector2(964, 764), Vector2(412, 62), "Return to Title", "title")
-    button(Vector2(518, 764), Vector2(422, 62), "Dig Log / Playtest", "run_log")
     icon(Vector2(64, 848), "save", 32)
     text_at(Vector2(108, 873), ("%s / +%d pending / %d in wallet" % [game.account.status, game.account.pending_zenny(), game.meta.zenny]) if game.profile_source == "account" else "+%d Zenny earned / %d in wallet" % [game.zenny_earned, game.meta.zenny], 23, YELLOW)
 
