@@ -263,5 +263,10 @@ func run() -> void:
 		for hit in hud.hits:
 			verify(not hit.rect.has_area() or Rect2(Vector2.ZERO, hud.BASE).encloses(hit.rect), "Review action remains on screen at %s" % size)
 		hud.close_purchase_review()
+	await review()
+	game.mode = "account"
+	account.generation += 1
+	await refresh()
+	verify(game.mode == "account" and hud.purchase_review.is_empty() and hud.purchase_selected == -1, "Clearing a stale receipt never pulls another screen into Workshop")
 	print("PURCHASE_REVIEW_CHECKS: %d checks, %d failures" % [checks, failures])
 	quit(1 if failures else 0)

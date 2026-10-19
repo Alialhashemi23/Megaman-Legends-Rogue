@@ -1052,7 +1052,8 @@ func activate(action: String, value: int = 0) -> void:
 func _draw() -> void:
     if purchase_need_release and not purchase_confirm_held(): purchase_need_release = false
     if not purchase_review.is_empty() and not purchase_context_matches():
-        close_purchase_review()
+        if game.mode == "workshop": close_purchase_review()
+        else: deselect_purchase()
         purchase_review = {}
         workshop_message = "Account changed. Submitted purchases stay with their original account. Review again here."
     GRID_RECT = Rect2(454, 366, 922, 414) if handheld() else Rect2(394, 366, 982, 414)

@@ -12,7 +12,7 @@ Retroid checks remain for owner playtesting.
 |---|---|
 | Menu input / Solo / Workshop Back | 15 checks |
 | Guardian leash / damage / real B1 projectiles with Tron | 19 checks |
-| Purchase selection, held input, atomic save, account op retry/conflict | 138 checks |
+| Purchase selection, held input, atomic save, account op retry/conflict | 139 checks |
 | UI / Options / progression / handheld | 94 / 46 / 311 / 256 checks |
 | Variety, relay timing/frequency, legacy generation, fire cap/budget | 60 checks |
 | Combat / guardian milestones | 7,784 / 59 checks |
@@ -39,8 +39,12 @@ Captures and detailed logs stay in the worktree's ignored save directory.
 
 Windows/Web archives were checked for corruption, path separators, excluded data
 and license notices. Their embedded PCKs and the loose Windows PCK match:
-`861bd507b060429b36fdbec82e2980f119b720c22bb4935e539990b01b3891bf`.
+`aa913e21fd791836a997aa5cf7916f87c0f7bcb4a5260cab90e3ddb288b2b243`.
 Pack resources exclude saves, tests, server, tools and backups, and include the
-new fire resource and build-36 credits. Windows ZIP: 91,487,598 bytes; Web ZIP:
-16,081,973 bytes. Published Android0.21.0 remains protocol12; a matching protocol13
+new fire resource and build-36 credits. Windows ZIP: 91,487,345 bytes; Web ZIP:
+16,081,720 bytes. Published Android0.21.0 remains protocol12; a matching protocol13
 APK is pending and was not built or published by this task.
+
+Final receipt regression: changing authentication after leaving Workshop clears
+the stale receipt without changing the active screen. Purchase139/0; both packs
+rebuilt and re-audited; refreshed packaged Windows smoke passes.
