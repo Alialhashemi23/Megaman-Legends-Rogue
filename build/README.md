@@ -59,7 +59,7 @@ Gameplay actions can be rebound in **Options → Controls & bindings** (sticks, 
 | Dash (brief invulnerability) | Left Shift | B |
 | Open a cache, salvage, use a well or lift | E | X |
 | Buster parts and stats (pauses solo); opens waiting upgrades first | Tab | Select / View |
-| Pause / menu | Escape | Start |
+| Pause / menu | Backquote / tilde (` / ~) | Start |
 | Pick an upgrade on a choice screen | 1, 2, 3 | D-pad / stick + A |
 | Reroll a part or milestone offer (once per descent) | R | Y |
 | Ping (online) | G or middle mouse | LB |

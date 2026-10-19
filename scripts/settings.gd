@@ -25,7 +25,7 @@ const ACTIONS = [
 	{"id": "interact", "name": "Salvage / use", "kb": {"key": KEY_E}, "pad": {"button": JOY_BUTTON_X}},
 	{"id": "ping", "name": "Ping (online)", "kb": {"key": KEY_G}, "pad": {"button": JOY_BUTTON_LEFT_SHOULDER}},
 	{"id": "parts", "name": "Parts / part choice", "kb": {"key": KEY_TAB}, "pad": {"button": JOY_BUTTON_BACK}},
-	{"id": "menu", "name": "Menu", "kb": {"key": KEY_ESCAPE}, "pad": {"button": JOY_BUTTON_START}},
+	{"id": "menu", "name": "Menu", "kb": {"key": KEY_QUOTELEFT}, "pad": {"button": JOY_BUTTON_START}},
 	{"id": "chat", "name": "Chat (online)", "kb": {"key": KEY_T}, "pad": {}},
 	{"id": "callout_1", "name": "Callout: Help!", "kb": {"key": KEY_1}, "pad": {"button": JOY_BUTTON_DPAD_UP}},
 	{"id": "callout_2", "name": "Callout: Over here!", "kb": {"key": KEY_2}, "pad": {"button": JOY_BUTTON_DPAD_RIGHT}},
@@ -163,6 +163,7 @@ func rebind(id: String, column: String, binding: Dictionary) -> void:
 
 func binding_label(b: Dictionary) -> String:
 	if b.has("key"):
+		if int(b.key) == KEY_QUOTELEFT: return "` / ~"
 		var name = OS.get_keycode_string(int(b.key))
 		return {"Escape": "Esc", "Space": "Space", "Shift": "Shift"}.get(name, name)
 	if b.has("mouse"): return {MOUSE_BUTTON_LEFT: "LMB", MOUSE_BUTTON_RIGHT: "RMB", MOUSE_BUTTON_MIDDLE: "MMB", MOUSE_BUTTON_XBUTTON1: "Mouse 4", MOUSE_BUTTON_XBUTTON2: "Mouse 5"}.get(int(b.mouse), "Mouse")
@@ -236,6 +237,9 @@ func load_file_settings() -> void:
 			for column in ["kb", "pad"]:
 				var b = saved[id].get(column)
 				if b is Dictionary and valid_binding(b, column): bindings[id][column] = to_ints(b)
+	# Older settings stored Escape as Menu's default. Keep custom bindings.
+	if int(data.get("bindings_version", 1)) < 2 and bindings.menu.kb == {"key": KEY_ESCAPE}:
+		bindings.menu.kb = {"key": KEY_QUOTELEFT}
 	loaded = true
 
 func valid_binding(b: Dictionary, column: String) -> bool:
@@ -253,7 +257,7 @@ func save_settings() -> void:
 	if game and game.get("smoke_test"): return
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path.get_base_dir()))
 	var f = FileAccess.open(path, FileAccess.WRITE)
-	if f: f.store_string(JSON.stringify({"mouse_sensitivity": mouse_sensitivity, "look_speed": look_speed, "invert_y": invert_y, "vibration": vibration, "fullscreen": fullscreen, "camera_effects": camera_effects, "map_zoom": map_zoom, "handheld_ui": handheld_ui, "large_minimap": large_minimap, "close_camera": close_camera, "fov": fov, "specs": specs, "bindings": bindings}, "\t"))
+	if f: f.store_string(JSON.stringify({"bindings_version": 2, "mouse_sensitivity": mouse_sensitivity, "look_speed": look_speed, "invert_y": invert_y, "vibration": vibration, "fullscreen": fullscreen, "camera_effects": camera_effects, "map_zoom": map_zoom, "handheld_ui": handheld_ui, "large_minimap": large_minimap, "close_camera": close_camera, "fov": fov, "specs": specs, "bindings": bindings}, "\t"))
 
 	if OS.has_feature("web"):
 		var mirror = JSON.stringify({"handheld_ui": handheld_ui, "large_minimap": large_minimap, "close_camera": close_camera})

@@ -59,6 +59,17 @@ func run() -> void:
 	await refresh()
 
 	# Defaults and prompts.
+	verify(s.bindings.menu.kb == {"key": KEY_QUOTELEFT}, "PT11 new Menu default is backquote")
+	var migration = DiverSettings.new()
+	migration.path = "res://save/pt11-migration.json"
+	for binding in [{"key": KEY_ESCAPE}, {"key": KEY_P}]:
+		var file = FileAccess.open(migration.path, FileAccess.WRITE)
+		file.store_string(JSON.stringify({"bindings": {"menu": {"kb": binding}}}))
+		file.close()
+		migration.reset_bindings()
+		migration.load_file_settings()
+		verify(migration.bindings.menu.kb == ({"key": KEY_QUOTELEFT} if binding.key == KEY_ESCAPE else binding), "PT11 migrates only the old default")
+	migration.free()
 	verify(InputMap.has_action("fire") and InputMap.has_action("look_left") and InputMap.has_action("nav_accept"), "Gameplay, look and menu actions exist")
 	s.using_pad = false
 	verify(s.prompt("interact") == "E" and s.prompt("fire") == "LMB", "Keyboard prompts by default")
