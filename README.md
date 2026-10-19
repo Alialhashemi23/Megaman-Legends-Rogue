@@ -6,7 +6,7 @@ A third-person 3D dungeon roguelike fan prototype made in Godot 4.7.1, inspired 
 
 ## Download for Android
 
-**Current release: Android 0.21.0 (version code 7), matching build 35 and co-op protocol 12.**
+**Browser/Windows build 36 uses protocol 13. Published Android 0.21.0 (version code 7) is build 35 / protocol 12; a matching APK is pending for current online play.**
 
 **[Download the latest APK](https://github.com/Alialhashemi23/Megaman-Legends-Rogue/releases/latest/download/RelicDiver-android.apk)** (Android 7.0 or newer, 64-bit ARM; about 31 MB). All versions and release notes: [Releases](https://github.com/Alialhashemi23/Megaman-Legends-Rogue/releases).
 
@@ -45,7 +45,7 @@ Built for handhelds with controllers (such as the Retroid Pocket 5); a gamepad o
 
 Press **C** (controller **Y**) on the title screen to cycle diggers. Each has their own Workshop tree (see [Progression](#progression)).
 
-**Solo** opens preparation: left/right chooses a digger; confirm the selection, then press again on **Start Dig**. Online, everyone selects **Ready** before the host starts the cancellable countdown. Current browser/Windows co-op uses game protocol 12; older Android APKs need a matching update to join these lobbies.
+**Solo** opens preparation: left/right chooses a digger; confirm the selection, then press again on **Start Dig**. Online, everyone selects **Ready** before the host starts the cancellable countdown. Current browser/Windows co-op uses game protocol 13; older Android APKs need a matching update to join these lobbies.
 
 ## Controls
 
@@ -88,7 +88,7 @@ Upgrade choices appear over the current game view. Solo pauses; in co-op, earned
    Guardians vent a glowing **core** on their back after big attacks: hits there deal far more damage for a few seconds. At half Life they shield briefly and call for helpers. The last guardian's arena has stone pillars that block its shots until they crumble.
 7. Survive three descents and activate the extraction beacon to win.
 
-From the second descent, **Grenadiers** lob shell volleys over cover (keep moving) and **Menders** repair nearby machines (shoot them first). Each floor also has a **Power Relay** chamber: activate the console, then stand in the lit ring while machines pour in. When it's charged, the vault gives every digger a better part pick.
+From the second descent, **Grenadiers** lob shell volleys over cover (keep moving) and **Menders** repair nearby machines (shoot them first). One seeded descent per dig has a **Power Relay** chamber (24 occupied seconds, two rings): activate the console, then stand in the lit ring while machines pour in. When it's charged, the vault gives every digger a better part pick.
 
 There is no countdown or time-based difficulty. Explore at your own pace; difficulty rises with each descent.
 
@@ -139,7 +139,7 @@ Every dig starts at level one with no parts. Run levels, upgrades and fitted par
 
 **Zenny** is awarded once at the end of a dig: **25 × depth reached + 60 × guardians defeated + floor(leftover scrap / 5)**.
 
-**Workshop** (title or results screen): each digger has their own 12-circuit grid. Reinforced Frame is the start; after that, buy any circuit linked to one you already own, so you choose the route while every circuit stays reachable. The grid has Lightweight Joints (+4% speed), Salvage Research (early access to a themed part), Shock Plating (+0.2 s protection after a hit), Dash Servos (dash recharges 0.12 s sooner), Tuned Barrel (+6% damage), Scrap Magnet (pickups drift from 40% farther), the Signature Circuit and Signature Circuit II (the digger's ability, then a stronger version), Master Mechanic and Quick Loader (+5% attack speed each) and Reserve Cell (+6% base Life). Two specialization circuits (600 Zenny each) sit at the grid's ends. Owning one unlocks it; equip one per digger for your next dig by selecting it again in the Workshop (select again to unequip). Only the equipped specialization applies, and you can switch freely between digs. Mega: **Focus Lens** (repeated hits on one machine ramp to +40%) or **Ricochet Coil** (hits bounce to a second machine for 60%). Roll: **Field Medic** (out of combat, she and nearby teammates repair 2 Life/s) or **Needle Storm** (held fire ramps to +30% attack speed; every 6th needle exposes a machine to +20% damage from everyone). Tron: **Siege Breaker** (direct hits +40% and stagger) or **Wide Barrage** (+1.5 m blasts that splash harder and slow). Servbot: **Demolition Charge** (+45% bombs, more against guardians) or **Scrap Runner** (dashing drops a bomb; Servbot's kills drop extra scrap). Costs run from 100 to 600 Zenny (4,320 for a full grid), and purchases take effect next dig. Use arrows / D-pad to move, Enter / A to review a purchase, Z / X or the mouse wheel to zoom, and drag to pan; C / Y or LB / RB switch digger.
+**Workshop** (title or results screen): each digger has their own 12-circuit grid. Reinforced Frame is the start; after that, buy any circuit linked to one you already own, so you choose the route while every circuit stays reachable. The grid has Lightweight Joints (+4% speed), Salvage Research (early access to a themed part), Shock Plating (+0.2 s protection after a hit), Dash Servos (dash recharges 0.12 s sooner), Tuned Barrel (+6% damage), Scrap Magnet (pickups drift from 40% farther), the Signature Circuit and Signature Circuit II (the digger's ability, then a stronger version), Master Mechanic and Quick Loader (+5% attack speed each) and Reserve Cell (+6% base Life). Two specialization circuits (600 Zenny each) sit at the grid's ends. Owning one unlocks it; equip one per digger for your next dig by selecting it again in the Workshop (select again to unequip). Only the equipped specialization applies, and you can switch freely between digs. Mega: **Focus Lens** (repeated hits on one machine ramp to +40%) or **Ricochet Coil** (hits bounce to a second machine for 60%). Roll: **Field Medic** (out of combat, she and nearby teammates repair 2 Life/s) or **Needle Storm** (held fire ramps to +30% attack speed; every 6th needle exposes a machine to +20% damage from everyone). Tron: **Siege Breaker** (direct hits +40% and stagger) or **Wide Barrage** (+1.5 m blasts that splash harder and slow). Servbot: **Demolition Charge** (+45% bombs, more against guardians) or **Scrap Runner** (dashing drops a bomb; Servbot's kills drop extra scrap). Costs run from 100 to 600 Zenny (4,320 for a full grid), and purchases take effect next dig. Use arrows / D-pad to move, Enter / A to select a circuit, then press again to buy (B deselects), Z / X or the mouse wheel to zoom, and drag to pan; C / Y or LB / RB switch digger.
 
 Purchases show the circuit or specialization, its effect, cost and wallet before/after. Cancel is selected first; spending requires a fresh Confirm. Back returns to the same node. After submitting an account purchase, Close leaves it pending; Retry Sync uses the same transaction. Equipping an owned specialization stays free.
 

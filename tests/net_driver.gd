@@ -106,7 +106,7 @@ func host_step() -> void:
 		2:
 			if game.net.members().size() >= 2 and game.net.selection_acknowledged() and not game.net.own_ready(): game.net.set_ready(true)
 			if wait(game.net.can_start() and game.peers.has(2), "party Ready in lobby"):
-				game.host_start_run()
+				game.net.send_command({"t": "start_request", "setupRev": int(game.net.readiness().setupRev), "seed": 49380, "runId": game.new_run_id(49380)})
 		3:
 			if game.in_run() and marker == 0:
 				marker = 1
@@ -132,8 +132,8 @@ func host_step() -> void:
 			if game.relay.is_empty(): fail("B1 should have a Power Relay")
 			game.perform_interact(game.interactables[game.relay.console], game.player)
 			game.relay.charge = 99.9
-			game.relay.ring = 2
-			var ring: Vector3 = game.relay.rings[2]
+			game.relay.ring = game.relay.rings.size() - 1
+			var ring: Vector3 = game.relay.rings[game.relay.ring]
 			game.player.position = Vector3(ring.x, 0.12, ring.z)
 			game.relay_update(0.1)
 			if not game.relay.done or not game.choice_known("relay:1"): fail("host relay should finish with a waiting vault pick")

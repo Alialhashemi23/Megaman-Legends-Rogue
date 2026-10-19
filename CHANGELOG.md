@@ -1,5 +1,16 @@
 # Local build history
 
+## 36 — Playtest fixes
+
+- Results follow screen order; Solo Back returns to digger selection; Workshop Back deselects, then reaches the digger header before leaving.
+- Workshop purchases now select a circuit first and buy on a second fresh press, with cost and receipt in the description panel. No purchase modal; account retries retain the same operation.
+- Backquote / tilde opens the keyboard Menu; Escape remains Back. Old default bindings migrate. Browser fullscreen now works from Options and tracks browser exits; native Windows verified.
+- Co-op results return to the same lobby, clear Ready and support a new dig without rejoining. Real two-client victory, defeat, everyone-down and guest-leave sessions pass.
+- Guardians stay in their arena, target only diggers inside it and reject outside damage. B1 has wider, visibly marked five-bolt fan gaps and a longer warning; Life and deeper fans stay unchanged.
+- Power Relays take 24 occupied seconds across two rings, on one seeded descent per dig. Old checkpoints retain their original floor generation and object IDs.
+- Flare Cartridge ignites only on/near machines: two-second polygon flames, rising embers, warm light, fading scorch and an original ignition sound. Six pooled fires, four ticks preserving the previous total damage budget; teammate visuals replicate without duplicate damage.
+- Game protocol **13**: refresh browser tabs and update native clients. Published Android 0.21.0 remains build35/protocol12; a matching APK is pending. PT-02 stat redesign is proposal-only, awaiting owner approval; phase 4 remains deferred.
+
 ## Android 0.21.0 — build 35 compatibility
 
 - ARM64 Android release, version code 7, includes the integrated build-35 gameplay and UI with co-op protocol 12. This updates the previous public 0.19.0 APK.

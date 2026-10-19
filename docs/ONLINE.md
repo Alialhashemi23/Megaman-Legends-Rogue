@@ -126,3 +126,5 @@ The export needs Godot 4.7.1 with its **Web** export templates (Editor → Manag
 - The server only exposes the game files, `/ws`, `/healthz` and `/api/lobbies` (public lobby list). It stores nothing on disk and keeps lobbies in memory.
 - Lobby names and player names are limited to 28/16 characters with control characters stripped. Packet rates and sizes are capped per connection.
 - This is a non-commercial fan project that includes Capcom character models. See LICENSE.md and the character credits, which are also served at `/LICENSE.md` and `/CHARACTER-CREDITS.md`. Keep the site non-commercial.
+
+Build 36 uses game protocol 13. Results keep the same lobby code; choose Return to Lobby, then Ready again for another dig. Protocol-12 Android 0.21.0 needs a matching client update.

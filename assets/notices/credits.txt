@@ -398,3 +398,9 @@ INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
 DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
+
+BUILD 36 / GAME PROTOCOL 13
+Keyboard Menu: backquote / tilde. Escape remains Back.
+Flare Cartridge uses original polygon fire art and a synthesized ignition effect.
+Power Relays: one seeded descent per dig, two rings, 24 occupied seconds.
+Published Android 0.21.0 is protocol 12; a matching update is pending.
