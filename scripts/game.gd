@@ -532,6 +532,7 @@ func spawn_enemy(pos: Vector3, kind: int, room_id: int) -> DiverEnemy:
 	e.net_id = enemies.size()
 	world.add_child(e)
 	e.position = pos + Vector3.UP * 0.1
+	e.home_position = e.position
 	e.net_pos = e.position
 	enemies.append(e)
 	return e
@@ -1704,6 +1705,7 @@ func target_for(enemy: Node3D) -> DiverPlayer:
 	var best_distance = INF
 	for p in all_players():
 		if p.downed: continue
+		if enemy.kind == 3 and room_index_at(p.global_position) != enemy.room_id: continue
 		var d = p.global_position.distance_to(enemy.global_position)
 		if p.net_flags & DiverPlayer.FLAG_CHOOSING or (p == player and mode == "choice"): d += 30
 		if d < best_distance:
@@ -2142,7 +2144,7 @@ func net_tick(dt: float) -> void:
 	if not net.is_host(): return
 	var data = PackedFloat32Array()
 	for e in enemies:
-		if not is_instance_valid(e) or e.dead or not e.active: continue
+		if not is_instance_valid(e) or e.dead or (not e.active and e.kind != 3): continue
 		data.append_array([e.net_id, e.global_position.x, e.global_position.y, e.global_position.z, e.rotation.y, e.health])
 	net.broadcast([DiverNet.M_SNAP, depth, scrap, kills, guardian_dead, run_time, data])
 	# The dig ends only when every digger is down.
@@ -2761,7 +2763,7 @@ func restore_spawned(list: Variant) -> void:
 		spawned.append([kind, at.x, at.y, at.z, int(record[4])])
 
 # Overdrive: the guardian calls 1 + depth helpers around itself (BAL-02 B).
-func guardian_adds(guardian: DiverEnemy) -> void:
+func guardian_adds(guardian) -> void:
 	if net.is_guest() or not is_instance_valid(guardian) or guardian.dead: return
 	var kinds = [[0, 1], [1, 2, 4], [1, 2, 4, 5]][depth - 1]
 	for n in 1 + depth:

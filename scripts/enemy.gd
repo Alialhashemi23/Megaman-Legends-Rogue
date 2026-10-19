@@ -8,6 +8,7 @@ var health = 30.0
 var max_health = 30.0
 var dead = false
 var active = false
+var home_position = Vector3.ZERO
 var slow = 0.0
 # Needle Storm: every sixth needle exposes a machine to extra damage.
 var exposed = 0.0
@@ -105,6 +106,7 @@ func lock_aim() -> void:
 	var who: DiverPlayer = null
 	var best = 6.0
 	for p in game.all_players():
+		if kind == 3 and game.room_index_at(p.global_position) != room_id: continue
 		var d = p.global_position.distance_to(aim_point - Vector3.UP)
 		if not p.downed and d < best:
 			best = d
@@ -131,6 +133,19 @@ func _physics_process(dt: float) -> void:
 		proxy_process(dt)
 		return
 	target = game.target_for(self)
+	if kind == 3:
+		keep_in_room()
+		if target == null:
+			active = false
+			clear_marker()
+			state = "approach"
+			planned = ""
+			vent_time = 0
+			update_core()
+			velocity = Vector3.ZERO
+			position = position.move_toward(home_position, dt * 5.0)
+			return
+		active = true
 	if target == null:
 		velocity = Vector3(0, velocity.y - dt * 25, 0)
 		move_and_slide()
@@ -220,6 +235,7 @@ func _physics_process(dt: float) -> void:
 	velocity.z = movement.z * speed + knockback.z
 	velocity.y -= dt * 25
 	move_and_slide()
+	if kind == 3: keep_in_room()
 	for i in art.limbs.size(): art.limbs[i].rotation.x = sin(phase + i * PI) * movement.length() * 0.45
 
 # Damage checks always use this machine's own digger; the AI uses sees(target).
@@ -227,7 +243,13 @@ func has_sight() -> bool:
 	return sees(game.player)
 
 func sees(who: Node3D) -> bool:
+	if kind == 3 and game.room_index_at(who.global_position) != room_id: return false
 	return unobstructed(global_position + Vector3.UP * 1.2, who.global_position + Vector3.UP)
+
+func keep_in_room() -> void:
+	var room = game.rooms[room_id]
+	position.x = clampf(position.x, room.center.x - room.half.x + 1.3, room.center.x + room.half.x - 1.3)
+	position.z = clampf(position.z, room.center.z - room.half.y + 1.3, room.center.z + room.half.y - 1.3)
 
 func check_charge_contact() -> void:
 	if not charge_hit and global_position.distance_to(game.player.global_position) < 1.7 and has_sight():
@@ -362,7 +384,7 @@ func blast(pos: Vector3, radius: float, amount: float) -> void:
 	game.sound.play("slam", 1.0, pos)
 	var delta = game.player.global_position - pos
 	delta.y = 0
-	if delta.length() < radius and absf(game.player.position.y - pos.y) < 0.70 and unobstructed(pos + Vector3.UP * 0.8, game.player.global_position + Vector3.UP): game.player.hurt(amount)
+	if (kind != 3 or game.room_index_at(game.player.global_position) == room_id) and delta.length() < radius and absf(game.player.position.y - pos.y) < 0.70 and unobstructed(pos + Vector3.UP * 0.8, game.player.global_position + Vector3.UP): game.player.hurt(amount)
 	if delta.length() < 12: game.player.add_trauma(0.20)
 	game.damage_pillars(pos, radius, amount)
 
@@ -370,7 +392,8 @@ func fire_at_point(number: int) -> void:
 	var origin = global_position + Vector3.UP * (2.6 if kind == 3 else 1.5)
 	var dir = (aim_point - origin).normalized()
 	for i in number:
-		game.spawn_bolt(origin + dir * (1.2 if kind == 3 else 0.7), dir.rotated(Vector3.UP, (i - (number - 1) * 0.5) * 0.14), hit(16, 5) if kind == 3 else hit(11, 4), true, false, 0)
+		var bolt = game.spawn_bolt(origin + dir * (1.2 if kind == 3 else 0.7), dir.rotated(Vector3.UP, (i - (number - 1) * 0.5) * 0.14), hit(16, 5) if kind == 3 else hit(11, 4), true, false, 0)
+		if kind == 3: bolt.guardian_room = room_id
 	game.muzzle_flash(origin + dir * 0.7, Color("ff9e6c"), 0.32)
 	game.sound.play("enemy", 0.7 if kind == 3 else 1, global_position)
 
@@ -385,6 +408,8 @@ func clear_marker() -> void:
 
 func take_damage(amount: float, effects: bool = true, source: Node3D = null) -> void:
 	if dead: return
+	if not is_instance_valid(source): source = last_source if not effects and is_instance_valid(last_source) else game.player
+	if kind == 3 and (game.room_index_at(source.global_position) != room_id or game.room_index_at(global_position) != room_id): return
 	if shield > 0:
 		flash = 0.1
 		if Time.get_ticks_msec() - guard_shown > 350:

@@ -152,6 +152,7 @@ func run() -> void:
 
 	# --- Guardian vents and core hits (BOSS-01) ---------------------------------
 	var g = guardian()
+	g.position = g.home_position
 	g.planned = "slam"
 	g.resolve_attack()
 	verify(g.vent_time > 2.0 and g.core.visible, "A slam opens the core vent")
@@ -168,6 +169,7 @@ func run() -> void:
 	bolt.free()
 
 	# --- Overdrive adds and synced spawns ----------------------------------------
+	p.position = g.position + Vector3(4, 0, 0)
 	var enemies_before = game.enemies.size()
 	g.take_damage(g.health - g.max_health * 0.45, false, p)
 	await process_frame

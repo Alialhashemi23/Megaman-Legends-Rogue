@@ -18,6 +18,7 @@ var flight_velocity = Vector3.ZERO
 var bounced = false
 # Flare Cartridge stacks: this shot leaves a burning patch where it lands.
 var flare = 0
+var guardian_room = -1
 
 func _ready() -> void:
 	var color = Color("ff8060") if hostile else Color("e87545") if bomb else DiverArt.GOLD if heavy else Color("82f5ee")
@@ -47,7 +48,7 @@ func _physics_process(dt: float) -> void:
 	if not hit.is_empty():
 		var collider = hit.collider
 		if hostile and collider == game.player:
-			game.player.hurt(amount)
+			if guardian_room < 0 or game.room_index_at(game.player.global_position) == guardian_room: game.player.hurt(amount)
 		elif hostile and collider.has_meta("pillar"):
 			game.damage_pillar(int(collider.get_meta("pillar")), amount)
 		elif collider is DiverEnemy and not cosmetic:
