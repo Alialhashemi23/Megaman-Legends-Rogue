@@ -124,7 +124,8 @@ func lock_aim() -> void:
 		for child in marker.get_children(): child.queue_free()
 		var origin = global_position
 		origin.y += 0.075
-		warning_line(origin, Vector3(aim_point.x, game.floor_height(aim_point) + 0.075, aim_point.z), 0.14, Color("fa775e"))
+		if planned == "fan" and game.depth == 1: fan_warning(origin, Color("fa775e"))
+		else: warning_line(origin, Vector3(aim_point.x, game.floor_height(aim_point) + 0.075, aim_point.z), 0.14, Color("fa775e"))
 		DiverArt.ring(marker, origin, 0.7 if kind == 1 else 1.8, Color("fa775e"), 0.12)
 
 func _physics_process(dt: float) -> void:
@@ -226,7 +227,7 @@ func _physics_process(dt: float) -> void:
 				if distance < 4.2: begin_attack("slam", 0.95)
 				elif game.depth == 2 and attack_cycle % 2 == 1: begin_attack("bombard", 1.05)
 				elif game.depth == 3 and attack_cycle % 2 == 1: begin_attack("cross", 1.10)
-				else: begin_attack("fan", 0.8)
+				else: begin_attack("fan", 1.05 if game.depth == 1 else 0.8)
 			else: attack = 0.15
 		if kind == 5: mender_repair(dt)
 		if state == "windup": movement = Vector3.ZERO
@@ -307,7 +308,8 @@ func show_attack(type: String, duration: float, point: Vector3) -> void:
 		"charge":
 			warning_line(origin, origin + aim_direction * 9, 3.0, amber)
 		"shot", "fan":
-			warning_line(origin, Vector3(aim_point.x, target_floor, aim_point.z), 0.08, amber)
+			if type == "fan" and game.depth == 1: fan_warning(origin, amber)
+			else: warning_line(origin, Vector3(aim_point.x, target_floor, aim_point.z), 0.08, amber)
 			DiverArt.ring(marker, origin, 0.7 if kind == 1 else 1.8, amber, 0.12)
 		"slam":
 			DiverArt.ring(marker, origin, 4.7, danger, 0.18)
@@ -392,10 +394,18 @@ func fire_at_point(number: int) -> void:
 	var origin = global_position + Vector3.UP * (2.6 if kind == 3 else 1.5)
 	var dir = (aim_point - origin).normalized()
 	for i in number:
-		var bolt = game.spawn_bolt(origin + dir * (1.2 if kind == 3 else 0.7), dir.rotated(Vector3.UP, (i - (number - 1) * 0.5) * 0.14), hit(16, 5) if kind == 3 else hit(11, 4), true, false, 0)
+		var bolt = game.spawn_bolt(origin + dir * (1.2 if kind == 3 else 0.7), dir.rotated(Vector3.UP, (i - (number - 1) * 0.5) * fan_spacing()), hit(16, 5) if kind == 3 else hit(11, 4), true, false, 0)
 		if kind == 3: bolt.guardian_room = room_id
 	game.muzzle_flash(origin + dir * 0.7, Color("ff9e6c"), 0.32)
 	game.sound.play("enemy", 0.7 if kind == 3 else 1, global_position)
+
+func fan_spacing() -> float:
+	return 0.24 if kind == 3 and game.depth == 1 else 0.14
+
+func fan_warning(origin: Vector3, color: Color) -> void:
+	for i in 5:
+		var lane = aim_direction.rotated(Vector3.UP, (i - 2) * fan_spacing())
+		warning_line(origin, origin + lane * 16.0, 0.08, color)
 
 func recover(duration: float) -> void:
 	state = "recover"

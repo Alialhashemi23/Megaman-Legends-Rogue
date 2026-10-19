@@ -58,6 +58,35 @@ func run() -> void:
 	g.aim_point = p.position + Vector3.UP
 	g.fire_at_point(5)
 	verify(game.world.get_children().filter(func(n): return n is DiverBolt and n.guardian_room == g.room_id).size() == 5, "PT05 guardian projectiles carry arena damage boundary")
+	for node in game.world.get_children():
+		if node is DiverBolt: node.queue_free()
+	for d in [1, 2, 3]:
+		game.depth = d
+		verify(is_equal_approx(g.fan_spacing(), 0.24 if d == 1 else 0.14), "PT01 B%d fan spacing" % d)
+	game.depth = 1
+	p.set_character(2)
+	p.weapon = 2
+	p.items = {}
+	verify(is_equal_approx(g.max_health, 2660), "PT01 B1 guardian Life unchanged with Tron/Siege")
+	# Real hostile projectiles cross Tron's collision plane. The wider halfway
+	# lane must be safe, while the centre lane still punishes standing still.
+	for angle in [0.12, 0.0]:
+		p.position = g.position + Vector3(sin(angle), 0, -cos(angle)) * 10
+		p.hp = p.max_hp()
+		p.invincible = 0
+		p.dash_guard = 0
+		g.aim_point = g.position + Vector3(0, 1.0, -10)
+		g.fire_at_point(5)
+		var hp = p.hp
+		await create_timer(0.7).timeout
+		verify(p.hp == hp if angle > 0 else p.hp < hp, "PT01 Tron safe between lanes; centre lane still hits (%.2f)" % angle)
+		for node in game.world.get_children():
+			if node is DiverBolt: node.queue_free()
+	p.position = g.position + Vector3(0, 0, -8)
+	var boss_before = g.health
+	g.shield = 0
+	game.damage_enemy(g, p.damage() * 2.4, p)
+	verify(g.health < boss_before, "PT01 Tron's Siege damage works inside B1 arena")
 	print("PLAYTEST_COMBAT_CHECKS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
 
