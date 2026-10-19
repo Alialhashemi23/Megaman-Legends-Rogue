@@ -1960,7 +1960,7 @@ func draw_end() -> void:
     if game.net.active():
         button(Vector2(64, 764), Vector2(430, 62), "Workshop / Spend Zenny", "workshop", 0, true)
         button(Vector2(518, 764), Vector2(422, 62), "Dig Log / Playtest", "run_log")
-        button(Vector2(964, 764), Vector2(412, 62), confirm_label("leave_online", 0, "Leave Lobby"), "leave_online")
+        button(Vector2(964, 764), Vector2(412, 62), "Return to Lobby", "lobby_room")
     else:
         button(Vector2(64, 764), Vector2(430, 62), "Workshop / Spend Zenny", "workshop", 0, true)
         button(Vector2(518, 764), Vector2(422, 62), "Dig Log / Playtest", "run_log")
