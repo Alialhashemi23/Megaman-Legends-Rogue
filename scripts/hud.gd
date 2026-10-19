@@ -738,8 +738,13 @@ func back() -> bool:
             if game.net.loadout_locked(): game.net.cancel_launch()
             else: activate("leave_online")
         "solo_prep":
-            page_focus.title = {"action": "solo", "value": 0}
-            activate("title")
+            if focused_action() not in ["solo_character", "solo_cycle"]:
+                focus_action("solo_character")
+                game.sound.play("menu_move", 0.8)
+            else:
+                page_focus.title = {"action": "solo", "value": 0}
+                activate("title")
+                game.sound.play("menu_move", 0.8)
         "android_update": game.android_updates.later()
         "credits": activate("title")
         "account":
