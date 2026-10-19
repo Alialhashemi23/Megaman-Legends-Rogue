@@ -189,14 +189,21 @@ func rumble(weak: float, strong: float, seconds: float) -> void:
 	for device in Input.get_connected_joypads(): Input.start_joy_vibration(device, weak, strong, seconds)
 
 func apply_display() -> void:
-	if DiverPaths.sandboxed() or DisplayServer.get_name() == "headless": return
+	# Web requires a fresh gesture; never restore fullscreen during startup.
+	if OS.has_feature("web") or OS.has_feature("android") or DisplayServer.get_name() == "headless": return
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if fullscreen else DisplayServer.WINDOW_MODE_WINDOWED)
 
 func set_fullscreen(value: bool) -> void:
 	fullscreen = value
-	if DisplayServer.get_name() != "headless" and not DiverPaths.sandboxed():
+	# Called synchronously by the Options input event so browser activation lives.
+	if DisplayServer.get_name() != "headless" and not OS.has_feature("android"):
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if fullscreen else DisplayServer.WINDOW_MODE_WINDOWED)
 	save_settings()
+
+func _process(_dt: float) -> void:
+	if OS.has_feature("web"):
+		# Esc/browser controls can exit fullscreen outside the Options toggle.
+		fullscreen = DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
 
 func load_settings() -> void:
 	load_file_settings()
